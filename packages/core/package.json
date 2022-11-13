@@ -1,6 +1,6 @@
 {
   "name": "@fashionable/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "component-oriented classname generation utilites",
   "keywords": [],
   "author": "Tim Morris <timthewebguy@gmail.com>",
