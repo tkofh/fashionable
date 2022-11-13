@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.1.4](https://github.com/tkofh/fashionable/compare/@fashionable/core@0.1.3...@fashionable/core@0.1.4) (2022-11-13)
+
+### Bug Fixes
+
+- **core:** remove unused deps ([d486100](https://github.com/tkofh/fashionable/commit/d4861000164e8c1d0a780e885d3668c7f2ed1976))
+
 ## [0.1.3](https://github.com/tkofh/fashionable/compare/@fashionable/core@0.1.2...@fashionable/core@0.1.3) (2022-11-13)
 
 ### Bug Fixes
