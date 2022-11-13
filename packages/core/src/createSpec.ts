@@ -1,4 +1,4 @@
-type VariantValue = string | string[]
+export type VariantValue = string | string[]
 type BooleanMap<T> = T extends 'true' | 'false' ? boolean : T
 export type VariantsDefinition = Record<string, Record<string, VariantValue>>
 export type VariantsInput<Variants extends VariantsDefinition> = {
@@ -17,6 +17,8 @@ export interface SpecDefinition<Variants extends VariantsDefinition> {
 export type SpecFn<Variants extends VariantsDefinition> = (
   options?: VariantsInput<Variants>
 ) => string
+
+export type SpecInput<TSpecFn extends SpecFn<VariantsDefinition>> = Parameters<TSpecFn>[0]
 
 const NOT_PROD = process.env.NODE_ENV !== 'production'
 
