@@ -1,0 +1,46 @@
+{
+  "name": "@fashionable/core",
+  "version": "0.0.0",
+  "description": "component-oriented classname generation utilites",
+  "keywords": [],
+  "author": "Tim Morris <timthewebguy@gmail.com>",
+  "homepage": "https://github.com/tkofh/fashionable#readme",
+  "license": "MIT",
+  "sideEffects": false,
+  "type": "module",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tkofh/fashionable.git"
+  },
+  "scripts": {
+    "lint": "eslint --cache --fix --ext='.ts,.(m|c)?js' .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.9",
+    "ts-toolbelt": "^9.6.0",
+    "unbuild": "^0.9.4",
+    "vite": "^3.2.3",
+    "vitest": "^0.24.3"
+  },
+  "dependencies": {
+    "defu": "^6.1.0",
+    "mitt": "^3.0.0"
+  }
+}
