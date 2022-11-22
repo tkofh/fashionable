@@ -1,6 +1,6 @@
 {
   "name": "@fashionable/tailwind-plugin-rvars",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "utility class to generate responsive css variables",
   "keywords": [],
   "author": "Tim Morris <timthewebguy@gmail.com>",
