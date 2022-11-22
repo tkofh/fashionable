@@ -1,6 +1,10 @@
 # Responsive Variables Tailwind Plugin
 
-A tailwind utility for declaring css custom properties that change across breakpoints
+A Tailwind utility for declaring css custom properties that change across breakpoints
+
+## Motivation
+
+Tailwind classes are a great way to build UI components in popular frontend frameworks such as Vue and React. However, often times we want a prop in one of those components to govern some styles, which take the form of Tailwind class lists. Writing out all of the possible classes can be a chore. It gets worse when you want the prop to be dynamic across breakpoints (i.e., accepting `{ sm: '1rem', lg: '2rem' })` as the value of a prop). In responsive scenarios, you need to list out every value at every breakpoint in order for the final CSS to have everything you need. `@fashionable/tailwind-plugin-rvars` helps here: use the `rvars` utility to create responsive css properties that match your Tailwind breakpoints, and remap them to css properties on the fly.
 
 ## Installation
 
@@ -17,7 +21,7 @@ yarn add @fashionable/tailwind-plugin-rvars
 npm install @fashionable/tailwind-plugin-rvars
 ```
 
-Then add it to your `tilwind.config`:
+Then add it to your `tailwind.config`:
 
 ```javascript
 // tailwind.config.cjs
@@ -36,7 +40,7 @@ module.exports = {
 
 ## Configuration
 
-The plugin requires an options object to be passed in when adding it to your tailwind configuration. This object has two options:
+The plugin requires an options object to be passed in when adding it to your Tailwind configuration. This object has two options:
 
 ### `orderedBreakpoints`
 
@@ -45,7 +49,7 @@ The plugin requires an options object to be passed in when adding it to your tai
 
 The `orderedBreakpoints` array should be the list of breakpoints this plugin should consider for its properties, from smallest to largest.
 
-There are a variety of ways of specifying screens in tailwind. This plugin makes no attempt to parse pixel values from your config, and instead relies on this array to know which breakpoints to look at.
+There are a variety of ways of specifying screens in Tailwind. This plugin makes no attempt to parse pixel values from your config, and instead relies on this array to know which breakpoints to look at.
 
 This plugin only supports `min-width` breakpoints, and will throw an error upon initialization if a Tailwind breakpoint with a `raw` or `max` key is found.
 
@@ -107,7 +111,7 @@ This works well when using the `--spacing` variable in other utilities with the 
 <!-- A simple <Stack> component, perhaps? -->
 <div
   class="flex flex-col rvar-[spacing] gap-[var(--spacing)]"
-  style="--spacing-base: 1rem; --spacing-md: 2rem; --spacing-xl: 3rem;"
+  style="--spacing-xs: 1rem; --spacing-md: 2rem; --spacing-xl: 3rem;"
 >
   <!-- ... -->
 </div>
@@ -115,7 +119,7 @@ This works well when using the `--spacing` variable in other utilities with the 
 
 ### Default Values
 
-By default, the value `0` is used as the default value in the absence of a base variable being assigned. You can customize this by adding the desired default value after a comma in the utility name:
+By default, no value is set as the default value in the absence of a base variable being assigned. You can customize this by adding the desired default value after a comma in the utility name:
 
 ```html
 <div class="rvar-[spacing,1rem]">
