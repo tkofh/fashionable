@@ -26,8 +26,8 @@ const valueToSet = (value: VariantValue | undefined): Set<string> => {
   const definedValue = value ?? ''
   const output = new Set<string>()
 
-  for(const member of Array.isArray(definedValue) ? definedValue : [definedValue]) {
-    if(member.trim() !== '') {
+  for (const member of Array.isArray(definedValue) ? definedValue : [definedValue]) {
+    if (member.trim() !== '') {
       for (const element of member.split(/\s/g)) {
         output.add(element)
       }
@@ -37,10 +37,13 @@ const valueToSet = (value: VariantValue | undefined): Set<string> => {
   return output
 }
 
-const matchInput = <Variants extends VariantsDefinition>(input: VariantsInput<Variants>, compare: VariantsInput<Variants>): boolean => {
+const matchInput = <Variants extends VariantsDefinition>(
+  input: VariantsInput<Variants>,
+  compare: VariantsInput<Variants>
+): boolean => {
   let result = true
-  for(const [variant, option] of Object.entries(compare)) {
-    if(!Object.hasOwn(input, variant) || input[variant] !== option) {
+  for (const [variant, option] of Object.entries(compare)) {
+    if (!Object.hasOwn(input, variant) || input[variant] !== option) {
       result = false
     }
   }
@@ -54,10 +57,10 @@ export const createSpec = <Variants extends VariantsDefinition>(
   const base = valueToSet(definition.base)
 
   const variantMap = new Map<string, Map<string, Set<string>>>()
-  if(definition.variants) {
-    for(const [name, options] of Object.entries(definition.variants)) {
+  if (definition.variants) {
+    for (const [name, options] of Object.entries(definition.variants)) {
       const optionsMap = new Map<string, Set<string>>()
-      for(const [optionName, optionValue] of Object.entries(options)) {
+      for (const [optionName, optionValue] of Object.entries(options)) {
         optionsMap.set(optionName, valueToSet(optionValue))
       }
 
@@ -66,8 +69,8 @@ export const createSpec = <Variants extends VariantsDefinition>(
   }
 
   const compoundVariants = new Map<VariantsInput<Variants>, Set<string>>()
-  if(definition.compound) {
-    for(const compoundVariant of definition.compound) {
+  if (definition.compound) {
+    for (const compoundVariant of definition.compound) {
       compoundVariants.set(compoundVariant.when, valueToSet(compoundVariant.value))
     }
   }
@@ -75,35 +78,42 @@ export const createSpec = <Variants extends VariantsDefinition>(
   return (input) => {
     const output = new Set(base)
 
-    const selectedVariants = Object.assign({}, definition.defaults ?? {}, input ?? {}) as VariantsInput<Variants>
+    const selectedVariants = Object.assign(
+      {},
+      definition.defaults ?? {},
+      input ?? {}
+    ) as VariantsInput<Variants>
 
-    for(const [variant, option] of Object.entries(selectedVariants) as [string, string | boolean][]) {
+    for (const [variant, option] of Object.entries(selectedVariants) as [
+      string,
+      string | boolean
+    ][]) {
       const optionMap = variantMap.get(variant)!
-      if(!optionMap) {
-        if(NOT_PROD) {
+      if (!optionMap) {
+        if (NOT_PROD) {
           // eslint-disable-next-line no-console
           console.warn(`[createSpec] unrecognized variant name: ${variant}`)
         }
         continue
       }
       const optionSet = optionMap.get(String(option))!
-      if(!optionSet) {
-        if(NOT_PROD) {
+      if (!optionSet) {
+        if (NOT_PROD) {
           // eslint-disable-next-line no-console
           console.warn(`[createSpec] unrecognized value for variant ${variant}: ${String(option)}`)
         }
         continue
       }
-      for(const member of optionSet) {
-        if(!output.has(member)) {
+      for (const member of optionSet) {
+        if (!output.has(member)) {
           output.add(member)
         }
       }
     }
 
-    for(const compoundVariant of compoundVariants.keys()) {
-      if(matchInput(selectedVariants, compoundVariant)) {
-        for(const member of compoundVariants.get(compoundVariant)!) {
+    for (const compoundVariant of compoundVariants.keys()) {
+      if (matchInput(selectedVariants, compoundVariant)) {
+        for (const member of compoundVariants.get(compoundVariant)!) {
           output.add(member)
         }
       }

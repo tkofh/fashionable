@@ -6,9 +6,7 @@
   "conventionalCommits": true,
   "exact": true,
   "changelog": true,
-  "packages": [
-    "packages/*"
-  ],
+  "packages": ["packages/*"],
   "command": {
     "version": {
       "allowBranch": ["main"],

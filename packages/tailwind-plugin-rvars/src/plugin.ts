@@ -10,13 +10,13 @@ const plugin = (options: PluginOptions): { handler: PluginCreator } => ({
     matchUtilities(
       {
         rvar: (value) => {
-          const [varName, defaultValue = 0] = value.split(',')
+          const [varName, defaultValue] = value.split(',')
 
           const result: Record<string, string | Record<string, string>> = {}
 
-          result[
-            `--i-${varName}-${baseBreakpointName}`
-          ] = `var(--${varName}-${baseBreakpointName}, ${defaultValue})`
+          result[`--i-${varName}-${baseBreakpointName}`] = defaultValue
+            ? `var(--${varName}-${baseBreakpointName}, ${defaultValue})`
+            : `var(--${varName}-${baseBreakpointName})`
 
           result[`--${varName}`] = `var(--i-${varName}-${baseBreakpointName})`
 

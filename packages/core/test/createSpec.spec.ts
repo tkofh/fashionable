@@ -22,14 +22,14 @@ describe('createSpec', () => {
     },
     compound: [
       { when: { a: 1, b: 1 }, value: 'a-1-and-b-1' },
-      { when: { a: 2, b: 2, }, value: 'a-2-and-b-2' },
-      { when: { a: 3, b: 3, }, value: 'a-3-and-b-3' },
-    ]
+      { when: { a: 2, b: 2 }, value: 'a-2-and-b-2' },
+      { when: { a: 3, b: 3 }, value: 'a-3-and-b-3' },
+    ],
   })
 
   test('it respects variants', ({ expect }) => {
-    for(const aOption of [1, 2, 3] as const) {
-      for(const bOption of [1, 2, 3] as const) {
+    for (const aOption of [1, 2, 3] as const) {
+      for (const bOption of [1, 2, 3] as const) {
         const result = spec({ a: aOption, b: bOption })
         expect(result.includes(`a-${aOption}`)).toBe(true)
         expect(result.includes(`b-${bOption}`)).toBe(true)
@@ -49,13 +49,13 @@ describe('createSpec', () => {
   })
 
   test('it respects compound', ({ expect }) => {
-    for(const option of [1, 2, 3] as const) {
+    for (const option of [1, 2, 3] as const) {
       expect(spec({ a: option, b: option }).includes(`a-${option}-and-b-${option}`)).toBe(true)
     }
   })
 
-  test('it mixes input with defautls', ({expect }) => {
-    for(const option of [1, 2, 3] as const) {
+  test('it mixes input with defautls', ({ expect }) => {
+    for (const option of [1, 2, 3] as const) {
       const resultA = spec({ a: option })
       expect(resultA.includes(`a-${option}`)).toBe(true)
       expect(resultA.includes('b-1')).toBe(true)

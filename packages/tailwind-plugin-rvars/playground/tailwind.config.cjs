@@ -7,7 +7,5 @@ module.exports = {
   theme: {
     extend: {},
   },
-  plugins: [
-    rvars({ orderedBreakpoints: ['sm', 'md', 'lg', 'xl'] })
-  ],
+  plugins: [rvars({ orderedBreakpoints: ['sm', 'md', 'lg', 'xl'] })],
 }
