@@ -5,7 +5,7 @@ import type { PluginOptions } from './types'
 const plugin = (options: PluginOptions): { handler: PluginCreator } => ({
   handler: ({ matchUtilities, theme }) => {
     const screens = getPluginScreens(theme('screens'), options)
-    const baseBreakpointName = options?.baseBreakpointName ?? 'base'
+    const baseBreakpointName = options?.baseBreakpointName ?? 'xs'
 
     matchUtilities(
       {
