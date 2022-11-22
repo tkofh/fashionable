@@ -1,0 +1,49 @@
+{
+  "name": "@fashionable/tailwind-plugin-rvars",
+  "version": "0.0.0",
+  "description": "utility class to generate responsive css variables",
+  "keywords": [],
+  "author": "Tim Morris <timthewebguy@gmail.com>",
+  "homepage": "https://github.com/tkofh/fashionable/tree/main/packages/tailwind-plugin-rvars#readme",
+  "license": "MIT",
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tkofh/fashionable.git"
+  },
+  "scripts": {
+    "lint": "eslint --cache --fix --ext='.ts,.(m|c)?js' .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublish": "unbuild"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.9",
+    "tailwindcss": "^3.2.4",
+    "typescript": "^4.9.3",
+    "unbuild": "^0.9.4",
+    "vite": "^3.2.3",
+    "vitest": "^0.24.3"
+  },
+  "peerDependencies": {
+    "tailwindcss": "^3.2.4"
+  }
+}
