@@ -4,7 +4,7 @@
   "description": "expose tailwind theme values as css custom properties",
   "keywords": [],
   "author": "Tim Morris <timthewebguy@gmail.com>",
-  "homepage": "https://github.com/tkofh/fashionable/tree/main/packages/tailwind-plugin-rvars#readme",
+  "homepage": "https://github.com/tkofh/fashionable/tree/main/packages/tailwind-plugin-theme-tokens#readme",
   "license": "MIT",
   "sideEffects": false,
   "type": "module",
