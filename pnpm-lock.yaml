@@ -31,38 +31,31 @@ importers:
   packages/core:
     specifiers:
       '@types/node': ^18.11.9
-      defu: ^6.1.0
-      mitt: ^3.0.0
-      ts-toolbelt: ^9.6.0
-      unbuild: ^0.9.4
-      vitest: ^0.24.3
-    dependencies:
-      defu: 6.1.0
-      mitt: 3.0.0
-    devDependencies:
-      '@types/node': 18.11.9
-      ts-toolbelt: 9.6.0
-      unbuild: 0.9.4
-      vitest: 0.24.3
-
-  packages/spec:
-    specifiers:
-      '@types/node': ^18.11.9
-      defu: ^6.1.0
-      mitt: ^3.0.0
-      ts-toolbelt: ^9.6.0
       unbuild: ^0.9.4
       vite: ^3.2.3
       vitest: ^0.24.3
-    dependencies:
-      defu: 6.1.0
-      mitt: 3.0.0
     devDependencies:
       '@types/node': 18.11.9
-      ts-toolbelt: 9.6.0
       unbuild: 0.9.4
       vite: 3.2.3_@types+node@18.11.9
       vitest: 0.24.3
+
+  packages/tailwind-plugin:
+    specifiers:
+      '@fashionable/tailwind-plugin-rvars': '*'
+      '@fashionable/tailwind-plugin-theme-tokens': '*'
+      '@types/node': ^18.11.9
+      tailwindcss: ^3.2.4
+      typescript: ^4.9.3
+      unbuild: ^0.9.4
+    dependencies:
+      '@fashionable/tailwind-plugin-rvars': link:../tailwind-plugin-rvars
+      '@fashionable/tailwind-plugin-theme-tokens': link:../tailwind-plugin-theme-tokens
+    devDependencies:
+      '@types/node': 18.11.9
+      tailwindcss: 3.2.4
+      typescript: 4.9.3
+      unbuild: 0.9.4
 
   packages/tailwind-plugin-rvars:
     specifiers:
@@ -85,19 +78,16 @@ importers:
       '@types/node': ^18.11.9
       outdent: ^0.8.0
       postcss: ^8.4.19
-      scule: ^1.0.0
       tailwindcss: ^3.2.4
       typescript: ^4.9.3
       unbuild: ^0.9.4
       vite: ^3.2.3
       vitest: ^0.24.3
-    dependencies:
-      scule: 1.0.0
     devDependencies:
       '@types/node': 18.11.9
       outdent: 0.8.0
       postcss: 8.4.19
-      tailwindcss: 3.2.4_postcss@8.4.19
+      tailwindcss: 3.2.4
       typescript: 4.9.3
       unbuild: 0.9.4
       vite: 3.2.3_@types+node@18.11.9
@@ -396,11 +386,11 @@ packages:
       '@types/node': 14.18.33
       chalk: 4.1.2
       cosmiconfig: 7.0.1
-      cosmiconfig-typescript-loader: 4.1.1_gbbg4brkmakf6m5nuj7scelzny
+      cosmiconfig-typescript-loader: 4.1.1_c6nxjjh2ib4bof6n36nh6eiz4m
       lodash: 4.17.21
       resolve-from: 5.0.0
-      ts-node: 10.9.1_yodorn5kzjgomblrsstrk2spaa
-      typescript: 4.8.4
+      ts-node: 10.9.1_kluoused5zacjtflizwvdqgpom
+      typescript: 4.9.3
     transitivePeerDependencies:
       - '@swc/core'
       - '@swc/wasm'
@@ -1121,7 +1111,7 @@ packages:
       npmlog: 6.0.2
     dev: true
 
-  /@lerna/publish/6.0.1_nx@15.0.4+typescript@4.8.4:
+  /@lerna/publish/6.0.1_nx@15.0.4+typescript@4.9.3:
     resolution: {integrity: sha512-xIleRwCuPHtShNSPc6RDH33Z+EO1E4O0LOhPq5qTwanNPYh5eL6bDHBsox44BbMD9dhhI4PUrqIGTu3AoKdDxg==}
     engines: {node: ^14.15.0 || >=16.0.0}
     dependencies:
@@ -1143,7 +1133,7 @@ packages:
       '@lerna/run-lifecycle': 6.0.1
       '@lerna/run-topologically': 6.0.1
       '@lerna/validation-error': 6.0.1
-      '@lerna/version': 6.0.1_nx@15.0.4+typescript@4.8.4
+      '@lerna/version': 6.0.1_nx@15.0.4+typescript@4.9.3
       fs-extra: 9.1.0
       libnpmaccess: 6.0.4
       npm-package-arg: 8.1.1
@@ -1275,7 +1265,7 @@ packages:
       npmlog: 6.0.2
     dev: true
 
-  /@lerna/version/6.0.1_nx@15.0.4+typescript@4.8.4:
+  /@lerna/version/6.0.1_nx@15.0.4+typescript@4.9.3:
     resolution: {integrity: sha512-d/addeHVsRFWx3fb/XZIh6f23KuEC9Fn3ytpaMzA8rlLF3Nob1opIR98ZfUz7Nf+skpIV1QiIbXdJTZzIKvd9g==}
     engines: {node: ^14.15.0 || >=16.0.0}
     dependencies:
@@ -1293,7 +1283,7 @@ packages:
       '@lerna/run-topologically': 6.0.1
       '@lerna/temp-write': 6.0.1
       '@lerna/validation-error': 6.0.1
-      '@nrwl/devkit': 15.0.4_nx@15.0.4+typescript@4.8.4
+      '@nrwl/devkit': 15.0.4_nx@15.0.4+typescript@4.9.3
       chalk: 4.1.2
       dedent: 0.7.0
       load-json-file: 6.2.0
@@ -1499,12 +1489,12 @@ packages:
       - debug
     dev: true
 
-  /@nrwl/devkit/15.0.4_nx@15.0.4+typescript@4.8.4:
+  /@nrwl/devkit/15.0.4_nx@15.0.4+typescript@4.9.3:
     resolution: {integrity: sha512-m32ust10hw2zZyWuspJNHeRGFzfvpgz8TI6OXsOt39TEk8aZiPm3CjxyKW0ntkwS6/VoYqVL7Xz+Q49R0UlItA==}
     peerDependencies:
       nx: '>= 14 <= 16'
     dependencies:
-      '@phenomnomnominal/tsquery': 4.1.1_typescript@4.8.4
+      '@phenomnomnominal/tsquery': 4.1.1_typescript@4.9.3
       ejs: 3.1.8
       ignore: 5.2.0
       nx: 15.0.4
@@ -1654,13 +1644,13 @@ packages:
       node-gyp-build: 4.5.0
     dev: true
 
-  /@phenomnomnominal/tsquery/4.1.1_typescript@4.8.4:
+  /@phenomnomnominal/tsquery/4.1.1_typescript@4.9.3:
     resolution: {integrity: sha512-jjMmK1tnZbm1Jq5a7fBliM4gQwjxMU7TFoRNwIyzwlO+eHPRCFv/Nv+H/Gi1jc3WR7QURG8D5d0Tn12YGrUqBQ==}
     peerDependencies:
       typescript: ^3 || ^4
     dependencies:
       esquery: 1.4.0
-      typescript: 4.8.4
+      typescript: 4.9.3
     dev: true
 
   /@rollup/plugin-alias/4.0.2_rollup@3.2.3:
@@ -2790,7 +2780,7 @@ packages:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
     dev: true
 
-  /cosmiconfig-typescript-loader/4.1.1_gbbg4brkmakf6m5nuj7scelzny:
+  /cosmiconfig-typescript-loader/4.1.1_c6nxjjh2ib4bof6n36nh6eiz4m:
     resolution: {integrity: sha512-9DHpa379Gp0o0Zefii35fcmuuin6q92FnLDffzdZ0l9tVd3nEobG3O+MZ06+kuBvFTSVScvNb/oHA13Nd4iipg==}
     engines: {node: '>=12', npm: '>=6'}
     peerDependencies:
@@ -2801,8 +2791,8 @@ packages:
     dependencies:
       '@types/node': 14.18.33
       cosmiconfig: 7.0.1
-      ts-node: 10.9.1_yodorn5kzjgomblrsstrk2spaa
-      typescript: 4.8.4
+      ts-node: 10.9.1_kluoused5zacjtflizwvdqgpom
+      typescript: 4.9.3
     dev: true
 
   /cosmiconfig/7.0.1:
@@ -2940,6 +2930,7 @@ packages:
 
   /defu/6.1.0:
     resolution: {integrity: sha512-pOFYRTIhoKujrmbTRhcW5lYQLBXw/dlTwfI8IguF1QCDJOcJzNH1w+YFjxqy6BAuJrClTy6MUE8q+oKJ2FLsIw==}
+    dev: true
 
   /delayed-stream/1.0.0:
     resolution: {integrity: sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==}
@@ -4992,15 +4983,15 @@ packages:
       '@lerna/init': 6.0.1
       '@lerna/link': 6.0.1
       '@lerna/list': 6.0.1
-      '@lerna/publish': 6.0.1_nx@15.0.4+typescript@4.8.4
+      '@lerna/publish': 6.0.1_nx@15.0.4+typescript@4.9.3
       '@lerna/run': 6.0.1
-      '@lerna/version': 6.0.1_nx@15.0.4+typescript@4.8.4
-      '@nrwl/devkit': 15.0.4_nx@15.0.4+typescript@4.8.4
+      '@lerna/version': 6.0.1_nx@15.0.4+typescript@4.9.3
+      '@nrwl/devkit': 15.0.4_nx@15.0.4+typescript@4.9.3
       import-local: 3.1.0
       inquirer: 8.2.5
       npmlog: 6.0.2
       nx: 15.0.4
-      typescript: 4.8.4
+      typescript: 4.9.3
     transitivePeerDependencies:
       - '@swc-node/register'
       - '@swc/core'
@@ -5410,10 +5401,6 @@ packages:
       minipass: 3.3.4
       yallist: 4.0.0
     dev: true
-
-  /mitt/3.0.0:
-    resolution: {integrity: sha512-7dX2/10ITVyqh4aOSVI9gdape+t9l2/8QxHrFmUXu4EEUpdlxl6RudZUPZoc+zuY2hk1j7XxVroIVIan/pD/SQ==}
-    dev: false
 
   /mkdirp-infer-owner/2.0.0:
     resolution: {integrity: sha512-sdqtiFt3lkOaYvTXSRIUjkIdPTcxgv5+fgqYE/5qgwdw12cOrAuzzgzvVExIkH/ul1oeHN3bCLOWSG3XOqbKKw==}
@@ -6166,18 +6153,6 @@ packages:
       resolve: 1.22.1
     dev: true
 
-  /postcss-import/14.1.0_postcss@8.4.19:
-    resolution: {integrity: sha512-flwI+Vgm4SElObFVPpTIT7SU7R3qk2L7PyduMcokiaVKuWv9d/U+Gm/QAd8NDLuykTWTkcrjOeD2Pp1rMeBTGw==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      postcss: ^8.0.0
-    dependencies:
-      postcss: 8.4.19
-      postcss-value-parser: 4.2.0
-      read-cache: 1.0.0
-      resolve: 1.22.1
-    dev: true
-
   /postcss-js/4.0.0_postcss@8.4.18:
     resolution: {integrity: sha512-77QESFBwgX4irogGVPgQ5s07vLvFqWr228qZY+w6lW599cRlK/HmnlivnnVUxkjHnCu4J16PDMHcH+e+2HbvTQ==}
     engines: {node: ^12 || ^14 || >= 16}
@@ -6186,16 +6161,6 @@ packages:
     dependencies:
       camelcase-css: 2.0.1
       postcss: 8.4.18
-    dev: true
-
-  /postcss-js/4.0.0_postcss@8.4.19:
-    resolution: {integrity: sha512-77QESFBwgX4irogGVPgQ5s07vLvFqWr228qZY+w6lW599cRlK/HmnlivnnVUxkjHnCu4J16PDMHcH+e+2HbvTQ==}
-    engines: {node: ^12 || ^14 || >= 16}
-    peerDependencies:
-      postcss: ^8.3.3
-    dependencies:
-      camelcase-css: 2.0.1
-      postcss: 8.4.19
     dev: true
 
   /postcss-load-config/3.1.4_postcss@8.4.18:
@@ -6215,23 +6180,6 @@ packages:
       yaml: 1.10.2
     dev: true
 
-  /postcss-load-config/3.1.4_postcss@8.4.19:
-    resolution: {integrity: sha512-6DiM4E7v4coTE4uzA8U//WhtPwyhiim3eyjEMFCnUpzbrkK9wJHgKDT2mR+HbtSrd/NubVaYTOpSpjUl8NQeRg==}
-    engines: {node: '>= 10'}
-    peerDependencies:
-      postcss: '>=8.0.9'
-      ts-node: '>=9.0.0'
-    peerDependenciesMeta:
-      postcss:
-        optional: true
-      ts-node:
-        optional: true
-    dependencies:
-      lilconfig: 2.0.6
-      postcss: 8.4.19
-      yaml: 1.10.2
-    dev: true
-
   /postcss-nested/6.0.0_postcss@8.4.18:
     resolution: {integrity: sha512-0DkamqrPcmkBDsLn+vQDIrtkSbNkv5AD/M322ySo9kqFkCIYklym2xEmWkwo+Y3/qZo34tzEPNUw4y7yMCdv5w==}
     engines: {node: '>=12.0'}
@@ -6239,16 +6187,6 @@ packages:
       postcss: ^8.2.14
     dependencies:
       postcss: 8.4.18
-      postcss-selector-parser: 6.0.11
-    dev: true
-
-  /postcss-nested/6.0.0_postcss@8.4.19:
-    resolution: {integrity: sha512-0DkamqrPcmkBDsLn+vQDIrtkSbNkv5AD/M322ySo9kqFkCIYklym2xEmWkwo+Y3/qZo34tzEPNUw4y7yMCdv5w==}
-    engines: {node: '>=12.0'}
-    peerDependencies:
-      postcss: ^8.2.14
-    dependencies:
-      postcss: 8.4.19
       postcss-selector-parser: 6.0.11
     dev: true
 
@@ -6659,10 +6597,6 @@ packages:
     resolution: {integrity: sha512-zIvPdjOH8fv8CgrPT5eqtxHQXmPNnV/vHJYffZhE43KZkvULvpCTvOt1HPlFaCZx287INL9qaqrZg34e8NgI4g==}
     dev: true
 
-  /scule/1.0.0:
-    resolution: {integrity: sha512-4AsO/FrViE/iDNEPaAQlb77tf0csuq27EsVpy6ett584EcRTp6pTDLoGWVxCD77y5iU5FauOvhsI4o1APwPoSQ==}
-    dev: false
-
   /semver/5.7.1:
     resolution: {integrity: sha512-sauaDf/PZdVgrLTNYHRtpXa1iRiKcaebiKQ1BJdpQlWH2lCvexQdX55snPFyK7QzpudqbCI0qXFfOasHdyNDGQ==}
     hasBin: true
@@ -7029,40 +6963,6 @@ packages:
       - ts-node
     dev: true
 
-  /tailwindcss/3.2.4_postcss@8.4.19:
-    resolution: {integrity: sha512-AhwtHCKMtR71JgeYDaswmZXhPcW9iuI9Sp2LvZPo9upDZ7231ZJ7eA9RaURbhpXGVlrjX4cFNlB4ieTetEb7hQ==}
-    engines: {node: '>=12.13.0'}
-    hasBin: true
-    peerDependencies:
-      postcss: ^8.0.9
-    dependencies:
-      arg: 5.0.2
-      chokidar: 3.5.3
-      color-name: 1.1.4
-      detective: 5.2.1
-      didyoumean: 1.2.2
-      dlv: 1.1.3
-      fast-glob: 3.2.12
-      glob-parent: 6.0.2
-      is-glob: 4.0.3
-      lilconfig: 2.0.6
-      micromatch: 4.0.5
-      normalize-path: 3.0.0
-      object-hash: 3.0.0
-      picocolors: 1.0.0
-      postcss: 8.4.19
-      postcss-import: 14.1.0_postcss@8.4.19
-      postcss-js: 4.0.0_postcss@8.4.19
-      postcss-load-config: 3.1.4_postcss@8.4.19
-      postcss-nested: 6.0.0_postcss@8.4.19
-      postcss-selector-parser: 6.0.11
-      postcss-value-parser: 4.2.0
-      quick-lru: 5.1.1
-      resolve: 1.22.1
-    transitivePeerDependencies:
-      - ts-node
-    dev: true
-
   /tar-stream/2.2.0:
     resolution: {integrity: sha512-ujeqbceABgwMZxEJnk2HDY2DlnUZ+9oEcb1KzTVfYHio0UE6dG71n60d8D2I4qNvleWrrXpmjpt7vZeF1LnMZQ==}
     engines: {node: '>=6'}
@@ -7171,7 +7071,7 @@ packages:
     engines: {node: '>=8'}
     dev: true
 
-  /ts-node/10.9.1_yodorn5kzjgomblrsstrk2spaa:
+  /ts-node/10.9.1_kluoused5zacjtflizwvdqgpom:
     resolution: {integrity: sha512-NtVysVPkxxrwFGUUxGYhfux8k78pQB3JqYBXlLRZgdGUqTO5wU/UyHop5p70iEbGhB7q5KmiZiU0Y3KlJrScEw==}
     hasBin: true
     peerDependencies:
@@ -7197,13 +7097,9 @@ packages:
       create-require: 1.1.1
       diff: 4.0.2
       make-error: 1.3.6
-      typescript: 4.8.4
+      typescript: 4.9.3
       v8-compile-cache-lib: 3.0.1
       yn: 3.1.1
-    dev: true
-
-  /ts-toolbelt/9.6.0:
-    resolution: {integrity: sha512-nsZd8ZeNUzukXPlJmTBwUAuABDe/9qtVDelJeT/qW0ow3ZS3BsQJtNkan1802aM9Uf68/Y8ljw86Hu0h5IUW3w==}
     dev: true
 
   /tsconfig-paths/3.14.1:
