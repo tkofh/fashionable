@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-const rvars = require('../')
+const themeTokens = require('../')
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -7,5 +7,5 @@ module.exports = {
   theme: {
     extend: {},
   },
-  plugins: [rvars({ orderedBreakpoints: ['sm', 'md', 'lg', 'xl'] })],
+  plugins: [themeTokens({ tokens: { colors: true } })],
 }
