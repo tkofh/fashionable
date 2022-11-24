@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.2.0](https://github.com/tkofh/fashionable/compare/@fashionable/tailwind-plugin-theme-tokens@0.1.0...@fashionable/tailwind-plugin-theme-tokens@0.2.0) (2022-11-24)
+
+### Features
+
+- **tailwind-plugin:** implement ([cf76dee](https://github.com/tkofh/fashionable/commit/cf76deebc25144c1775605a87e95da7c4a2b89a7))
+
 # 0.1.0 (2022-11-23)
 
 ### Features
