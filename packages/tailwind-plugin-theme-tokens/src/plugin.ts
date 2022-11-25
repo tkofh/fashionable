@@ -5,23 +5,21 @@ import type { PluginOptions, ThemeOptions } from './types'
 const plugin = <TAdditionalConfigKeys extends string = never>(
   options: PluginOptions<TAdditionalConfigKeys>
 ): { handler: PluginCreator } => ({
-  handler: ({ addBase, addComponents, theme: resolveTailwindThemeValue }) => {
+  handler: (pluginAPI) => {
     if (options.tokens != null) {
-      addBase({
-        ':root': resolveThemeTokens(
-          options as ThemeOptions<TAdditionalConfigKeys>,
-          resolveTailwindThemeValue
-        ),
+      pluginAPI.addBase({
+        ':root': resolveThemeTokens(options as ThemeOptions<TAdditionalConfigKeys>, pluginAPI),
       })
     }
     if (options.themes) {
-      const components = Object.fromEntries(
-        options.themes.map((theme) => [
-          `.${theme.name}`,
-          resolveThemeTokens(theme, resolveTailwindThemeValue),
-        ])
+      pluginAPI.addComponents(
+        Object.fromEntries(
+          options.themes.map((theme) => {
+            const tokens = resolveThemeTokens(theme, pluginAPI)
+            return [`.${theme.name}`, tokens]
+          })
+        )
       )
-      addComponents(components)
     }
   },
 })

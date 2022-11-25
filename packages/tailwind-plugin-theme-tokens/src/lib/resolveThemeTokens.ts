@@ -12,14 +12,12 @@ const expandThemeValues = (prefix: string, values: TailwindThemeValue): [string,
   }
 }
 
-export const resolveThemeTokens = (
-  theme: ThemeOptions,
-  resolveTailwindThemeValue: PluginAPI['theme']
-) => {
+export const resolveThemeTokens = (theme: ThemeOptions, pluginAPI: PluginAPI) => {
   const tokenEntries: [string, string][] = []
 
   for (const [label, configPath] of normalizeTokensConfig(theme)) {
-    const tailwindThemeValue = resolveTailwindThemeValue(configPath)
+    const tailwindThemeValue = pluginAPI.theme(configPath)
+    console.log({ label, configPath, tailwindThemeValue })
     if (tailwindThemeValue == null) {
       // eslint-disable-next-line no-console
       console.warn(
@@ -28,7 +26,7 @@ export const resolveThemeTokens = (
     } else {
       tokenEntries.push(
         ...expandThemeValues(label, tailwindThemeValue).map(
-          ([key, value]) => [`--${key}`, value] as [string, string]
+          ([key, value]) => [`--${pluginAPI.e(key)}`, value] as [string, string]
         )
       )
     }

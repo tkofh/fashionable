@@ -2,6 +2,7 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "moduleResolution": "node",
+    "module": "ESNext",
     "target": "ESNext",
     "strict": true,
     "downlevelIteration": true,

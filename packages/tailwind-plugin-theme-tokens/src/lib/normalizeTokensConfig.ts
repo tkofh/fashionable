@@ -74,7 +74,12 @@ export const normalizeTokensConfig = (theme: ThemeOptions) => {
           theme.prefix ? [theme.prefix, tailwindConfigKey] : [tailwindConfigKey]
         ).map((segment) => segment.trim())
         for (const path of resolveAccessPathTails(singleTokenConfig)) {
-          entries.push([[...labelBase, ...path].join('-'), [tailwindConfigKey, ...path].join('.')])
+          entries.push([
+            [...labelBase, ...path].join('-'),
+            [tailwindConfigKey, ...path]
+              .map((segment) => (segment.match(/\./g) ? `[${segment}]` : segment))
+              .join('.'),
+          ])
         }
       }
     }
