@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.2.0](https://github.com/tkofh/fashionable/compare/@fashionable/tailwind-plugin@0.1.0...@fashionable/tailwind-plugin@0.2.0) (2022-11-25)
+
+### Bug Fixes
+
+- **tailwind-plugin-theme-tokens:** escape variable names ([0040c62](https://github.com/tkofh/fashionable/commit/0040c62b25493643e8c0763ae4715506cd115973))
+
 # 0.1.0 (2022-11-24)
 
 ### Bug Fixes
