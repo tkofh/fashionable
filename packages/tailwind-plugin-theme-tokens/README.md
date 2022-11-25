@@ -344,3 +344,36 @@ Produces
   --spacing-0: 0;
 }
 ```
+
+## Usage with `@fashionable/tailwind-plugin-rvars`
+
+This plugin works great with another Fashionable plugin, `@fashionable/tailwind-plugin-rvars`. That plugin makes it easy to create responsive CSS variables that respect your Tailwind Config's screen breakpoints. You can read more about configuring that plugin on [GitHub](https://github.com/tkofh/fashionable/tree/main/packages/tailwind-plugin-rvars#responsive-variables-tailwind-plugin) and [NPM](https://www.npmjs.com/package/@fashionable/tailwind-plugin-rvars). For example:
+
+```javascript
+// tailwind.config.cjs
+const themeTokens = require('@fashionable/tailwind-plugin-theme-tokens')
+const rvars = require('@fashionable/tailwind-plugin-rvars')
+
+module.exports = {
+  // ...
+  plugins: [
+    themeTokens({
+      tokens: {
+        space: true,
+      },
+    }),
+    rvars({ orderedBreakpointNames: ['sm', 'md', 'lg', 'xl', '2xl'] }),
+  ],
+}
+```
+
+```html
+<div
+  class="flex flex-col gap-[var(--space)] rvar-[space]"
+  style="
+    --space-sm: var(--spacing-2);
+    --space-md: var(--spacing-3);
+    --space-lg: var(--spacing-4);
+  "
+></div>
+```
