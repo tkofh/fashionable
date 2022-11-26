@@ -1,6 +1,6 @@
 {
   "name": "@fashionable/specs",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "component-oriented classname generation utilites",
   "keywords": [],
   "author": "Tim Morris <timthewebguy@gmail.com>",

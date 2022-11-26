@@ -1,6 +1,6 @@
 {
   "name": "@fashionable/tailwind-plugin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "All Fashionable Tailwind Plugins in one",
   "keywords": [],
   "author": "Tim Morris <timthewebguy@gmail.com>",
@@ -45,6 +45,6 @@
   },
   "dependencies": {
     "@fashionable/tailwind-plugin-rvars": "0.2.0",
-    "@fashionable/tailwind-plugin-theme-tokens": "0.3.0"
+    "@fashionable/tailwind-plugin-theme-tokens": "0.4.0"
   }
 }

@@ -3,6 +3,10 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# 0.3.0 (2022-11-26)
+
+**Note:** Version bump only for package @fashionable/specs
+
 ## [0.2.1](https://github.com/tkofh/fashionable/compare/@fashionable/specs@0.2.0...@fashionable/specs@0.2.1) (2022-11-22)
 
 **Note:** Version bump only for package @fashionable/specs
