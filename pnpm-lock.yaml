@@ -87,7 +87,7 @@ importers:
       typescript: ^4.9.3
       unbuild: ^0.9.4
       vite: ^3.2.3
-      vitest: ^0.24.3
+      vitest: ^0.24.5
     devDependencies:
       '@types/node': 18.11.9
       '@vitest/ui': 0.25.3
