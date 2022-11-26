@@ -1,39 +1,33 @@
-# Fashionable
+# Specs
 
-JS utilities for working with CSS classnames
+JS utility for working with sets of CSS classes
 
 ## Features
-
-- Organize groups of classes into component variants with [Specs](#specs)
-
-## Specs
-
-### Features
 
 - Organize CSS classnames into base and variant groups
 - Create a typesafe API for constructing the right classes for a given input
 - Works great with Tailwind
 - Organize complex styles with compound variants
 
-### Getting Started
+## Getting Started
 
-First, install `@fashionable/core`:
+First, install `@fashionable/specs`:
 
 ```sh
 # with pnpm
-pnpm add @fashionable/core
+pnpm add @fashionable/specs
 
 # or yarn
-yarn add @fashionable/core
+yarn add @fashionable/specs
 
 # or npm
-npm install @fashionable/core
+npm install @fashionable/specs
 ```
 
 Then import `createSpec` into your component:
 
 ```typescript
-import { createSpec } from '@fashionable/core'
+import { createSpec } from '@fashionable/specs'
 
 const button = createSpec({
   base: 'btn-base',
@@ -61,12 +55,12 @@ const largeSecondaryButton = button({ theme: 'secondary', size: 'large' })
 // returns `btn-base btn-theme-secondary btn-size-large`
 ```
 
-### Base
+## Base
 
 Specs can include a base string or list of strings with every result, regardless of the variants a user selects:
 
 ```typescript
-import { createSpec } from '@fashionable/core'
+import { createSpec } from '@fashionable/specs'
 
 const spec = createSpec({
   base: 'base',
@@ -88,12 +82,12 @@ spec({ first: 'b' })
 // returns 'base first-b'
 ```
 
-### Variants
+## Variants
 
 Specs define maps of variants, the names of which are determined by their key in the `VariantDefinition` map. For example:
 
 ```typescript
-import { createSpec } from '@fashionable/core'
+import { createSpec } from '@fashionable/specs'
 
 const spec = createSpec({
   variants: {
@@ -115,16 +109,16 @@ spec({ variantOne: 'notAnOption' }) // invalid
 spec({ notAVariant: 'optionA' }) // invalid
 ```
 
-#### Error Handling
+### Error Handling
 
 Invalid variant names and option names are ignored in production. In development, a warning is emitted that includes the variant and/or option that is unknown to the spec.
 
-#### Booleans
+### Booleans
 
 If an option map specifies the strings `'true'` and `'false'` as its only options, the input for that variant is converted to a boolean type:
 
 ```typescript
-import { createSpec } from '@fashionable/core'
+import { createSpec } from '@fashionable/specs'
 
 const spec = createSpec({
   variants: {
@@ -139,12 +133,12 @@ spec({ variantOne: true }) // valid
 spec({ variantOne: 'true' }) // invalid
 ```
 
-### Defaults
+## Defaults
 
 You can define default variant options should the user not specify an option when calling the spec:
 
 ```typescript
-import { createSpec } from '@fashionable/core'
+import { createSpec } from '@fashionable/specs'
 
 const spec = createSpec({
   variants: {
@@ -166,12 +160,12 @@ spec() // returns `'optionA'`
 spec({ variantOne: 'optionB' }) // returns `'optionB'`
 ```
 
-### Compound Variants
+## Compound Variants
 
 Sometimes, certain styles should only be applied if multiple conditions are met. To avoid the need to flatten variant maps too much, compound conditions can be specified:
 
 ```typescript
-import { createSpec } from '@fashionable/core'
+import { createSpec } from '@fashionable/specs'
 
 const spec = createSpec({
   variants: {
@@ -205,13 +199,13 @@ spec({ first: 'a', second: 'b' })
 
 Compound variants are objects with `when` and `value` properties. The `when` property is a selection of variants and options that trigger the compound variant, and the `value` is the string or strings to include in the result.
 
-### Deduplication
+## Deduplication
 
 All strings collected from the user input, be them from variants or compound variants, are split by space characters and de-duplicated so that the final result only includes one instance of every string. This means that you can safely include the same class in multiple variant conditions without worrying about it unnecessarily being included more than once.
 
-### API
+## API
 
-#### `createSpec(options: SpecDefinition): SpecFn`
+### `createSpec(options: SpecDefinition): SpecFn`
 
 The `options` object accepts the following properties:
 
@@ -243,6 +237,6 @@ The `options` object accepts the following properties:
 
     The string or strings to include when the associated `when` condition is met by the user's input
 
-### Credits
+## Credits
 
 A special thank you to `@vanilla-extract/recipes` project for the API inspiration and starting point for the types.

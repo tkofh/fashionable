@@ -1,10 +1,10 @@
 {
-  "name": "@fashionable/core",
+  "name": "@fashionable/specs",
   "version": "0.2.1",
   "description": "component-oriented classname generation utilites",
   "keywords": [],
   "author": "Tim Morris <timthewebguy@gmail.com>",
-  "homepage": "https://github.com/tkofh/fashionable/tree/main/packages/core#readme",
+  "homepage": "https://github.com/tkofh/fashionable/tree/main/packages/specs#readme",
   "license": "MIT",
   "sideEffects": false,
   "type": "module",
