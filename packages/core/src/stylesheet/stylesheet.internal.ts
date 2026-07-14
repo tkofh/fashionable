@@ -1,28 +1,28 @@
 import {
   isDeclaration,
   renderWith as renderDeclaration,
-} from '../declaration/declaration.internal.ts'
-import { isFontFaceRule, render as renderFontFace } from '../fontFace/fontFaceRule.internal.ts'
-import * as Equal from '../internal/equal.ts'
-import { EMPTY_REFS, unionRefs } from '../internal/refs.ts'
-import { isPropertyRule, render as renderPropertyRule } from '../property/propertyRule.internal.ts'
-import type { RenderOptions as PropertyRenderOptions } from '../property/propertyRule.ts'
-import { and as andQuery, render as renderQuery } from '../query/mediaQuery.internal.ts'
-import type { MediaQuery } from '../query/mediaQuery.ts'
+} from '#declaration/declaration.internal'
+import { isFontFaceRule, render as renderFontFace } from '#fontFace/fontFaceRule.internal'
+import * as Equal from '#internal/equal'
+import { EMPTY_REFS, unionRefs } from '#internal/refs'
+import { isPropertyRule, render as renderPropertyRule } from '#property/propertyRule.internal'
+import type { RenderOptions as PropertyRenderOptions } from '#property/propertyRule'
+import { and as andQuery, render as renderQuery } from '#query/mediaQuery.internal'
+import type { MediaQuery } from '#query/mediaQuery'
 import {
   refSetOf,
   type RenderContext,
   renderStyleRuleBlock,
   requireMediaRule,
   resolveRenderOptions,
-} from '../rule/rule.internal.ts'
-import { concat as concatBlocks } from '../rule/ruleSet.internal.ts'
-import type { RuleSet } from '../rule/ruleSet.ts'
-import { isStyleRule, make as makeStyleRule } from '../rule/styleRule.internal.ts'
-import type { StyleRule } from '../rule/styleRule.ts'
-import { render as renderSelector } from '../selector/selector.internal.ts'
-import type { Selector } from '../selector/selector.ts'
-import { dual, Pipeable } from '../utils.ts'
+} from '#rule/rule.internal'
+import { concat as concatBlocks } from '#rule/ruleSet.internal'
+import type { RuleSet } from '#rule/ruleSet'
+import { isStyleRule, make as makeStyleRule } from '#rule/styleRule.internal'
+import type { StyleRule } from '#rule/styleRule'
+import { render as renderSelector } from '#selector/selector.internal'
+import type { Selector } from '#selector/selector'
+import { dual, Pipeable } from '#util'
 import type { Node, NodeRefs, RenderOptions, Stylesheet } from './stylesheet.ts'
 
 export const StylesheetTypeId = Symbol.for('fashionable/stylesheet')

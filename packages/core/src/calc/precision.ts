@@ -1,4 +1,4 @@
-import type { Pipeable } from '../utils.ts'
+import type { Pipeable } from '#util'
 import type { PrecisionTypeId } from './precision.internal.ts'
 import * as internal from './precision.internal.ts'
 

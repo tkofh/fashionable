@@ -1,4 +1,4 @@
-import type { Pipeable } from '../utils.ts'
+import type { Pipeable } from '#util'
 import type { SelectorTypeId } from './selector.internal.ts'
 import * as internal from './selector.internal.ts'
 import type { Specificity } from './specificity.ts'

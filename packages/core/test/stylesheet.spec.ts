@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest'
-import { Calc } from '../src/calc/index.ts'
-import { Declaration } from '../src/declaration/index.ts'
-import { FontFaceRule } from '../src/fontFace/index.ts'
-import { PropertyRule, PropertySyntax } from '../src/property/index.ts'
-import { RuleSet, StyleRule } from '../src/rule/index.ts'
-import { Selector } from '../src/selector/index.ts'
-import { Stylesheet } from '../src/stylesheet/index.ts'
+import { Calc } from '#calc'
+import { Declaration } from '#declaration'
+import { FontFaceRule } from '#fontFace'
+import { PropertyRule, PropertySyntax } from '#property'
+import { RuleSet, StyleRule } from '#rule'
+import { Selector } from '#selector'
+import { Stylesheet } from '#stylesheet'
 
 describe('stylesheet', () => {
   const depthRegistration = PropertyRule.make('--depth', PropertySyntax.number, 0)

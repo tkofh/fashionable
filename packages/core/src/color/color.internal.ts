@@ -9,13 +9,13 @@ import {
   serializeNode,
   substituteNode,
   toCalc,
-} from '../calc/calc.internal.ts'
-import type { ApplyBindings, Bindings, Input, SerializeOptions } from '../calc/calc.ts'
-import { toSpec } from '../calc/precision.internal.ts'
-import * as Equal from '../internal/equal.ts'
-import { DEFAULT_FORMAT, type FormatSpec } from '../internal/format.ts'
-import { unionRefs } from '../internal/refs.ts'
-import { dual, Pipeable } from '../utils.ts'
+} from '#calc/calc.internal'
+import type { ApplyBindings, Bindings, Input, SerializeOptions } from '#calc/calc'
+import { toSpec } from '#calc/precision.internal'
+import * as Equal from '#internal/equal'
+import { DEFAULT_FORMAT, type FormatSpec } from '#internal/format'
+import { unionRefs } from '#internal/refs'
+import { dual, Pipeable } from '#util'
 import type { Color } from './color.ts'
 
 export const ColorTypeId = Symbol.for('fashionable/color')

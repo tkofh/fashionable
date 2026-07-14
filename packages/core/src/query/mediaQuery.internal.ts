@@ -1,6 +1,6 @@
-import * as Equal from '../internal/equal.ts'
-import { formatDecimals } from '../internal/format.ts'
-import { dual, invariant, Pipeable } from '../utils.ts'
+import * as Equal from '#internal/equal'
+import { formatDecimals } from '#internal/format'
+import { dual, invariant, Pipeable } from '#util'
 import type { MediaQuery, RenderOptions } from './mediaQuery.ts'
 
 export const MediaQueryTypeId = Symbol.for('fashionable/query/mediaQuery')

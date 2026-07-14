@@ -3,12 +3,12 @@ import {
   refsOf as calcRefsOf,
   serialize as serializeCalc,
   toCalc,
-} from '../calc/calc.internal.ts'
-import type { Calc } from '../calc/calc.ts'
-import { refsOf as colorRefsOf, serialize as serializeColor } from '../color/color.internal.ts'
-import * as Equal from '../internal/equal.ts'
-import { DEFAULT_INDENT, quote, renderBlock } from '../internal/render.ts'
-import { dual, invariant, Pipeable } from '../utils.ts'
+} from '#calc/calc.internal'
+import type { Calc } from '#calc/calc'
+import { refsOf as colorRefsOf, serialize as serializeColor } from '#color/color.internal'
+import * as Equal from '#internal/equal'
+import { DEFAULT_INDENT, quote, renderBlock } from '#internal/render'
+import { dual, invariant, Pipeable } from '#util'
 import type { PropertyRule, RenderOptions, Value } from './propertyRule.ts'
 import { isUniversal, render as renderSyntax, universal } from './propertySyntax.internal.ts'
 import type { PropertySyntax } from './propertySyntax.ts'

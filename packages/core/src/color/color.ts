@@ -1,5 +1,5 @@
-import type { ApplyBindings, Bindings, Input, SerializeOptions } from '../calc/calc.ts'
-import type { Pipeable } from '../utils.ts'
+import type { ApplyBindings, Bindings, Input, SerializeOptions } from '#calc/calc'
+import type { Pipeable } from '#util'
 import type { ColorTypeId } from './color.internal.ts'
 import * as internal from './color.internal.ts'
 

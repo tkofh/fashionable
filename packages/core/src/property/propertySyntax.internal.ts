@@ -1,7 +1,7 @@
-import type { Calc } from '../calc/calc.ts'
-import type { Color } from '../color/color.ts'
-import * as Equal from '../internal/equal.ts'
-import { dual, invariant, Pipeable } from '../utils.ts'
+import type { Calc } from '#calc/calc'
+import type { Color } from '#color/color'
+import * as Equal from '#internal/equal'
+import { dual, invariant, Pipeable } from '#util'
 import type { PropertySyntax, Universal, ValueOf } from './propertySyntax.ts'
 
 export const PropertySyntaxTypeId = Symbol.for('fashionable/property/propertySyntax')

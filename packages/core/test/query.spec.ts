@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { MediaQuery } from '../src/query/index.ts'
+import { MediaQuery } from '#query'
 
 describe('query', () => {
   describe('rendering', () => {

@@ -1,5 +1,5 @@
-import type { MediaQuery } from '../query/mediaQuery.ts'
-import type { Pipeable } from '../utils.ts'
+import type { MediaQuery } from '#query/mediaQuery'
+import type { Pipeable } from '#util'
 import type { MediaRuleTypeId } from './mediaRule.internal.ts'
 import * as internal from './mediaRule.internal.ts'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.ts'

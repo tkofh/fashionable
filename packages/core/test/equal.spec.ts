@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import { Calc, Precision } from '../src/calc/index.ts'
-import { Color } from '../src/color/index.ts'
-import * as Equal from '../src/internal/equal.ts'
+import { Calc, Precision } from '#calc'
+import { Color } from '#color'
+import * as Equal from '#internal/equal'
 
 describe('equal', () => {
   describe('Calc.equals', () => {

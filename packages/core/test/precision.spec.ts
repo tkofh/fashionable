@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { Calc, Precision } from '../src/calc/index.ts'
+import { Calc, Precision } from '#calc'
 
 describe('precision', () => {
   describe('constructors', () => {

@@ -1,10 +1,10 @@
 import type {
   Declaration,
   RenderOptions as DeclarationRenderOptions,
-} from '../declaration/declaration.ts'
-import type { MediaQuery } from '../query/mediaQuery.ts'
-import type { Selector } from '../selector/selector.ts'
-import type { Pipeable } from '../utils.ts'
+} from '#declaration/declaration'
+import type { MediaQuery } from '#query/mediaQuery'
+import type { Selector } from '#selector/selector'
+import type { Pipeable } from '#util'
 import type { MediaRule } from './mediaRule.ts'
 import type { RuleSetTypeId } from './ruleSet.internal.ts'
 import * as internal from './ruleSet.internal.ts'

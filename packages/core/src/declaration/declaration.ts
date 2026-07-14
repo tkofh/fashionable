@@ -1,8 +1,8 @@
-import type { ApplyBindings, Bindings, Calc } from '../calc/calc.ts'
-import type { Precision } from '../calc/precision.ts'
-import type { Color } from '../color/color.ts'
-import type { RenderOptions as MediaQueryRenderOptions } from '../query/mediaQuery.ts'
-import type { Pipeable } from '../utils.ts'
+import type { ApplyBindings, Bindings, Calc } from '#calc/calc'
+import type { Precision } from '#calc/precision'
+import type { Color } from '#color/color'
+import type { RenderOptions as MediaQueryRenderOptions } from '#query/mediaQuery'
+import type { Pipeable } from '#util'
 import type { DeclarationTypeId } from './declaration.internal.ts'
 import * as internal from './declaration.internal.ts'
 

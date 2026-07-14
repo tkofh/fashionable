@@ -20,6 +20,7 @@ export default defineConfig({
     '@typescript-eslint/no-namespace': 'error',
     '@typescript-eslint/no-unused-vars': 'warn',
     'import/no-default-export': 'error',
+    'import/extensions': ['error', 'always', { ignorePackages: true }],
     curly: 'error',
     'no-lonely-if': 'error',
     'operator-assignment': 'error',

@@ -1,4 +1,4 @@
-import type { Pipeable } from '../utils.ts'
+import type { Pipeable } from '#util'
 import type { SpecificityTypeId } from './specificity.internal.ts'
 import * as internal from './specificity.internal.ts'
 

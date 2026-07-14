@@ -1,4 +1,4 @@
-import type { Pipeable } from '../utils.ts'
+import type { Pipeable } from '#util'
 import type { MediaQueryTypeId } from './mediaQuery.internal.ts'
 import * as internal from './mediaQuery.internal.ts'
 

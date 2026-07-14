@@ -1,5 +1,5 @@
-import type { Selector } from '../selector/selector.ts'
-import type { Pipeable } from '../utils.ts'
+import type { Selector } from '#selector/selector'
+import type { Pipeable } from '#util'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.ts'
 import type { StyleRuleTypeId } from './styleRule.internal.ts'
 import * as internal from './styleRule.internal.ts'

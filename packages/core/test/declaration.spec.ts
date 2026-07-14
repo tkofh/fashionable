@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import { Calc, Precision } from '../src/calc/index.ts'
-import { Color } from '../src/color/index.ts'
-import { Declaration } from '../src/declaration/index.ts'
+import { Calc, Precision } from '#calc'
+import { Color } from '#color'
+import { Declaration } from '#declaration'
 
 describe('declaration', () => {
   describe('construction', () => {

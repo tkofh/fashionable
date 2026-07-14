@@ -1,13 +1,13 @@
-import * as Equal from '../internal/equal.ts'
+import * as Equal from '#internal/equal'
 import {
   DEFAULT_FORMAT,
   type FormatSpec,
   formatWith,
   specEquals,
   specFidelity,
-} from '../internal/format.ts'
-import { EMPTY_REFS } from '../internal/refs.ts'
-import { dual, invariant, Pipeable } from '../utils.ts'
+} from '#internal/format'
+import { EMPTY_REFS } from '#internal/refs'
+import { dual, invariant, Pipeable } from '#util'
 import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from './calc.ts'
 import { toSpec } from './precision.internal.ts'
 import type { Precision } from './precision.ts'

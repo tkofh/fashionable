@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import { Calc, Precision } from '../src/calc/index.ts'
-import { Color } from '../src/color/index.ts'
-import { PropertyRule, PropertySyntax } from '../src/property/index.ts'
+import { Calc, Precision } from '#calc'
+import { Color } from '#color'
+import { PropertyRule, PropertySyntax } from '#property'
 
 describe('property', () => {
   describe('PropertySyntax', () => {

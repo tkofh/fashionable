@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { FontFaceRule } from '../src/fontFace/index.ts'
+import { FontFaceRule } from '#fontFace'
 
 describe('fontFace', () => {
   describe('FontFaceRule', () => {

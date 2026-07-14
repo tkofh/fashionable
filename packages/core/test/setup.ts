@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import * as Equal from '../src/internal/equal.ts'
+import * as Equal from '#internal/equal'
 
 interface StructuralMatchers<R = unknown> {
   toStructurallyEqual(expected: unknown): R

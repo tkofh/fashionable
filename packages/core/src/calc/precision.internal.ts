@@ -1,5 +1,5 @@
-import type { FormatSpec } from '../internal/format.ts'
-import { invariant, Pipeable } from '../utils.ts'
+import type { FormatSpec } from '#internal/format'
+import { invariant, Pipeable } from '#util'
 import type { Precision } from './precision.ts'
 
 export const PrecisionTypeId = Symbol.for('fashionable/calc/precision')

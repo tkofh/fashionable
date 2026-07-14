@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { Calc } from '../src/calc/index.ts'
-import { Declaration } from '../src/declaration/index.ts'
-import { MediaQuery } from '../src/query/index.ts'
-import { MediaRule, RuleSet, StyleRule } from '../src/rule/index.ts'
-import { Selector } from '../src/selector/index.ts'
+import { Calc } from '#calc'
+import { Declaration } from '#declaration'
+import { MediaQuery } from '#query'
+import { MediaRule, RuleSet, StyleRule } from '#rule'
+import { Selector } from '#selector'
 
 describe('rule', () => {
   const color = Declaration.make('color', 'red')

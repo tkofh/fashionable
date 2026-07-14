@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { Calc } from '../src/calc/index.ts'
-import { dual, flow, invariant, pipe } from '../src/utils.ts'
+import { Calc } from '#calc'
+import { dual, flow, invariant, pipe } from '#util'
 
 describe('utils', () => {
   describe('pipe', () => {

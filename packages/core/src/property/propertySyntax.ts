@@ -1,6 +1,6 @@
-import type { Calc } from '../calc/calc.ts'
-import type { Color } from '../color/color.ts'
-import type { Pipeable } from '../utils.ts'
+import type { Calc } from '#calc/calc'
+import type { Color } from '#color/color'
+import type { Pipeable } from '#util'
 import type { PropertySyntaxTypeId } from './propertySyntax.internal.ts'
 import * as internal from './propertySyntax.internal.ts'
 

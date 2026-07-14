@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { Calc } from '../src/calc/index.ts'
+import { Calc } from '#calc'
 
 describe('serialization', () => {
   describe('constants', () => {

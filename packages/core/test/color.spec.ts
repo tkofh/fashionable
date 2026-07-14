@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { Calc } from '../src/calc/index.ts'
-import { Color } from '../src/color/index.ts'
+import { Calc } from '#calc'
+import { Color } from '#color'
 
 describe('color', () => {
   describe('oklch', () => {

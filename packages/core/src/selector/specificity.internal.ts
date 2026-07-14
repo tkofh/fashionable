@@ -1,5 +1,5 @@
-import * as Equal from '../internal/equal.ts'
-import { dual, invariant, Pipeable } from '../utils.ts'
+import * as Equal from '#internal/equal'
+import { dual, invariant, Pipeable } from '#util'
 import type { Specificity } from './specificity.ts'
 
 export const SpecificityTypeId = Symbol.for('fashionable/selector/specificity')

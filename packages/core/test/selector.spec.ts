@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { Selector, Specificity } from '../src/selector/index.ts'
+import { Selector, Specificity } from '#selector'
 
 describe('selector', () => {
   describe('part rendering', () => {

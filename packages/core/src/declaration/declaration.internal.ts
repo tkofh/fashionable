@@ -4,17 +4,17 @@ import {
   refsOf as calcRefsOf,
   serialize as serializeCalc,
   toCalc,
-} from '../calc/calc.internal.ts'
-import type { ApplyBindings, Bindings, Input } from '../calc/calc.ts'
-import type { Precision } from '../calc/precision.ts'
+} from '#calc/calc.internal'
+import type { ApplyBindings, Bindings, Input } from '#calc/calc'
+import type { Precision } from '#calc/precision'
 import {
   bind as bindColor,
   refsOf as colorRefsOf,
   serialize as serializeColor,
-} from '../color/color.internal.ts'
-import * as Equal from '../internal/equal.ts'
-import { EMPTY_REFS } from '../internal/refs.ts'
-import { dual, invariant, Pipeable } from '../utils.ts'
+} from '#color/color.internal'
+import * as Equal from '#internal/equal'
+import { EMPTY_REFS } from '#internal/refs'
+import { dual, invariant, Pipeable } from '#util'
 import type { Declaration, RenderOptions, Value } from './declaration.ts'
 
 export const DeclarationTypeId = Symbol.for('fashionable/declaration')

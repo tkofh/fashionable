@@ -1,5 +1,5 @@
-import type { RenderOptions as DeclarationRenderOptions } from '../declaration/declaration.ts'
-import type { Pipeable } from '../utils.ts'
+import type { RenderOptions as DeclarationRenderOptions } from '#declaration/declaration'
+import type { Pipeable } from '#util'
 import type { FontFaceRuleTypeId, SourceTypeId } from './fontFaceRule.internal.ts'
 import * as internal from './fontFaceRule.internal.ts'
 

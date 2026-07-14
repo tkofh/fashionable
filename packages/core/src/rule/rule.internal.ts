@@ -11,18 +11,18 @@
  * close the cycle.
  */
 
-import type { Precision } from '../calc/precision.ts'
+import type { Precision } from '#calc/precision'
 import {
   isDeclaration,
   refsOf as declarationRefsOf,
   renderWith as renderDeclaration,
-} from '../declaration/declaration.internal.ts'
-import { DEFAULT_INDENT } from '../internal/render.ts'
-import { render as renderQuery } from '../query/mediaQuery.internal.ts'
-import type { MediaQuery } from '../query/mediaQuery.ts'
-import { render as renderSelector } from '../selector/selector.internal.ts'
-import type { Selector } from '../selector/selector.ts'
-import { invariant } from '../utils.ts'
+} from '#declaration/declaration.internal'
+import { DEFAULT_INDENT } from '#internal/render'
+import { render as renderQuery } from '#query/mediaQuery.internal'
+import type { MediaQuery } from '#query/mediaQuery'
+import { render as renderSelector } from '#selector/selector.internal'
+import type { Selector } from '#selector/selector'
+import { invariant } from '#util'
 import type { MediaRule } from './mediaRule.ts'
 import type { Member, RuleSet } from './ruleSet.ts'
 import type { StyleRule } from './styleRule.ts'
