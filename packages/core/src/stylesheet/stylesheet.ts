@@ -1,0 +1,327 @@
+import type { FontFaceRule } from '../fontFace/fontFaceRule.ts'
+import type { PropertyRule } from '../property/propertyRule.ts'
+import type { RenderOptions as RuleSetRenderOptions, RuleSet } from '../rule/ruleSet.ts'
+import type { StyleRule } from '../rule/styleRule.ts'
+import type { Selector } from '../selector/selector.ts'
+import type { Pipeable } from '../utils.ts'
+import type { StylesheetTypeId } from './stylesheet.internal.ts'
+import * as internal from './stylesheet.internal.ts'
+
+/**
+ * The top level of a CSS file: an ordered sequence of style rules and
+ * declaration-block at-rules, kept structurally distinct.
+ *
+ * Node order is preserved exactly as authored — never sorted, because
+ * top-level order is cascade behavior — but a node structurally equal to
+ * an earlier one is dropped at construction, the first occurrence
+ * winning. That distinctness invariant is what makes `merge` a lawful
+ * monoid: sheets from independent emitters fold without duplicating the
+ * rules they share.
+ *
+ * The `Refs` parameter unions the nodes' unbound reference names, as on
+ * `Calc` — read `Stylesheet<'depth'>` as "this sheet reads
+ * `var(--depth)`": a dependency report, not an error state. `refs` is
+ * the runtime set.
+ *
+ * Construct via `make` (or `empty` and `append`).
+ *
+ * @since 0.1.0
+ */
+export interface Stylesheet<out Refs extends string = string> extends Pipeable {
+  readonly [StylesheetTypeId]: StylesheetTypeId
+  /**
+   * The sheet's nodes, in authored order, structurally distinct.
+   */
+  readonly nodes: ReadonlyArray<Node<Refs>>
+}
+
+/**
+ * The forms a stylesheet may contain at its top level: style rules and
+ * the declaration-block at-rules (`@font-face`, `@property`).
+ *
+ * Deliberately absent are `Declaration` — CSS has no top-level
+ * declarations — and `MediaRule`: media enters the model nested inside a
+ * style rule's block, and the flat renderer distributes the prelude back
+ * out to the traditional top-level `@media` form. The full
+ * unrepresentability scheme lives in `docs/design.md`.
+ *
+ * @since 0.1.0
+ */
+export type Node<Refs extends string = string> = StyleRule<Refs> | FontFaceRule | PropertyRule
+
+/**
+ * The unbound reference names of a `Node`, or the union of them for a
+ * union of nodes — the type-level counterpart of `refs`, used by the
+ * constructors to thread node names into the result. Only style rules
+ * carry references; the at-rule forms contribute `never`, since
+ * `@property` initial values are closed by construction.
+ *
+ * @since 0.1.0
+ */
+export type NodeRefs<N extends Node<string>> = N extends StyleRule<infer R> ? R : never
+
+/**
+ * Checks if a value is a `Stylesheet`.
+ *
+ * True only for values built by this module's constructors, which carry
+ * the brand.
+ *
+ * @param u - The value to check.
+ * @returns `true` if the value is a `Stylesheet`, `false` otherwise.
+ * @since 0.1.0
+ */
+export const isStylesheet: (u: unknown) => u is Stylesheet<string> = internal.isStylesheet
+
+/**
+ * The empty stylesheet — the identity for `merge`.
+ *
+ * @since 0.1.0
+ */
+export const empty: Stylesheet<never> = internal.empty
+
+/**
+ * Creates a stylesheet holding the given nodes, in the given order, with
+ * structural duplicates dropped — the first occurrence wins.
+ *
+ * @param nodes - Style rules and at-rules, in authored order.
+ * @returns A `Stylesheet` whose `Refs` unions the nodes' reference names.
+ * @example
+ * ```ts
+ * const sheet = Stylesheet.make(
+ *   PropertyRule.make('--depth', PropertySyntax.number, 0),
+ *   StyleRule.make(
+ *     Selector.class('card'),
+ *     RuleSet.make(Declaration.make('--indent', Calc.multiply(Calc.ref('depth'), 8))),
+ *   ),
+ * ) // Stylesheet<'depth'>
+ * ```
+ * @since 0.1.0
+ */
+export const make: <Nodes extends ReadonlyArray<Node<string>>>(
+  ...nodes: Nodes
+) => Stylesheet<NodeRefs<Nodes[number]>> = internal.make
+
+export const append: {
+  /**
+   * Returns a function that appends `node` to its argument's sheet.
+   *
+   * @param node - The node to append.
+   * @returns A function producing the extended sheet.
+   * @since 0.1.0
+   */
+  <N extends Node<string>>(
+    node: N,
+  ): <Refs extends string>(self: Stylesheet<Refs>) => Stylesheet<Refs | NodeRefs<N>>
+  /**
+   * Returns a function that appends the style rule `selector { block }`
+   * to its argument's sheet.
+   *
+   * @param selector - The rule's selector.
+   * @param block - The rule's block.
+   * @returns A function producing the extended sheet.
+   * @since 0.1.0
+   */
+  <B extends string>(
+    selector: Selector,
+    block: RuleSet<B>,
+  ): <Refs extends string>(self: Stylesheet<Refs>) => Stylesheet<Refs | B>
+  /**
+   * Appends a node at the end of the sheet — unless a structurally equal
+   * node is already present, in which case the same sheet comes back
+   * unchanged (the first occurrence wins). Otherwise the result is a new
+   * sheet; the original is untouched.
+   *
+   * @param self - The sheet to extend.
+   * @param node - The node to append.
+   * @returns The extended sheet, with the node's reference names joined in.
+   * @since 0.1.0
+   */
+  <Refs extends string, N extends Node<string>>(
+    self: Stylesheet<Refs>,
+    node: N,
+  ): Stylesheet<Refs | NodeRefs<N>>
+  /**
+   * Appends a style rule from its parts — sugar for
+   * `append(self, StyleRule.make(selector, block))`, so sheets compose
+   * without naming `StyleRule` at the call site. Deduplication applies
+   * as usual: a sheet already carrying an equal rule comes back
+   * unchanged.
+   *
+   * @param self - The sheet to extend.
+   * @param selector - The rule's selector.
+   * @param block - The rule's block.
+   * @returns The extended sheet, with the block's reference names joined in.
+   * @example
+   * ```ts
+   * Stylesheet.empty.pipe(
+   *   Stylesheet.append(Selector.root, RuleSet.make(Declaration.make('--depth', 0))),
+   * )
+   * ```
+   * @since 0.1.0
+   */
+  <Refs extends string, B extends string>(
+    self: Stylesheet<Refs>,
+    selector: Selector,
+    block: RuleSet<B>,
+  ): Stylesheet<Refs | B>
+} = internal.append
+
+export const merge: {
+  /**
+   * Returns a function that merges `that`'s novel nodes after its
+   * argument's.
+   *
+   * @param that - The sheet whose novel nodes come second.
+   * @returns A function producing the merged sheet.
+   * @since 0.1.0
+   */
+  <B extends string>(
+    that: Stylesheet<B>,
+  ): <A extends string>(self: Stylesheet<A>) => Stylesheet<A | B>
+  /**
+   * Merges two sheets: `self`'s nodes followed by the nodes of `that`
+   * not already present, order preserved on both sides — structural
+   * duplicates collapse to their first occurrence. With `empty` as
+   * identity this is a lawful monoid (associative, idempotent), which is
+   * the multi-emitter fold: emitters that each register the rules they
+   * share merge to a sheet carrying one copy.
+   *
+   * @param self - The sheet whose nodes come first.
+   * @param that - The sheet whose novel nodes follow.
+   * @returns The merged sheet, with both sides' reference names unioned.
+   * @example
+   * ```ts
+   * const contract = Stylesheet.make(PropertyRule.make('--depth', PropertySyntax.number, 0))
+   * Stylesheet.merge(contract, contract) // one node — merge is idempotent
+   * ```
+   * @since 0.1.0
+   */
+  <A extends string, B extends string>(self: Stylesheet<A>, that: Stylesheet<B>): Stylesheet<A | B>
+} = internal.merge
+
+/**
+ * Folds any number of sheets with `merge`, left to right — `empty` when
+ * given none.
+ *
+ * @param sheets - The sheets to fold, in order.
+ * @returns The merged sheet, with every sheet's reference names unioned.
+ * @since 0.1.0
+ */
+export const mergeAll: <Refs extends string>(
+  sheets: ReadonlyArray<Stylesheet<Refs>>,
+) => Stylesheet<Refs> = internal.mergeAll
+
+/**
+ * Coalesces style rules that share a selector: each later rule's block
+ * is concatenated onto the first rule with a structurally equal selector
+ * (in sheet order, as `RuleSet.concat` would), and the later rule is
+ * dropped. Other node kinds pass through untouched.
+ *
+ * Deliberately separate from `merge`, and order-sensitive: pulling a
+ * block backward past an intervening rule can change the cascade when
+ * the intervening selector ties on specificity, so coalescing is an
+ * explicit opt-in normalization.
+ *
+ * @param sheet - The sheet to normalize.
+ * @returns The coalesced sheet; the same sheet when no selector repeats.
+ * @since 0.1.0
+ */
+export const coalesce: <Refs extends string>(sheet: Stylesheet<Refs>) => Stylesheet<Refs> =
+  internal.coalesce
+
+/**
+ * The sheet's unbound reference names, unioned across nodes — the custom
+ * properties the sheet reads via `var()`, including everything nested
+ * rules contribute.
+ *
+ * @param sheet - The sheet to inspect.
+ * @returns The set of unbound reference names.
+ * @since 0.1.0
+ */
+export const refs: <Refs extends string>(sheet: Stylesheet<Refs>) => ReadonlySet<Refs> =
+  internal.refs
+
+/**
+ * Options for `render` — the top of the render-options family: it
+ * extends `RuleSet.RenderOptions` (and through it the family base,
+ * `MediaQuery.RenderOptions`) with the sheet-level `format` choice, so
+ * it is a superset of every other module's render options and one
+ * options object composes across the library's `render` functions.
+ *
+ * Options change text, never meaning: any combination renders the same
+ * cascade from the same sheet.
+ *
+ * @since 0.1.0
+ */
+export interface RenderOptions extends RuleSetRenderOptions {
+  /**
+   * The output shape. `'flat'` (the default) un-nests `@media` by
+   * prelude distribution; `'nested'` emits the model's own nested form.
+   * Both cascade identically.
+   */
+  readonly format?: 'flat' | 'nested'
+}
+
+/**
+ * Renders the whole sheet as CSS text: at-rule nodes as their own
+ * blocks, style rules per the `format` option.
+ *
+ * The default `'flat'` format un-nests by prelude distribution: walking
+ * a style rule carries the selector and the and-composition of the media
+ * queries passed through (deduplicated and canonically ordered, so
+ * composition order cannot change the text), and each maximal run of
+ * consecutive declarations emits one `selector { ... }` block — wrapped
+ * in `@media` when queries apply — at the position its first declaration
+ * held. The `'nested'` format instead emits each style rule as
+ * `StyleRule.render` does, `@media` blocks kept inside. Both formats
+ * cascade identically because member order is preserved either way.
+ *
+ * Empty blocks emit nothing. Top-level sections join with one blank
+ * line, without a trailing newline. Unbound references render as
+ * `var(--name)`.
+ *
+ * @param sheet - The stylesheet to render.
+ * @param options - Optional format, indentation unit, precision context, and media syntax.
+ * @returns Deterministic CSS text.
+ * @throws `Error` when a style rule nests inside another rule's block — selector composition (`&`) is a later extension, not part of v1 rendering.
+ * @example
+ * ```ts
+ * const sheet = Stylesheet.empty.pipe(
+ *   Stylesheet.append(
+ *     Selector.root,
+ *     RuleSet.make(Declaration.make('--gutter', 16)).pipe(
+ *       RuleSet.append(MediaQuery.minWidth(768), RuleSet.make(Declaration.make('--gutter', 24))),
+ *     ),
+ *   ),
+ * )
+ * Stylesheet.render(sheet)
+ * // ":root {\n\t--gutter: 16;\n}\n\n@media (min-width: 768px) {\n\t:root {\n\t\t--gutter: 24;\n\t}\n}"
+ * Stylesheet.render(sheet, { format: 'nested' })
+ * // ":root {\n\t--gutter: 16;\n\t@media (min-width: 768px) {\n\t\t--gutter: 24;\n\t}\n}"
+ * ```
+ * @since 0.1.0
+ */
+export const render: (sheet: Stylesheet<string>, options?: RenderOptions) => string =
+  internal.render
+
+export const equals: {
+  /**
+   * Returns a function that checks structural equality against `that`.
+   *
+   * @param that - The sheet to compare against.
+   * @returns A function testing its argument for structural equality with `that`.
+   * @since 0.1.0
+   */
+  (that: Stylesheet<string>): (self: Stylesheet<string>) => boolean
+  /**
+   * Structural equality over nodes, in order. Order participates —
+   * sheets holding the same nodes in different orders cascade
+   * differently, so they compare unequal.
+   *
+   * @param self - The first sheet.
+   * @param that - The second sheet.
+   * @returns `true` if the sheets are structurally equal.
+   * @since 0.1.0
+   */
+  (self: Stylesheet<string>, that: Stylesheet<string>): boolean
+} = internal.equals
