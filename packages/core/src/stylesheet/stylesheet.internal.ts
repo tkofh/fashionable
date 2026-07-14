@@ -1,12 +1,12 @@
-import { isFontFaceRule, render as renderFontFace } from '../fontFace/fontFaceRule.internal.ts'
-import { isPropertyRule, render as renderPropertyRule } from '../property/propertyRule.internal.ts'
-import type { RenderOptions as PropertyRenderOptions } from '../property/propertyRule.ts'
 import {
   isDeclaration,
   renderWith as renderDeclaration,
 } from '../declaration/declaration.internal.ts'
+import { isFontFaceRule, render as renderFontFace } from '../fontFace/fontFaceRule.internal.ts'
 import * as Equal from '../internal/equal.ts'
 import { EMPTY_REFS, unionRefs } from '../internal/refs.ts'
+import { isPropertyRule, render as renderPropertyRule } from '../property/propertyRule.internal.ts'
+import type { RenderOptions as PropertyRenderOptions } from '../property/propertyRule.ts'
 import { and as andQuery, render as renderQuery } from '../query/mediaQuery.internal.ts'
 import type { MediaQuery } from '../query/mediaQuery.ts'
 import {

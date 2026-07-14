@@ -11,5 +11,23 @@
   "arrowParens": "always",
   "bracketSameLine": false,
   "bracketSpacing": true,
-  "ignorePatterns": []
+  "ignorePatterns": [],
+  "sortImports": {
+    "newlinesBetween": false,
+    "customGroups": [
+      {
+        "elementNamePattern": ["@repo/**"],
+        "groupName": "repo"
+      }
+    ],
+    "groups": [
+      ["builtin", "external"],
+      "repo",
+      ["internal", "subpath"],
+      "parent",
+      "sibling",
+      "index",
+      "unknown"
+    ]
+  }
 }

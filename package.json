@@ -13,7 +13,7 @@
     "format": "oxfmt --check .",
     "format:fix": "oxfmt .",
     "check": "oxlint . && oxfmt --check .",
-    "check:fix": "oxlint --fix . && oxfmt .",
+    "fix": "oxlint --fix . && oxfmt .",
     "version-packages": "changeset version && pnpm run format:fix"
   },
   "devDependencies": {

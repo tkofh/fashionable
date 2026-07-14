@@ -9,8 +9,8 @@ import {
 import { EMPTY_REFS } from '../internal/refs.ts'
 import { dual, invariant, Pipeable } from '../utils.ts'
 import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from './calc.ts'
-import type { Precision } from './precision.ts'
 import { toSpec } from './precision.internal.ts'
+import type { Precision } from './precision.ts'
 
 export const CalcTypeId = Symbol.for('fashionable/calc')
 export type CalcTypeId = typeof CalcTypeId

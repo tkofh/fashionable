@@ -1,7 +1,7 @@
 import * as Equal from '../internal/equal.ts'
-import { dual, invariant, Pipeable } from '../utils.ts'
 import { DEFAULT_FORMAT, formatWith } from '../internal/format.ts'
 import { DEFAULT_INDENT, quote, renderBlock } from '../internal/render.ts'
+import { dual, invariant, Pipeable } from '../utils.ts'
 import type {
   Descriptors,
   Display,

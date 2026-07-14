@@ -6,12 +6,12 @@ import {
   toCalc,
 } from '../calc/calc.internal.ts'
 import type { ApplyBindings, Bindings, Input } from '../calc/calc.ts'
+import type { Precision } from '../calc/precision.ts'
 import {
   bind as bindColor,
   refsOf as colorRefsOf,
   serialize as serializeColor,
 } from '../color/color.internal.ts'
-import type { Precision } from '../calc/precision.ts'
 import * as Equal from '../internal/equal.ts'
 import { EMPTY_REFS } from '../internal/refs.ts'
 import { dual, invariant, Pipeable } from '../utils.ts'
