@@ -30,3 +30,7 @@ yarn-error.log*
 dist
 
 .idea
+
+# docs: design.md is the only tracked doc; the rest is local scratch/feedback
+docs/*
+!docs/design.md
