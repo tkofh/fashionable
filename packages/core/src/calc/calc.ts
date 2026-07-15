@@ -1,3 +1,4 @@
+import type { ContextFree, UnitContext } from '#data/units'
 import type { Pipeable } from '#util'
 import type { CalcTypeId } from './calc.internal.ts'
 import * as internal from './calc.internal.ts'
@@ -80,6 +81,9 @@ type LeavesOf<A> = A extends Calc<string, Kind, infer L> ? L : never
 
 /** An operand constrained to number-kind (or a bare number). */
 type NumberIn = number | Calc<string, 'number', unknown>
+
+/** An operand accepted by `sin`/`cos`: a plain number (radians) or an angle. */
+type NumberOrAngleIn = number | Calc<string, 'number' | 'angle', unknown>
 
 /**
  * An operand constrained to `A`'s kind — a bare number only when `A` is
@@ -172,7 +176,7 @@ export interface SerializeOptions<Refs extends string = string> {
  * @returns `true` if the value is a `Calc`, `false` otherwise.
  * @since 0.1.0
  */
-export const isCalc: (u: unknown) => u is Calc<string> = internal.isCalc
+export const isCalc: (u: unknown) => u is Calc<string, Kind, unknown> = internal.isCalc
 
 /**
  * Creates a constant expression, optionally annotated with a serialization
@@ -439,49 +443,52 @@ export const abs: {
 export const sign: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.sign
 
 /**
- * The sine of an angle in radians. Serializes as the CSS `sin()`
- * function; CSS treats a plain-number argument as radians, so no unit
- * conversion is involved.
+ * The sine of its argument. Serializes as the CSS `sin()` function, which
+ * accepts an `<angle>` or a plain number treated as radians — so this takes
+ * either an angle-kind expression or a number, and returns a number.
  *
- * @param argument - The angle, in radians.
- * @returns The sine expression.
+ * @param argument - An angle, or a plain number in radians.
+ * @returns The sine, a `<number>`, carrying the argument's units.
  * @since 0.1.0
  */
-export const sin: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.sin
+export const sin: {
+  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+} = internal.sin
 
 /**
- * The cosine of an angle in radians. Serializes as the CSS `cos()`
- * function; CSS treats a plain-number argument as radians, so no unit
- * conversion is involved.
+ * The cosine of its argument. Serializes as the CSS `cos()` function, which
+ * accepts an `<angle>` or a plain number treated as radians — so this takes
+ * either an angle-kind expression or a number, and returns a number.
  *
- * @param argument - The angle, in radians.
- * @returns The cosine expression.
+ * @param argument - An angle, or a plain number in radians.
+ * @returns The cosine, a `<number>`, carrying the argument's units.
  * @since 0.1.0
  */
-export const cos: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.cos
+export const cos: {
+  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+} = internal.cos
 
 /**
- * The arccosine of a value in `[-1, 1]`, in radians. Solving evaluates
- * `Math.acos`.
+ * The arccosine of a value in `[-1, 1]`, an `<angle>` in radians (CSS's
+ * `acos()` returns an `<angle>`). Solving evaluates `Math.acos`, in radians.
  *
- * Serialization note: CSS's `acos()` returns an `<angle>`, not a number.
- * The serializer keeps such subtrees angle-typed — plain-number terms
- * added to or subtracted from an acos-carrying term are rendered with a
- * `rad` suffix (constants) or a `* 1rad` factor (anything else), so the
- * emitted CSS stays valid without typed division. In v1, consume
- * acos-carrying subtrees with `sin` or `cos`; feeding one into a plain
- * number context serializes to angle-typed CSS.
+ * Because the result is angle-kind, it composes only with other angles: divide
+ * or scale it by a number, and add or subtract an `Angle.rad(...)` phase. A
+ * plain number added to it is a type error — supply the phase as an angle.
  *
  * @param argument - The cosine value, in `[-1, 1]`.
- * @returns The arccosine expression, in radians.
+ * @returns The arccosine, an `<angle>`, carrying the argument's units.
  * @example
  * ```ts
- * Calc.serialize(Calc.cos(Calc.subtract(Calc.divide(Calc.acos(Calc.ref('u')), 3), 2.0943951)))
+ * const phase = Angle.rad(2.0943951)
+ * Calc.serialize(Calc.cos(Calc.subtract(Calc.divide(Calc.acos(Calc.ref('u')), 3), phase)))
  * // 'cos(acos(var(--u)) / 3 - 2.0944rad)'
  * ```
  * @since 0.1.0
  */
-export const acos: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.acos
+export const acos: {
+  <A extends NumberIn>(argument: A): Calc<RefsOf<A>, 'angle', LeavesOf<A>>
+} = internal.acos
 
 export const bind: {
   /**
@@ -524,21 +531,20 @@ export const bind: {
 
 export const solve: {
   /**
-   * Evaluates a fully bound expression to a number.
-   *
-   * The parameter type `Calc<never>` makes closedness a compile-time
-   * requirement; an expression with unbound references needs the bindings
+   * Evaluates a closed expression to a number. Absolute lengths (`px`) and
+   * angles (radians) lower with no context; a viewport- or font-relative unit
+   * needs the context overload, and an unbound reference needs the bindings
    * overload.
    *
-   * @param expr - The expression to evaluate. Must have no unbound references.
+   * @param expr - The expression. No unbound references, only context-free units.
    * @returns The numeric value.
-   * @throws `Error` when unbound references remain at runtime.
+   * @throws `Error` when unbound references or unresolvable units remain at runtime.
    * @since 0.1.0
    */
-  (expr: Calc<never>): number
+  (expr: Calc<never, Kind, ContextFree>): number
   /**
-   * Applies bindings, then evaluates to a number. The bindings must cover
-   * every unbound reference.
+   * Applies bindings, then evaluates to a number. For expressions whose units,
+   * if any, are all context-free.
    *
    * @param expr - The expression to evaluate.
    * @param bindings - Values for every unbound reference.
@@ -550,7 +556,32 @@ export const solve: {
    * ```
    * @since 0.1.0
    */
-  <Refs extends string, B extends Bindings<Refs>>(expr: Calc<Refs>, bindings: B): number
+  <Refs extends string, B extends Bindings<Refs>>(
+    expr: Calc<Refs, Kind, ContextFree>,
+    bindings: B,
+  ): number
+  /**
+   * Applies bindings, lowers each context-dependent unit through the context,
+   * then evaluates to a number. The context supplies a pixels-per-unit ratio
+   * for every relative unit the expression carries (`vw` is `sampleWidth / 100`);
+   * absolute lengths default (`px` is `1`) unless overridden.
+   *
+   * @param expr - The expression to evaluate.
+   * @param bindings - Values for every unbound reference.
+   * @param context - Ratios for the expression's context-dependent units.
+   * @returns The numeric value.
+   * @example
+   * ```ts
+   * const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
+   * Calc.solve(position, {}, { vw: 1280 / 100 }) // 6
+   * ```
+   * @since 0.2.0
+   */
+  <Refs extends string, B extends Bindings<Refs>, L>(
+    expr: Calc<Refs, Kind, L>,
+    bindings: B,
+    context: UnitContext<L>,
+  ): number
 } = internal.solve
 
 /**

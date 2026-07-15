@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Calc, Precision } from '#calc'
-import { Color } from '#color'
+import { Color } from '#data'
 import { PropertyRule, PropertySyntax } from '#property'
 
 describe('property', () => {
@@ -183,7 +183,11 @@ describe('property', () => {
         PropertyRule.make('--x', PropertySyntax.number),
       ).toThrow('universal syntax')
       expect(() =>
-        PropertyRule.make('--x', PropertySyntax.number, Calc.ref('u') as unknown as Calc.Calc<never>),
+        PropertyRule.make(
+          '--x',
+          PropertySyntax.number,
+          Calc.ref('u') as unknown as Calc.Calc<never>,
+        ),
       ).toThrow('computationally independent')
     })
 

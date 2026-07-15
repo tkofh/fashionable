@@ -44,10 +44,78 @@ describe('data — construction and serialization', () => {
       'clamp(16px, 4vw, 48px)',
     )
   })
+})
 
-  test('a dimensioned tree is not evaluable without a context', () => {
-    // typed callers cannot reach this; the cast models a dynamic/untyped caller
-    expect(() => Calc.solve(Length.px(10) as unknown as Calc.Calc<never>)).toThrow('unit context')
+describe('data — solving through a unit context', () => {
+  test('absolute lengths and angles solve with no context', () => {
+    expect(Calc.solve(Length.px(10))).toBe(10)
+    expect(Calc.solve(Angle.rad(2))).toBe(2)
+    expect(Calc.solve(Calc.add(Length.px(10), Length.px(5)))).toBe(15)
+  })
+
+  test('the fluid position term solves at a sample viewport width', () => {
+    const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
+    // (100 * 12.8 - 320) / 160 = 6 at a 1280px viewport
+    expect(Calc.solve(position, {}, { vw: 1280 / 100 })).toBe(6)
+    expect(Calc.solve(position, {}, { vw: 320 / 100 })).toBe(0)
+  })
+
+  test('an absolute override changes the solve base', () => {
+    // solve in half-pixels: every px counts double
+    expect(Calc.solve(Length.px(10), {}, { px: 2 })).toBe(20)
+  })
+
+  test('a relative unit with no ratio throws', () => {
+    // typed callers must pass a context; the cast models a dynamic/untyped caller
+    expect(() => Calc.solve(Length.vw(10) as unknown as Calc.Calc<never>)).toThrow(
+      "no ratio for 'vw'",
+    )
+  })
+})
+
+// the JS reference for the fluid curve below: the same closed form, with Math
+const fluidClosedForm = (width: number): number => {
+  const ratio = Math.min(1, Math.max(0, (width - 320) / 160))
+  const clamped = Math.min(1, Math.max(-1, 1 - 1.21633068 * ratio))
+  return 0.8731780843 + 1.746356169 * Math.cos(Math.acos(clamped) / 3 - 2.094395102)
+}
+
+describe('data — the full fluid curve', () => {
+  const sig = Precision.significant(10)
+  // dtcg's closed-form cardinal-segment inverse over a fluid position term.
+  const position = Calc.clamp(
+    0,
+    Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160)),
+    1,
+  )
+  const inner = Calc.subtract(1, Calc.multiply(Calc.of(1.21633068, sig), position))
+  const curve = Calc.add(
+    Calc.of(0.8731780843, sig),
+    Calc.multiply(
+      Calc.of(1.746356169, sig),
+      Calc.cos(
+        Calc.subtract(
+          Calc.divide(Calc.acos(Calc.clamp(-1, inner, 1)), 3),
+          Angle.rad(2.094395102, sig),
+        ),
+      ),
+    ),
+  )
+
+  test('serializes byte-exact, units and rad phase intact', () => {
+    expect(Calc.serialize(curve)).toBe(
+      'calc(0.8731780843 + 1.746356169 * cos(acos(clamp(-1, 1 - 1.21633068 * clamp(0, (100vw - 320px) / 160px, 1), 1)) / 3 - 2.094395102rad))',
+    )
+  })
+
+  test('solves against the closed form at sample viewport widths', () => {
+    for (const width of [320, 480, 768, 1280]) {
+      expect(Calc.solve(curve, {}, { vw: width / 100 })).toBeCloseTo(fluidClosedForm(width), 9)
+    }
+  })
+
+  test('is number-kind at the top but carries its units as leaves', () => {
+    expectTypeOf(curve).toEqualTypeOf<Calc.Calc<never, 'number', Unit.Vw | Unit.Px | Unit.Rad>>()
   })
 })
 
@@ -97,5 +165,16 @@ const dimensionalTypes = (): void => {
   Calc.multiply(Length.px(10), Length.px(10))
   // @ts-expect-error a <length> divided by an <angle> is invalid
   Calc.divide(Length.px(10), Angle.rad(1))
+
+  // solve: context-free trees need no context; relative units require one
+  const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
+  expectTypeOf(Calc.solve(Length.px(10))).toBeNumber()
+  expectTypeOf(Calc.solve(position, {}, { vw: 12.8 })).toBeNumber()
+  // @ts-expect-error a viewport-relative tree is not solvable without a context
+  Calc.solve(position)
+  // @ts-expect-error the context must supply the relative unit's ratio
+  Calc.solve(position, {}, {})
+  // @ts-expect-error px is an absolute override, not a substitute for the vw ratio
+  Calc.solve(position, {}, { px: 1 })
 }
 void dimensionalTypes

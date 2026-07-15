@@ -1,5 +1,5 @@
 import type { Calc } from '#calc/calc'
-import type { Color } from '#color/color'
+import type { Color } from '#data/color'
 import * as Equal from '#internal/equal'
 import { dual, invariant, Pipeable } from '#util'
 import type { PropertySyntax, Universal, ValueOf } from './propertySyntax.ts'

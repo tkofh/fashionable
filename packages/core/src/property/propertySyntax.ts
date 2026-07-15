@@ -1,5 +1,5 @@
 import type { Calc } from '#calc/calc'
-import type { Color } from '#color/color'
+import type { Color } from '#data/color'
 import type { Pipeable } from '#util'
 import type { PropertySyntaxTypeId } from './propertySyntax.internal.ts'
 import * as internal from './propertySyntax.internal.ts'

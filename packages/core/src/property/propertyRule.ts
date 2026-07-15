@@ -1,5 +1,5 @@
 import type { Calc } from '#calc/calc'
-import type { Color } from '#color/color'
+import type { Color } from '#data/color'
 import type { RenderOptions as DeclarationRenderOptions } from '#declaration/declaration'
 import type { Pipeable } from '#util'
 import type { PropertyRuleTypeId } from './propertyRule.internal.ts'

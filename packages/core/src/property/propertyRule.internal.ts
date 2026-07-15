@@ -5,7 +5,7 @@ import {
   serialize as serializeCalc,
   toCalc,
 } from '#calc/calc.internal'
-import { refsOf as colorRefsOf, serialize as serializeColor } from '#color/color.internal'
+import { refsOf as colorRefsOf, serialize as serializeColor } from '#data/color.internal'
 import * as Equal from '#internal/equal'
 import { DEFAULT_INDENT, quote, renderBlock } from '#internal/render'
 import { dual, invariant, Pipeable } from '#util'

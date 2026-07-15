@@ -228,7 +228,10 @@ class FontFaceRuleImpl extends Pipeable implements FontFaceRule, Equal.Equal {
         ? this.unicodeRange === that.unicodeRange
         : this.unicodeRange.length === that.unicodeRange.length &&
           this.unicodeRange.every((range, index) =>
-            rangeEquals(range, (that.unicodeRange as ReadonlyArray<UnicodeRange>)[index] as UnicodeRange),
+            rangeEquals(
+              range,
+              (that.unicodeRange as ReadonlyArray<UnicodeRange>)[index] as UnicodeRange,
+            ),
           )) &&
       this.ascentOverride === that.ascentOverride &&
       this.descentOverride === that.descentOverride &&

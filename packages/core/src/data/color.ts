@@ -2,6 +2,7 @@ import type { ApplyBindings, Bindings, Input, SerializeOptions } from '#calc/cal
 import type { Pipeable } from '#util'
 import type { ColorTypeId } from './color.internal.ts'
 import * as internal from './color.internal.ts'
+import type { None } from './keywords.ts'
 
 declare const ColorRefs: unique symbol
 
@@ -12,10 +13,12 @@ declare const ColorRefs: unique symbol
  * solved. The `Refs` parameter unions the channels' unbound reference
  * names, exactly as on `Calc`.
  *
- * Only `oklch` is modeled today; other color functions arrive as a
- * consumer needs them.
+ * `oklch(...)`, `color(srgb ...)`, `light-dark(...)`, and named colors
+ * are modeled today; other color functions arrive as a consumer needs
+ * them. Channels accept `Keyword.none`, CSS's missing-component value.
  *
- * Construct via `oklch`.
+ * Construct via `oklch`, `srgb`, `lightDark`, and `named` (or the
+ * `transparent` constant).
  *
  * @since 0.1.0
  */
@@ -38,7 +41,9 @@ export const isColor: (u: unknown) => u is Color<string> = internal.isColor
 
 /**
  * Creates an `oklch(...)` color from three channel expressions: lightness
- * (`0` to `1`), chroma (`0` upward), and hue (degrees).
+ * (`0` to `1`), chroma (`0` upward), and hue (degrees). A channel may be
+ * `Keyword.none` — the missing-component keyword, the conventional hue
+ * for achromatic colors: `oklch(0 0 none)`.
  *
  * Each channel serializes independently, wrapped in `calc()` when it is
  * arithmetic: `oklch(var(--l) calc(var(--c) * 0.5) 220)`.
@@ -55,10 +60,88 @@ export const isColor: (u: unknown) => u is Color<string> = internal.isColor
  * @since 0.1.0
  */
 export const oklch: <L extends string = never, C extends string = never, H extends string = never>(
-  lightness: Input<L>,
-  chroma: Input<C>,
-  hue: Input<H>,
+  lightness: Input<L> | None,
+  chroma: Input<C> | None,
+  hue: Input<H> | None,
 ) => Color<L | C | H> = internal.oklch
+
+/**
+ * Creates a `color(srgb ...)` color from three channel expressions, each
+ * `0` to `1`. A channel may be `Keyword.none`, the missing-component
+ * keyword.
+ *
+ * Each channel serializes independently, wrapped in `calc()` when it is
+ * arithmetic, inside the `color()` function's `srgb` colorspace:
+ * `color(srgb 0.18 0.34 0.78)`.
+ *
+ * @param red - The red channel.
+ * @param green - The green channel.
+ * @param blue - The blue channel.
+ * @returns A `Color` with the channels' references unioned.
+ * @example
+ * ```ts
+ * const brand = Color.srgb(0.18, 0.34, 0.78)
+ * Color.serialize(brand) // 'color(srgb 0.18 0.34 0.78)'
+ * ```
+ * @since 0.2.0
+ */
+export const srgb: <R extends string = never, G extends string = never, B extends string = never>(
+  red: Input<R> | None,
+  green: Input<G> | None,
+  blue: Input<B> | None,
+) => Color<R | G | B> = internal.srgb
+
+/**
+ * Creates a named color, rendered bare: `named('rebeccapurple')`
+ * serializes as `rebeccapurple`. The name is the whole value — a named
+ * color has no channels, contributes no references, and binds nothing.
+ *
+ * That the name is one of the specification's named colors is not
+ * checked, matching the library's posture on identifiers — with one
+ * exception: the CSS-wide keywords (`inherit`, `initial`, ...) are
+ * whole-declaration values, not colors (`light-dark(inherit, ...)` is
+ * invalid CSS), and are rejected.
+ *
+ * @param name - The color name. Must be non-empty and not a CSS-wide keyword.
+ * @returns A `Color<never>`.
+ * @throws `Error` when `name` is empty or a CSS-wide keyword.
+ * @since 0.2.0
+ */
+export const named: (name: string) => Color<never> = internal.named
+
+/**
+ * The `transparent` named color — `rgb(0 0 0 / 0)` by definition, and
+ * the conventional "no color" value.
+ *
+ * @since 0.2.0
+ */
+export const transparent: Color<never> = internal.transparent
+
+/**
+ * Creates a scheme-conditional `light-dark(...)` color: the browser uses
+ * the first color under the light scheme and the second under dark.
+ *
+ * The arms are whole colors and positional — `lightDark(a, b)` and
+ * `lightDark(b, a)` are different colors. Any `Color` is accepted,
+ * including another `lightDark` (grammatically an arm is any `<color>`;
+ * nesting is redundant but legal, and simplification is not this type's
+ * job). Note the resolution context: `light-dark()` requires
+ * `color-scheme` to be set — that contract is the consumer's.
+ *
+ * @param light - The color used under the light scheme.
+ * @param dark - The color used under the dark scheme.
+ * @returns A `Color` with both arms' references unioned.
+ * @example
+ * ```ts
+ * const accent = Color.lightDark(Color.srgb(0.85, 0.3, 0.4), Color.srgb(0.95, 0.5, 0.55))
+ * Color.serialize(accent) // 'light-dark(color(srgb 0.85 0.3 0.4), color(srgb 0.95 0.5 0.55))'
+ * ```
+ * @since 0.2.0
+ */
+export const lightDark: <A extends string = never, B extends string = never>(
+  light: Color<A>,
+  dark: Color<B>,
+) => Color<A | B> = internal.lightDark
 
 export const bind: {
   /**
@@ -90,7 +173,9 @@ export const bind: {
 
 /**
  * Renders a color as CSS text. Channels render space-separated inside
- * `oklch(...)`, each wrapped in `calc()` when it is arithmetic.
+ * the color's own function form — `oklch(...)` or `color(srgb ...)` —
+ * each wrapped in `calc()` when it is arithmetic; a `lightDark` renders
+ * both arms in full, comma-separated.
  *
  * Options match `Calc.serialize`: partial bindings applied first, and a
  * precision context for unannotated constants.
@@ -130,7 +215,8 @@ export const equals: {
   (that: Color<string>): (self: Color<string>) => boolean
   /**
    * Structural equality over colors: channel trees compare node for node,
-   * as in `Calc.equals`.
+   * as in `Calc.equals`. Different color functions never compare equal,
+   * even where they would name the same point in color space.
    *
    * @param self - The first color.
    * @param that - The second color.

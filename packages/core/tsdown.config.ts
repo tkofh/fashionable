@@ -4,7 +4,7 @@ export default defineConfig({
   entry: [
     'src/utils.ts',
     'src/calc/index.ts',
-    'src/color/index.ts',
+    'src/data/index.ts',
     'src/declaration/index.ts',
     'src/fontFace/index.ts',
     'src/property/index.ts',

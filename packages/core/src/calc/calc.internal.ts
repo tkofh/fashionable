@@ -229,7 +229,7 @@ const clampNode = (minimum: CalcNode, value: CalcNode, maximum: CalcNode): CalcN
 }
 
 const unaryNode =
-  (tag: 'Sign' | 'Sin' | 'Cos' | 'Acos', compute: (x: number) => number) =>
+  (tag: 'Sign' | 'Sin' | 'Cos', compute: (x: number) => number) =>
   (argument: CalcNode): CalcNode => {
     if (isConstant(argument)) {
       return constantNode(compute(argument.value), argument.precision)
@@ -237,7 +237,7 @@ const unaryNode =
     return { _tag: tag, argument }
   }
 
-// abs preserves the operand's dimension; sign/sin/cos/acos produce a number
+// abs preserves the operand's dimension; sign/sin/cos produce a number
 const absNode = (argument: CalcNode): CalcNode => {
   if (isConstant(argument)) {
     return constantNode(Math.abs(argument.value), argument.precision, argument.unit, argument.kind)
@@ -247,7 +247,15 @@ const absNode = (argument: CalcNode): CalcNode => {
 const signNode = unaryNode('Sign', Math.sign)
 const sinNode = unaryNode('Sin', Math.sin)
 const cosNode = unaryNode('Cos', Math.cos)
-const acosNode = unaryNode('Acos', Math.acos)
+
+// acos returns an <angle>: a folded result is a radian constant, so it composes
+// with Angle.rad terms and stays valid CSS with no plain-number-beside-angle hack
+const acosNode = (argument: CalcNode): CalcNode => {
+  if (isConstant(argument)) {
+    return constantNode(Math.acos(argument.value), argument.precision, 'rad', 'angle')
+  }
+  return { _tag: 'Acos', argument }
+}
 
 // ---------------------------------------------------------------------------
 // walkers
@@ -298,50 +306,64 @@ export const substituteNode = (node: CalcNode, bindings: Record<string, CalcNode
   }
 }
 
+/**
+ * The units that lower with no caller-supplied ratio: `px` is the pixel base
+ * (`1`), and a radian is already the numeric measure of its angle (`1`). Every
+ * other unit is context-dependent and must appear in the solve context.
+ *
+ * @internal
+ */
+export const DEFAULT_RATIOS: Record<string, number> = { px: 1, rad: 1 }
+
 /** @internal */
-export const evaluateNode = (node: CalcNode): number => {
+export const evaluateNode = (node: CalcNode, context: Record<string, number>): number => {
   switch (node._tag) {
-    case 'Constant':
+    case 'Constant': {
+      if (node.unit === undefined) {
+        return node.value
+      }
+      const ratio = context[node.unit] ?? DEFAULT_RATIOS[node.unit]
       invariant(
-        node.kind !== 'length',
-        `Cannot evaluate a <length> (${node.value}${node.unit ?? ''}) without a unit context`,
+        ratio !== undefined,
+        `Cannot evaluate ${node.value}${node.unit}: no ratio for '${node.unit}' in the unit context`,
       )
-      return node.value
+      return node.value * ratio
+    }
     case 'Ref':
       throw new Error(`Cannot evaluate non-constant reference: ${node.name}`)
     case 'Add':
-      return node.terms.reduce((total, term) => total + evaluateNode(term), 0)
+      return node.terms.reduce((total, term) => total + evaluateNode(term, context), 0)
     case 'Subtract':
-      return evaluateNode(node.left) - evaluateNode(node.right)
+      return evaluateNode(node.left, context) - evaluateNode(node.right, context)
     case 'Multiply':
-      return evaluateNode(node.left) * evaluateNode(node.right)
+      return evaluateNode(node.left, context) * evaluateNode(node.right, context)
     case 'Divide':
-      return evaluateNode(node.left) / evaluateNode(node.right)
+      return evaluateNode(node.left, context) / evaluateNode(node.right, context)
     case 'Pow':
-      return evaluateNode(node.base) ** evaluateNode(node.exponent)
+      return evaluateNode(node.base, context) ** evaluateNode(node.exponent, context)
     case 'SignedPow': {
-      const base = evaluateNode(node.base)
-      return Math.abs(base) ** evaluateNode(node.exponent) * Math.sign(base)
+      const base = evaluateNode(node.base, context)
+      return Math.abs(base) ** evaluateNode(node.exponent, context) * Math.sign(base)
     }
     case 'Min':
-      return Math.min(...node.args.map(evaluateNode))
+      return Math.min(...node.args.map((arg) => evaluateNode(arg, context)))
     case 'Max':
-      return Math.max(...node.args.map(evaluateNode))
+      return Math.max(...node.args.map((arg) => evaluateNode(arg, context)))
     case 'Clamp':
       return Math.max(
-        evaluateNode(node.minimum),
-        Math.min(evaluateNode(node.value), evaluateNode(node.maximum)),
+        evaluateNode(node.minimum, context),
+        Math.min(evaluateNode(node.value, context), evaluateNode(node.maximum, context)),
       )
     case 'Abs':
-      return Math.abs(evaluateNode(node.argument))
+      return Math.abs(evaluateNode(node.argument, context))
     case 'Sign':
-      return Math.sign(evaluateNode(node.argument))
+      return Math.sign(evaluateNode(node.argument, context))
     case 'Sin':
-      return Math.sin(evaluateNode(node.argument))
+      return Math.sin(evaluateNode(node.argument, context))
     case 'Cos':
-      return Math.cos(evaluateNode(node.argument))
+      return Math.cos(evaluateNode(node.argument, context))
     case 'Acos':
-      return Math.acos(evaluateNode(node.argument))
+      return Math.acos(evaluateNode(node.argument, context))
   }
 }
 
@@ -358,37 +380,6 @@ export const needsCalcWrap = (node: CalcNode): boolean =>
   node._tag === 'Divide' ||
   node._tag === 'SignedPow'
 
-/**
- * True when a subtree is angle-typed in CSS terms: `acos()` returns an
- * angle, and angles survive addition, subtraction, scaling, and selection.
- * Solve-side everything is a plain number in radians; this only steers
- * serialization (see `serializeNode`).
- *
- * @internal
- */
-export const producesAngle = (node: CalcNode): boolean => {
-  switch (node._tag) {
-    case 'Acos':
-      return true
-    case 'Add':
-      return node.terms.some(producesAngle)
-    case 'Subtract':
-    case 'Multiply':
-      return producesAngle(node.left) || producesAngle(node.right)
-    case 'Divide':
-      return producesAngle(node.left)
-    case 'Min':
-    case 'Max':
-      return node.args.some(producesAngle)
-    case 'Clamp':
-      return producesAngle(node.value)
-    case 'Abs':
-      return producesAngle(node.argument)
-    default:
-      return false
-  }
-}
-
 // ---------------------------------------------------------------------------
 // serialization
 // ---------------------------------------------------------------------------
@@ -402,22 +393,13 @@ const PI_TOLERANCE = 1e-10
 const formatConstant = (
   node: ConstantNode,
   insideMath: boolean,
-  asAngle: boolean,
   context: SerializeContext,
 ): string => {
-  if (
-    node.unit === undefined &&
-    insideMath &&
-    !asAngle &&
-    Math.abs(node.value - Math.PI) < PI_TOLERANCE
-  ) {
+  if (node.unit === undefined && insideMath && Math.abs(node.value - Math.PI) < PI_TOLERANCE) {
     return 'pi'
   }
   const text = formatWith(node.value, node.precision ?? context.precision)
-  if (node.unit !== undefined) {
-    return `${text}${node.unit}`
-  }
-  return asAngle ? `${text}rad` : text
+  return node.unit !== undefined ? `${text}${node.unit}` : text
 }
 
 const wrapOperand = (node: CalcNode, serialized: string): string =>
@@ -434,41 +416,18 @@ const hasNegativeCoefficient = (node: CalcNode): boolean => {
 }
 
 /**
- * Serializes a term of an angle-typed sum. A plain-number term must be
- * converted for the sum to stay angle-typed in CSS: numeric constants take
- * a `rad` suffix; anything else multiplies by `1rad` (multiplication with
- * one unitful operand is universally valid, unlike typed division).
- */
-const serializeTerm = (
-  node: CalcNode,
-  insideMath: boolean,
-  asAngle: boolean,
-  context: SerializeContext,
-): string => {
-  if (!asAngle) {
-    return serializeNode(node, insideMath, context)
-  }
-  if (isConstant(node)) {
-    return formatConstant(node, insideMath, true, context)
-  }
-  return `${wrapOperand(node, serializeNode(node, insideMath, context))} * 1rad`
-}
-
-/**
  * Serializes the negation of a term whose leading coefficient is a
  * negative constant, so `a + (-k * x)` renders as `a - k * x`.
  */
 const serializeNegated = (
   node: CalcNode,
   insideMath: boolean,
-  asAngle: boolean,
   context: SerializeContext,
 ): string => {
   if (isConstant(node)) {
     return formatConstant(
       constantNode(-node.value, node.precision, node.unit, node.kind),
       insideMath,
-      asAngle,
       context,
     )
   }
@@ -479,8 +438,7 @@ const serializeNegated = (
     left: constantNode(-left.value, left.precision, left.unit, left.kind),
     right: binary.right,
   }
-  const serialized = serializeNode(negated, insideMath, context)
-  return asAngle ? `${serialized} * 1rad` : serialized
+  return serializeNode(negated, insideMath, context)
 }
 
 /** @internal */
@@ -491,37 +449,28 @@ export const serializeNode = (
 ): string => {
   switch (node._tag) {
     case 'Constant':
-      return formatConstant(node, insideMath, false, context)
+      return formatConstant(node, insideMath, context)
     case 'Ref':
       return `var(--${node.name})`
     case 'Add': {
-      const angleSum = producesAngle(node)
       let out = ''
       for (const [index, term] of node.terms.entries()) {
-        const asAngle = angleSum && !producesAngle(term)
         if (index === 0) {
-          out = serializeTerm(term, insideMath, asAngle, context)
+          out = serializeNode(term, insideMath, context)
         } else if (hasNegativeCoefficient(term)) {
-          out += ` - ${serializeNegated(term, insideMath, asAngle, context)}`
+          out += ` - ${serializeNegated(term, insideMath, context)}`
         } else {
-          out += ` + ${serializeTerm(term, insideMath, asAngle, context)}`
+          out += ` + ${serializeNode(term, insideMath, context)}`
         }
       }
       return out
     }
     case 'Subtract': {
-      const angleSum = producesAngle(node)
-      const left = serializeTerm(
-        node.left,
-        insideMath,
-        angleSum && !producesAngle(node.left),
-        context,
-      )
-      const rightAsAngle = angleSum && !producesAngle(node.right)
+      const left = serializeNode(node.left, insideMath, context)
       if (hasNegativeCoefficient(node.right)) {
-        return `${left} + ${serializeNegated(node.right, insideMath, rightAsAngle, context)}`
+        return `${left} + ${serializeNegated(node.right, insideMath, context)}`
       }
-      return `${left} - ${serializeTerm(node.right, insideMath, rightAsAngle, context)}`
+      return `${left} - ${serializeNode(node.right, insideMath, context)}`
     }
     case 'Multiply': {
       const left = wrapOperand(node.left, serializeNode(node.left, insideMath, context))
@@ -706,7 +655,7 @@ class CalcImpl extends Pipeable implements Calc<string>, Equal.Equal {
 }
 
 /** @internal */
-export const isCalc = (u: unknown): u is Calc<string> =>
+export const isCalc = (u: unknown): u is Calc<string, Kind, unknown> =>
   typeof u === 'object' && u !== null && CalcTypeId in u
 
 /** @internal */
@@ -959,18 +908,18 @@ export function sign<A extends string = never>(argument: Input<A>): Calc<A> {
 }
 
 /** @internal */
-export function sin<A extends string = never>(argument: Input<A>): Calc<A> {
-  return sinImpl(argument) as Calc<A>
+export function sin(argument: AnyInput): Bottom {
+  return sinImpl(argument) as Bottom
 }
 
 /** @internal */
-export function cos<A extends string = never>(argument: Input<A>): Calc<A> {
-  return cosImpl(argument) as Calc<A>
+export function cos(argument: AnyInput): Bottom {
+  return cosImpl(argument) as Bottom
 }
 
 /** @internal */
-export function acos<A extends string = never>(argument: Input<A>): Calc<A> {
-  return acosImpl(argument) as Calc<A>
+export function acos(argument: AnyInput): Bottom {
+  return acosImpl(argument) as Bottom
 }
 
 /** @internal */
@@ -1018,25 +967,25 @@ export const collectBindings = (
 export const bind: {
   <const B extends Bindings>(
     bindings: B,
-  ): <Refs extends string>(expr: Calc<Refs>) => Calc<ApplyBindings<Refs, B>>
+  ): <Refs extends string>(expr: Calc<Refs, Kind, unknown>) => Calc<ApplyBindings<Refs, B>>
   <Refs extends string, const B extends Bindings>(
-    expr: Calc<Refs>,
+    expr: Calc<Refs, Kind, unknown>,
     bindings: B,
   ): Calc<ApplyBindings<Refs, B>>
-} = dual(2, (expr: Calc<string>, bindings: Record<string, Input<string>>): Calc<string> => {
-  const collected = collectBindings(refsOf(expr), bindings)
-  return makeCalc(substituteNode(nodeOf(expr), collected.nodeBindings), collected.refSet)
-})
+} = dual(
+  2,
+  (expr: Calc<string, Kind, unknown>, bindings: Record<string, Input<string>>): Calc<string> => {
+    const collected = collectBindings(refsOf(expr), bindings)
+    return makeCalc(substituteNode(nodeOf(expr), collected.nodeBindings), collected.refSet)
+  },
+)
 
 /** @internal */
-export function solve(expr: Calc<never>): number
-/** @internal */
-export function solve<Refs extends string, B extends Bindings<Refs>>(
-  expr: Calc<Refs>,
-  bindings: B,
-): number
-/** @internal */
-export function solve(expr: Calc<string>, bindings?: Record<string, Input<string>>): number {
+export function solve(
+  expr: Calc<string, Kind, unknown>,
+  bindings?: Record<string, Input<string>>,
+  context?: Record<string, number>,
+): number {
   let node = nodeOf(expr)
   let remaining: ReadonlySet<string> = refsOf(expr)
   if (bindings !== undefined) {
@@ -1045,7 +994,7 @@ export function solve(expr: Calc<string>, bindings?: Record<string, Input<string
     remaining = collected.refSet
   }
   invariant(remaining.size === 0, 'Cannot convert expression to number: unbound references remain')
-  return evaluateNode(node)
+  return evaluateNode(node, context ?? {})
 }
 
 /** @internal */

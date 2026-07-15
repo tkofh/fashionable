@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, test } from 'vitest'
 import { Calc } from '#calc'
-import { Color } from '#color'
+import { Color } from '#data'
 import { Declaration } from '#declaration'
 import { FontFaceRule } from '#fontFace'
 import { PropertyRule, PropertySyntax } from '#property'

@@ -55,10 +55,7 @@ describe('query', () => {
     // consumers' cache-key and test-pin material, so a reordering is a
     // breaking change (design.md principle 2).
     test('the kind ladder is pinned: min-width before prefers-color-scheme', () => {
-      const query = MediaQuery.and(
-        MediaQuery.prefersColorScheme('dark'),
-        MediaQuery.minWidth(768),
-      )
+      const query = MediaQuery.and(MediaQuery.prefersColorScheme('dark'), MediaQuery.minWidth(768))
       expect(MediaQuery.render(query)).toBe('(min-width: 768px) and (prefers-color-scheme: dark)')
     })
 

@@ -25,7 +25,7 @@ One subpath export per module, no root export (the curvy convention). Each modul
 src/utils.ts                -> fashionable/utils        [shipped]  pipe, dual, flow, Pipeable, invariant
 src/internal/               (not exported)              [shipped]  equal, format, refs
 src/calc/                   -> fashionable/calc         [shipped]  Calc<Refs>, Precision
-src/color/                  -> fashionable/color        [shipped]  Color<Refs> (oklch)
+src/data/                   -> fashionable/data         [shipped]  Color<Refs> (oklch, srgb, light-dark, named); Angle, Length, Unit; Keyword (none)
 src/selector/               -> fashionable/selector     [shipped]  Selector, Specificity
 src/query/                  -> fashionable/query        [shipped]  MediaQuery
 src/declaration/            -> fashionable/declaration  [shipped]  Declaration<Refs>
@@ -36,9 +36,9 @@ src/stylesheet/             -> fashionable/stylesheet   [shipped]  Stylesheet<Re
 ```
 
 Dependency DAG (acyclic, internals at the root):
-`utils` <- `internal/*` <- `calc` <- `color` <- `declaration` <- `rule` <- `stylesheet`; `selector` and `query` depend only on `utils`/`internal`; `fontFace` and `property` depend on `calc`/`color` (for `@property` initial values). The render-options family (section 7) adds type-only edges — `declaration` -> `query`, `fontFace`/`property` -> `declaration` — which erase at build time.
+`utils` <- `internal/*` <- `calc` <- `data` <- `declaration` <- `rule` <- `stylesheet`; `selector` and `query` depend only on `utils`/`internal`; `fontFace` and `property` depend on `calc`/`data` (for `@property` initial values). The render-options family (section 7) adds type-only edges — `declaration` -> `query`, `fontFace`/`property` -> `declaration` — which erase at build time.
 
-Placement notes: `calc` names the CSS construct and gives the type its natural name (`Calc<Refs>`); `color` is separate because a color is not solvable to a number and will grow independently; `query/` is the home for the condition grammars — `MediaQuery` today, container and supports queries as sibling types when a consumer arrives (they share the module because they share the "prelude condition" role, not a grammar); `declaration` is its own subpath because it is the seam where the two language halves meet; the declaration-block at-rules get one module each (`fontFace/`, `property/`) so the at-rule family scales — `@layer` and friends become sibling modules rather than crowding a shared folder, with the shared block-text helpers in `internal/render.ts`. There is deliberately no separate render module: every renderable type carries its own `render` (section 7), the shared nested-form block renderer lives in `rule.internal.ts`, and the whole-sheet projection lives on `Stylesheet.render` — the one module already downstream of every model module.
+Placement notes: `calc` names the CSS construct and gives the type its natural name (`Calc<Refs>`); `data/` collects the value-layer data types beyond bare expressions — the dimension constructors (`Angle`, `Length`, with `Unit` naming their kinds) and `Color`, which is not solvable to a number and grows independently; `query/` is the home for the condition grammars — `MediaQuery` today, container and supports queries as sibling types when a consumer arrives (they share the module because they share the "prelude condition" role, not a grammar); `declaration` is its own subpath because it is the seam where the two language halves meet; the declaration-block at-rules get one module each (`fontFace/`, `property/`) so the at-rule family scales — `@layer` and friends become sibling modules rather than crowding a shared folder, with the shared block-text helpers in `internal/render.ts`. There is deliberately no separate render module: every renderable type carries its own `render` (section 7), the shared nested-form block renderer lives in `rule.internal.ts`, and the whole-sheet projection lives on `Stylesheet.render` — the one module already downstream of every model module.
 
 ## 3. The value layer (shipped)
 

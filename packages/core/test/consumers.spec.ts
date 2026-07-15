@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Calc } from '#calc'
-import { Color } from '#color'
+import { Angle, Color } from '#data'
 import { Declaration } from '#declaration'
 import { FontFaceRule } from '#fontFace'
 import { PropertyRule, PropertySyntax } from '#property'
@@ -145,10 +145,10 @@ describe('consumers', () => {
 
     // The fluid-curve helper property: dtcg's closed-form cardinal-segment
     // inverse, a cos(acos(...)) chain reading one unbound reference.
-    const fluidT: Calc.Calc<'type-fluid-u'> = Calc.cos(
+    const fluidT = Calc.cos(
       Calc.subtract(
         Calc.divide(Calc.acos(Calc.clamp(-1, Calc.ref('type-fluid-u'), 1)), 3),
-        2.0943951,
+        Angle.rad(2.0943951),
       ),
     )
 

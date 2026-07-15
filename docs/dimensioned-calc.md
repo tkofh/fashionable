@@ -33,7 +33,7 @@ unit-bearing tree lowers its leaves through a context rather than refusing.
 
 ## 2. The core model — CSS calc is dimensional analysis
 
-CSS Values and Units L4 gives every calc sub-expression a *type*: a map from
+CSS Values and Units L4 gives every calc sub-expression a _type_: a map from
 base kinds (length, angle, time, frequency, resolution, percent, flex) to
 integer exponents, plus a percent hint. `+`/`-` require equal types, `*` adds
 exponents, `/` subtracts, and each math function has its own rule. The library
@@ -129,15 +129,23 @@ type SameKindIn<A> =
   | Calc<string, KindOf<A> & Calc.Kind, unknown>
   | (KindOf<A> extends 'number' ? number : never)
 
-declare function multiply<A extends NumberIn, B extends In>(a: A, b: B):
-  Calc<RefsOf<A> | RefsOf<B>, KindOf<B> & Calc.Kind, LeavesOf<A> | LeavesOf<B>>
-declare function multiply<A extends In, B extends NumberIn>(a: A, b: B):
-  Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Calc.Kind, LeavesOf<A> | LeavesOf<B>>
+declare function multiply<A extends NumberIn, B extends In>(
+  a: A,
+  b: B,
+): Calc<RefsOf<A> | RefsOf<B>, KindOf<B> & Calc.Kind, LeavesOf<A> | LeavesOf<B>>
+declare function multiply<A extends In, B extends NumberIn>(
+  a: A,
+  b: B,
+): Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Calc.Kind, LeavesOf<A> | LeavesOf<B>>
 
-declare function divide<A extends In, B extends NumberIn>(a: A, b: B):
-  Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Calc.Kind, DivLeaves<A, B>>
-declare function divide<A extends In, B extends SameKindIn<A>>(a: A, b: B):
-  Calc<RefsOf<A> | RefsOf<B>, 'number', DivLeaves<A, B>>
+declare function divide<A extends In, B extends NumberIn>(
+  a: A,
+  b: B,
+): Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Calc.Kind, DivLeaves<A, B>>
+declare function divide<A extends In, B extends SameKindIn<A>>(
+  a: A,
+  b: B,
+): Calc<RefsOf<A> | RefsOf<B>, 'number', DivLeaves<A, B>>
 ```
 
 `multiply(Length.px(10), Length.px(10))` and `divide(Length.px(10),
@@ -158,10 +166,16 @@ reads as a union of named brands — `Unit.Vw | Unit.Px | Unit.Rad` — not
 declare const LengthUnitId: unique symbol
 declare const AngleUnitId: unique symbol
 namespace Unit {
-  export interface Px { readonly [LengthUnitId]: 'px' }
-  export interface Vw { readonly [LengthUnitId]: 'vw' }
+  export interface Px {
+    readonly [LengthUnitId]: 'px'
+  }
+  export interface Vw {
+    readonly [LengthUnitId]: 'vw'
+  }
   // rem, em, vh, vmin, vmax ...
-  export interface Rad { readonly [AngleUnitId]: 'rad' }
+  export interface Rad {
+    readonly [AngleUnitId]: 'rad'
+  }
   export type Length = Px | Rem | Em | Vw | Vh | Vmin | Vmax
   export type Angle = Rad
   // the partition section 6 solves on: absolute (context-free) vs relative
@@ -191,7 +205,7 @@ never removes them. There is no leaf analog of ref subtraction.
 **The leaf set is a sound over-approximation.** Folding can cancel a unit that
 the type already accrued — `divide(Length.px(320), Length.px(160))` folds to
 the constant `2` at runtime, unitless. The type-level leaf set is a union of
-*operand* leaves, and folding only ever removes leaves, so the type never
+_operand_ leaves, and folding only ever removes leaves, so the type never
 under-reports: `Leaves = never` guarantees a genuinely pure tree. It can
 over-report (section 6 shows how the divide overload recovers the common case).
 
@@ -223,16 +237,17 @@ absolute vs context-dependent units, not length vs angle: `px` (ratio 1) and
 `vmin`/`vmax` need viewport/font ratios. `solve` splits accordingly:
 
 ```ts
-type KeyOf<L> =
-  L extends { readonly [LengthUnitId]: infer U } ? U
-  : L extends { readonly [AngleUnitId]: infer U } ? U
-  : never
+type KeyOf<L> = L extends { readonly [LengthUnitId]: infer U }
+  ? U
+  : L extends { readonly [AngleUnitId]: infer U }
+    ? U
+    : never
 
 // relative units are required keys; absolute lengths are optional overrides
 // (solve in a non-px base); angle units never appear (rad lowers canonically)
-type UnitContext<L> =
-  & { readonly [K in KeyOf<Extract<L, Unit.Relative>> & string]: number }
-  & { readonly [K in KeyOf<Extract<L, Unit.AbsoluteLength>> & string]?: number }
+type UnitContext<L> = { readonly [K in KeyOf<Extract<L, Unit.Relative>> & string]: number } & {
+  readonly [K in KeyOf<Extract<L, Unit.AbsoluteLength>> & string]?: number
+}
 
 declare function solve(expr: Calc<never, Calc.Kind, Unit.ContextFree>): number
 declare function solve<R extends string, L>(
@@ -247,7 +262,7 @@ declare function solve<R extends string, L>(
   `solve(Length.px(10))`, and `solve(Angle.rad(2))` all compile bare.
 - A relative-unit tree requires a `UnitContext<Leaves>` supplying exactly the
   context-dependent keys present. The fluid curve (`Unit.Vw | Unit.Px |
-  Unit.Rad`) requires `{ vw: number }` — px defaults, rad is canonical, and a
+Unit.Rad`) requires `{ vw: number }` — px defaults, rad is canonical, and a
   wrong key (`rem` on a tree that has none) is rejected. All proven.
 
 **Kind is not the same question as solvability.** The fluid curve is
@@ -262,9 +277,11 @@ tracking (section 5) and the context requirement are two views of one fact:
 
 ```ts
 type DivLeaves<A, B> =
-  KindOf<B> extends 'number' ? LeavesOf<A>                       // length / number -> keep a's leaves
-  : SameSingleton<LeavesOf<A>, LeavesOf<B>> extends true ? never // px / px -> provably pure
-  : LeavesOf<A> | LeavesOf<B>                                    // (px|vw) / px -> conservative
+  KindOf<B> extends 'number'
+    ? LeavesOf<A> // length / number -> keep a's leaves
+    : SameSingleton<LeavesOf<A>, LeavesOf<B>> extends true
+      ? never // px / px -> provably pure
+      : LeavesOf<A> | LeavesOf<B> // (px|vw) / px -> conservative
 ```
 
 When units cancel (`320px / 160px` -> `Leaves = never`) no context is needed,
@@ -297,7 +314,9 @@ type RefsOfAll<T extends readonly unknown[]> = { [K in keyof T]: RefsOf<T[K]> }[
 type LeavesOfAll<T extends readonly unknown[]> = { [K in keyof T]: LeavesOf<T[K]> }[number]
 
 declare function add<A extends In, B extends SameKindIn<A>, Rest extends readonly SameKindIn<A>[]>(
-  a: A, b: B, ...rest: Rest
+  a: A,
+  b: B,
+  ...rest: Rest
 ): Calc<
   RefsOf<A> | RefsOf<B> | RefsOfAll<Rest>,
   KindOf<A> & Calc.Kind,
@@ -322,7 +341,7 @@ of dimensions.
   in `serializeTerm`/`serializeNegated`, and the `1rad` factor all delete — a
   sum is either all-angle (each term serialized with its own unit) or
   all-number. The negative-coefficient subtractive rendering (`a + (-k)` -> `a -
-  k`) is kind-agnostic and stays.
+k`) is kind-agnostic and stays.
 - **Migration.** Today `Calc.subtract(acos(...), 2.0943951)` auto-suffixes to
   `2.0944rad`. Under real typing that operand must be `Angle.rad(2.0943951)`,
   and a bare number is rejected. `trig.spec`'s angle-typed-serialization block
@@ -339,7 +358,7 @@ of dimensions.
   does not import `data`; the leaf brands flow in only as type arguments.
 - `Color.oklch`'s hue channel becomes a natural `<number> | <angle>` consumer of
   `Angle` (CSS types oklch hue as `<number> | <angle>`), so `Color.oklch(l, c,
-  Angle.rad(h))` and a bare-number hue both type.
+Angle.rad(h))` and a bare-number hue both type.
 - A future `Time`/`Resolution` module adds its own `unique symbol` and unit
   types; the generic kind algebra and leaf accrual absorb it with no calc-core
   change. This extensibility is the reason leaves are module-branded rather than
@@ -354,9 +373,9 @@ of dimensions.
   `Declaration.make('--gap', Length.px(8))` works with no string concatenation.
 - **`PropertySyntax`** length/angle initial-value domains change from `string`
   to also accept a closed dimensioned expression — `string | Calc<never,
-  'length', Unit.Length>` and the angle analog (the exact alias spelling follows
+'length', Unit.Length>` and the angle analog (the exact alias spelling follows
   the `export * as` barrel convention, not a type/namespace merge).
-  `types.spec.ts:50`, which currently *asserts* that a `<length>` initial value
+  `types.spec.ts:50`, which currently _asserts_ that a `<length>` initial value
   cannot be an expression ("expressions serialize unitless"), inverts to accept
   `Length.px(0)`. This resolves design.md section 9's typed-units question.
 - **`solve`** gains the section-6 context parameter (required exactly when the
@@ -379,7 +398,7 @@ of dimensions.
 - **Context defaults policy.** `px = 1` and `rad`/`deg` canonical are the
   built-in ratios that let absolute-unit trees solve context-free (section 6).
   The one call to make: whether an absolute length in the context is an optional
-  *override* (solve in a non-px base) or fixed. The spike models it as an
+  _override_ (solve in a non-px base) or fixed. The spike models it as an
   optional override; that is the recommendation.
 - **Residual-ref assertion on serialize.** Orthogonal to units but flagged by
   the consumer: a forgotten `bind` emits `var(--x)` — silently wrong CSS that

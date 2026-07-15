@@ -140,9 +140,9 @@ describe('fontFace', () => {
       expect(() => FontFaceRule.make({ family: 'X', src, unicodeRange: [0x110000] })).toThrow(
         'integer in [0x0, 0x10FFFF]',
       )
-      expect(() =>
-        FontFaceRule.make({ family: 'X', src, unicodeRange: [[0x4ff, 0x400]] }),
-      ).toThrow('ordered start then end')
+      expect(() => FontFaceRule.make({ family: 'X', src, unicodeRange: [[0x4ff, 0x400]] })).toThrow(
+        'ordered start then end',
+      )
     })
 
     test('numbers honor the precision context', () => {

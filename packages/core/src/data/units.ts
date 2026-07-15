@@ -136,3 +136,19 @@ export type Token<U> = U extends { readonly [LengthUnitId]: infer T }
   : U extends { readonly [AngleUnitId]: infer T }
     ? T
     : never
+
+/**
+ * The context `Calc.solve` requires to lower an expression carrying the units
+ * `L` to a number. Each context-dependent (relative) unit present is a required
+ * `number` ratio — pixels per unit, as `sampleWidth / 100` is per `vw` — while
+ * absolute lengths (`px`) are optional overrides and angle units never appear
+ * (radians are already numeric). An expression whose units are all context-free
+ * needs no context at all.
+ *
+ * @since 0.2.0
+ */
+export type UnitContext<L> = {
+  readonly [K in Token<Extract<L, Relative>> & string]: number
+} & {
+  readonly [K in Token<Extract<L, AbsoluteLength>> & string]?: number
+}

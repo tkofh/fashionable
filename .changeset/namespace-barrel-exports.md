@@ -1,5 +1,5 @@
 ---
-"fashionable": minor
+'fashionable': minor
 ---
 
 Barrel modules now expose each type through its namespace instead of as a bare re-export. `Calc`, `MediaQuery`, `Stylesheet`, and the rest are namespaces only — reach their types as `Calc.Calc<Refs>`, `MediaQuery.MediaQuery`, `Stylesheet.Stylesheet<Refs>`, and so on.

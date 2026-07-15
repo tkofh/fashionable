@@ -1,6 +1,6 @@
-import type { ApplyBindings, Bindings, Calc } from '#calc/calc'
+import type { ApplyBindings, Bindings, Calc, Kind } from '#calc/calc'
 import type { Precision } from '#calc/precision'
-import type { Color } from '#color/color'
+import type { Color } from '#data/color'
 import type { RenderOptions as MediaQueryRenderOptions } from '#query/mediaQuery'
 import type { Pipeable } from '#util'
 import type { DeclarationTypeId } from './declaration.internal.ts'
@@ -12,8 +12,8 @@ import * as internal from './declaration.internal.ts'
  * This is the seam where the library's two halves meet — the value is
  * either literal CSS text, passed through verbatim, or a value-layer
  * expression (`Calc` or `Color`) serialized when the declaration renders.
- * Expression values stay number-land: units are applied by the consumer,
- * in text or at the property's `@property` syntax.
+ * A `Calc` of any dimension is accepted: a `<number>`, or a `<length>` /
+ * `<angle>` built from `fashionable/data`, which carries its own units.
  *
  * The `Refs` parameter carries the value's unbound reference names, as on
  * `Calc`; literal text binds nothing and a text-valued declaration is a
@@ -38,11 +38,11 @@ export interface Declaration<out Refs extends string = string> extends Pipeable 
 
 /**
  * The value forms a declaration can hold: literal CSS text, a `Calc`
- * number expression, or a `Color` expression.
+ * expression of any dimension, or a `Color` expression.
  *
  * @since 0.1.0
  */
-export type Value<Refs extends string = string> = string | Calc<Refs> | Color<Refs>
+export type Value<Refs extends string = string> = string | Calc<Refs, Kind, unknown> | Color<Refs>
 
 /**
  * Checks if a value is a `Declaration`.
