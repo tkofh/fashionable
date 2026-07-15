@@ -234,6 +234,52 @@ describe('types', () => {
     >()
   })
 
+  test('media query brands track known features through conjunction', () => {
+    expectTypeOf(MediaQuery.minWidth(768)).toEqualTypeOf<
+      MediaQuery.MediaQuery<MediaQuery.MinWidth>
+    >()
+    expectTypeOf(MediaQuery.maxWidth(1024)).toEqualTypeOf<
+      MediaQuery.MediaQuery<MediaQuery.MaxWidth>
+    >()
+    expectTypeOf(MediaQuery.prefersColorScheme('dark')).toEqualTypeOf<
+      MediaQuery.MediaQuery<MediaQuery.PrefersColorScheme>
+    >()
+    expectTypeOf(
+      MediaQuery.and(MediaQuery.minWidth(768), MediaQuery.prefersColorScheme('dark')),
+    ).toEqualTypeOf<MediaQuery.MediaQuery<MediaQuery.MinWidth & MediaQuery.PrefersColorScheme>>()
+  })
+
+  test('accessors are guaranteed exactly where the brand proves the feature', () => {
+    expectTypeOf(MediaQuery.getMinWidth(MediaQuery.minWidth(768))).toEqualTypeOf<number>()
+    expectTypeOf(MediaQuery.getMinWidth(MediaQuery.prefersColorScheme('dark'))).toEqualTypeOf<
+      number | undefined
+    >()
+    expectTypeOf(MediaQuery.getMaxWidth(MediaQuery.maxWidth(1024))).toEqualTypeOf<number>()
+    expectTypeOf(MediaQuery.getMaxWidth(MediaQuery.minWidth(768))).toEqualTypeOf<
+      number | undefined
+    >()
+    expectTypeOf(
+      MediaQuery.getPrefersColorScheme(MediaQuery.prefersColorScheme('dark')),
+    ).toEqualTypeOf<'dark' | 'light'>()
+    expectTypeOf(MediaQuery.getPrefersColorScheme(MediaQuery.minWidth(768))).toEqualTypeOf<
+      'dark' | 'light' | undefined
+    >()
+    expectTypeOf(
+      MediaQuery.minWidth(768).pipe(
+        MediaQuery.and(MediaQuery.prefersColorScheme('dark')),
+        MediaQuery.getMinWidth,
+      ),
+    ).toEqualTypeOf<number>()
+  })
+
+  test('feature guards narrow a plain query to the branded one', () => {
+    const query: MediaQuery.MediaQuery = MediaQuery.minWidth(768)
+    expectTypeOf(MediaQuery.getMinWidth(query)).toEqualTypeOf<number | undefined>()
+    if (MediaQuery.hasMinWidth(query)) {
+      expectTypeOf(MediaQuery.getMinWidth(query)).toEqualTypeOf<number>()
+    }
+  })
+
   test('rule containers union their members refs', () => {
     const set = RuleSet.make(
       Declaration.make('--a', Calc.ref('a')),

@@ -13,6 +13,13 @@ describe('query', () => {
       )
     })
 
+    test('max-width renders both syntaxes', () => {
+      expect(MediaQuery.render(MediaQuery.maxWidth(1024))).toBe('(max-width: 1024px)')
+      expect(MediaQuery.render(MediaQuery.maxWidth(1024), { mediaSyntax: 'range' })).toBe(
+        '(width <= 1024px)',
+      )
+    })
+
     test('prefers-color-scheme renders identically in both syntaxes', () => {
       const query = MediaQuery.prefersColorScheme('dark')
       expect(MediaQuery.render(query)).toBe('(prefers-color-scheme: dark)')
@@ -54,9 +61,19 @@ describe('query', () => {
     // The concrete canonical order is stable public API: rendered text is
     // consumers' cache-key and test-pin material, so a reordering is a
     // breaking change (design.md principle 2).
-    test('the kind ladder is pinned: min-width before prefers-color-scheme', () => {
-      const query = MediaQuery.and(MediaQuery.prefersColorScheme('dark'), MediaQuery.minWidth(768))
-      expect(MediaQuery.render(query)).toBe('(min-width: 768px) and (prefers-color-scheme: dark)')
+    test('the kind ladder is pinned: min-width, max-width, prefers-color-scheme', () => {
+      const query = MediaQuery.and(
+        MediaQuery.prefersColorScheme('dark'),
+        MediaQuery.and(MediaQuery.maxWidth(1024), MediaQuery.minWidth(768)),
+      )
+      expect(MediaQuery.render(query)).toBe(
+        '(min-width: 768px) and (max-width: 1024px) and (prefers-color-scheme: dark)',
+      )
+    })
+
+    test('max-widths order ascending by threshold', () => {
+      const query = MediaQuery.and(MediaQuery.maxWidth(1280), MediaQuery.maxWidth(1024))
+      expect(MediaQuery.render(query)).toBe('(max-width: 1024px) and (max-width: 1280px)')
     })
 
     test('scheme values order alphabetically within their kind', () => {
@@ -85,6 +102,61 @@ describe('query', () => {
         MediaQuery.and(MediaQuery.prefersColorScheme('dark')),
       )
       expect(MediaQuery.render(query)).toBe('(min-width: 1280px) and (prefers-color-scheme: dark)')
+    })
+  })
+
+  describe('accessors', () => {
+    test('getMinWidth returns the threshold', () => {
+      expect(MediaQuery.getMinWidth(MediaQuery.minWidth(768))).toBe(768)
+    })
+
+    test('getMinWidth returns undefined without a min-width feature', () => {
+      expect(MediaQuery.getMinWidth(MediaQuery.prefersColorScheme('dark'))).toBeUndefined()
+    })
+
+    // Stacked thresholds conjoin, so the effective lower bound is the
+    // largest — the documented contract, pinned here.
+    test('getMinWidth returns the effective bound when thresholds stack', () => {
+      const query = MediaQuery.and(MediaQuery.minWidth(1024), MediaQuery.minWidth(768))
+      expect(MediaQuery.getMinWidth(query)).toBe(1024)
+    })
+
+    test('getMinWidth reads through data-last conjunction', () => {
+      expect(
+        MediaQuery.minWidth(1280).pipe(
+          MediaQuery.and(MediaQuery.prefersColorScheme('dark')),
+          MediaQuery.getMinWidth,
+        ),
+      ).toBe(1280)
+    })
+
+    // The effective upper bound is the smallest max-width, mirroring
+    // getMinWidth's largest-min-width contract.
+    test('getMaxWidth returns the effective bound when thresholds stack', () => {
+      expect(MediaQuery.getMaxWidth(MediaQuery.maxWidth(1024))).toBe(1024)
+      const query = MediaQuery.and(MediaQuery.maxWidth(1280), MediaQuery.maxWidth(1024))
+      expect(MediaQuery.getMaxWidth(query)).toBe(1024)
+      expect(MediaQuery.getMaxWidth(MediaQuery.minWidth(768))).toBeUndefined()
+    })
+
+    test('getPrefersColorScheme returns the required scheme', () => {
+      expect(MediaQuery.getPrefersColorScheme(MediaQuery.prefersColorScheme('light'))).toBe('light')
+      expect(MediaQuery.getPrefersColorScheme(MediaQuery.minWidth(768))).toBeUndefined()
+      const contradiction = MediaQuery.and(
+        MediaQuery.prefersColorScheme('light'),
+        MediaQuery.prefersColorScheme('dark'),
+      )
+      expect(MediaQuery.getPrefersColorScheme(contradiction)).toBe('dark')
+    })
+  })
+
+  describe('feature guards', () => {
+    test('has* report feature presence', () => {
+      const query = MediaQuery.and(MediaQuery.minWidth(768), MediaQuery.prefersColorScheme('dark'))
+      expect(MediaQuery.hasMinWidth(query)).toBe(true)
+      expect(MediaQuery.hasMaxWidth(query)).toBe(false)
+      expect(MediaQuery.hasPrefersColorScheme(query)).toBe(true)
+      expect(MediaQuery.hasMaxWidth(MediaQuery.maxWidth(1024))).toBe(true)
     })
   })
 

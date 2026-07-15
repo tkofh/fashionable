@@ -1,8 +1,13 @@
+import type { Declaration } from '#declaration/declaration'
+import { isDeclaration } from '#declaration/declaration.internal'
 import { isFontFaceRule, render as renderFontFace } from '#fontFace/fontFaceRule.internal'
 import * as Equal from '#internal/equal'
 import { EMPTY_REFS, unionRefs } from '#internal/refs'
 import type { RenderOptions as PropertyRenderOptions } from '#property/propertyRule'
 import { isPropertyRule, render as renderPropertyRule } from '#property/propertyRule.internal'
+import type { MediaQuery } from '#query/mediaQuery'
+import { coSatisfiable, implies } from '#query/mediaQuery.internal'
+import { isMediaRule } from '#rule/mediaRule.internal'
 import {
   refSetOf,
   type RenderContext,
@@ -186,28 +191,109 @@ export function mergeAll<Refs extends string>(
   return merged as Stylesheet<Refs>
 }
 
-/**
- * The strict-mode check: a pull is unsafe when any style rule between
- * the anchor and the sheet's tail ties the pulled selector on
- * specificity without being the same selector. Conservative — without
- * matching semantics there is no telling whether tying selectors can
- * reach the same element, so a tie always refuses.
- */
-const requireSafePull = (
+interface PendingPull {
+  readonly selector: Selector
+  readonly block: RuleSet<string>
+  readonly crossedIndex: number
+}
+
+interface Setter {
+  readonly declaration: Declaration<string>
+  readonly query: MediaQuery | undefined
+}
+
+// A block flattened to (declaration, query) setters, `undefined` query
+// meaning the declaration applies in every state. `undefined` result: the
+// block nests beyond declarations and one-level `@media` blocks, which
+// the shadow check refuses rather than reasons through.
+const settersOf = (block: RuleSet<string>): Array<Setter> | undefined => {
+  const setters: Array<Setter> = []
+  for (const member of block.members) {
+    if (isDeclaration(member)) {
+      setters.push({ declaration: member, query: undefined })
+    } else if (isMediaRule(member)) {
+      for (const inner of member.block.members) {
+        if (!isDeclaration(inner)) {
+          return undefined
+        }
+        setters.push({ declaration: inner, query: member.query })
+      }
+    } else {
+      return undefined
+    }
+  }
+  return setters
+}
+
+const collectCrossings = (
   kept: ReadonlyArray<Node<string>>,
   anchor: number,
-  selector: Selector,
+  rule: StyleRule<string>,
+  pending: Array<PendingPull>,
 ): void => {
-  const pulled = specificity(selector)
+  const pulled = specificity(rule.selector)
   for (let index = anchor + 1; index < kept.length; index++) {
     const node = kept[index] as Node<string>
-    if (!isStyleRule(node) || Equal.equals(node.selector, selector)) {
+    if (!isStyleRule(node) || Equal.equals(node.selector, rule.selector)) {
       continue
     }
-    invariant(
-      compareSpecificity(specificity(node.selector), pulled) !== 0,
-      `Coalescing '${renderSelector(selector)}' would pull its block across '${renderSelector(node.selector)}', which ties on specificity — the pull can change the cascade`,
+    if (compareSpecificity(specificity(node.selector), pulled) === 0) {
+      pending.push({ selector: rule.selector, block: rule.block, crossedIndex: index })
+    }
+  }
+}
+
+/**
+ * The strict-mode check: a pull is unsafe when the moved block crosses a
+ * style rule whose selector ties the pulled selector on specificity,
+ * unless every moved declaration is provably shadowed by the crossed
+ * rule. Shadowed means the crossed rule re-establishes the declaration —
+ * a structurally equal declaration under a query the moved one's query
+ * implies — and no later member under a co-satisfiable query sets a
+ * different value. Matching semantics stay out of scope: the check never
+ * asks whether tying selectors reach the same element, only whether the
+ * move could change a computed value if they did.
+ *
+ * Crossings are collected during the fold but verified afterwards,
+ * against each crossed rule's final member list: a re-establishing
+ * setter can arrive from a node after the moved block (the scheme
+ * mirror in docs/feedback-dtcg-resolver.md section 1), invisible to a
+ * check that fires at encounter time. The safety argument is therefore
+ * global rather than per-move — coalescing preserves member order
+ * within every selector family, so the shadow conditions over the final
+ * list pin the crossed family's last applicable setter in every state
+ * where the moved declaration applies.
+ */
+const requireShadowedPull = (pull: PendingPull, nodes: ReadonlyArray<Node<string>>): void => {
+  const crossed = nodes[pull.crossedIndex] as StyleRule<string>
+  const moved = settersOf(pull.block)
+  const members = settersOf(crossed.block)
+  invariant(
+    moved !== undefined && members !== undefined,
+    `Coalescing '${renderSelector(pull.selector)}' would pull its block across '${renderSelector(crossed.selector)}', which ties on specificity and nests beyond the shadow check — the pull can change the cascade`,
+  )
+  for (const setter of moved) {
+    const name = setter.declaration.name
+    const competing = members.filter((member) => member.declaration.name === name)
+    if (competing.length === 0) {
+      continue
+    }
+    const reestablished = competing.findLastIndex(
+      (member) =>
+        implies(setter.query, member.query) && Equal.equals(member.declaration, setter.declaration),
     )
+    invariant(
+      reestablished !== -1,
+      `Coalescing '${renderSelector(pull.selector)}' would pull '${name}' across '${renderSelector(crossed.selector)}', which ties on specificity without re-establishing its value — the pull can change the cascade`,
+    )
+    for (let index = reestablished + 1; index < competing.length; index++) {
+      const later = competing[index] as Setter
+      invariant(
+        !coSatisfiable(setter.query, later.query) ||
+          Equal.equals(later.declaration, setter.declaration),
+        `Coalescing '${renderSelector(pull.selector)}' would pull '${name}' across '${renderSelector(crossed.selector)}', which ties on specificity and later diverges from its value — the pull can change the cascade`,
+      )
+    }
   }
 }
 
@@ -216,8 +302,10 @@ export function coalesce<Refs extends string>(
   sheet: Stylesheet<Refs>,
   options?: CoalesceOptions,
 ): Stylesheet<Refs> {
+  const strict = options?.strict === true
   const nodes: Array<Node<string>> = []
   const seen = new Map<number, Array<{ readonly selector: Selector; readonly index: number }>>()
+  const pending: Array<PendingPull> = []
   let changed = false
   for (const node of sheet.nodes) {
     if (!isStyleRule(node)) {
@@ -237,12 +325,15 @@ export function coalesce<Refs extends string>(
       nodes.push(node)
       continue
     }
-    if (options?.strict === true) {
-      requireSafePull(nodes, first.index, node.selector)
+    if (strict) {
+      collectCrossings(nodes, first.index, node, pending)
     }
     const target = nodes[first.index] as StyleRule<string>
     nodes[first.index] = makeStyleRule(target.selector, concatBlocks(target.block, node.block))
     changed = true
+  }
+  for (const pull of pending) {
+    requireShadowedPull(pull, nodes)
   }
   return (changed ? new StylesheetImpl(nodes) : sheet) as Stylesheet<Refs>
 }
