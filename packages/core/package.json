@@ -1,6 +1,6 @@
 {
   "name": "fashionable",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Structural stylesheet modeling and calc expression evaluation",
   "homepage": "https://github.com/tkofh/fashionable#readme",
   "bugs": {

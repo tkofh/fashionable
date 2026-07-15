@@ -1,5 +1,0 @@
----
-'fashionable': minor
----
-
-Strict `coalesce` is now shadow-aware. A pull across a specificity tie no longer refuses unconditionally: it is allowed when every moved declaration is provably shadowed by the crossed rule — the crossed rule, in its final coalesced form, re-establishes a structurally equal declaration under a media query the moved one's query implies, with no later member under a co-satisfiable query setting a different value. The scheme-mirror shape (one logical dark rule spelled as both `@media (prefers-color-scheme: dark)` under `:root:not([data-scheme='light'])` and the bare `:root[data-scheme='dark']` toggle) now passes the gate built for it, while a producer that emits only one half still refuses. Crossings are verified against the crossed rule's final members, so a re-establishing setter may arrive from a rule later than the moved block. Blocks nesting style rules refuse as before. Refusal messages now name the unshadowed declaration and the crossing rule. The change is strictly more permissive: every sheet that passed `{ strict: true }` before still passes.

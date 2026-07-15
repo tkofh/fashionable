@@ -1,5 +1,12 @@
 # fashionable
 
+## 0.3.0
+
+### Minor Changes
+
+- 734b64b: `MediaQuery` now records statically known features as type-level brands (the curvy trait pattern `ColorSpace` already uses for polar-ness), and the feature set gains `max-width`. Each constructor brands its result — `minWidth` returns `MediaQuery<MinWidth>`, the new `maxWidth` returns `MediaQuery<MaxWidth>`, `prefersColorScheme` returns `MediaQuery<PrefersColorScheme>` — and `and` intersects both sides' brands, including through `pipe` composition. New accessors key their return type on the brand: `getMinWidth`, `getMaxWidth`, and `getPrefersColorScheme` return a bare value where the type proves the feature is present and `| undefined` anywhere else, with stacked thresholds reporting the conjunction's effective bound (the largest `min-width`, the smallest `max-width`). The `hasMinWidth`/`hasMaxWidth`/`hasPrefersColorScheme` guards recover a brand from a plain query at runtime. Brands erase at runtime and the `Features` parameter defaults to `unknown`, so existing `MediaQuery` annotations keep working unchanged. In canonical order, `max-width` renders between `min-width` and `prefers-color-scheme`; existing queries render exactly as before.
+- 734b64b: Strict `coalesce` is now shadow-aware. A pull across a specificity tie no longer refuses unconditionally: it is allowed when every moved declaration is provably shadowed by the crossed rule — the crossed rule, in its final coalesced form, re-establishes a structurally equal declaration under a media query the moved one's query implies, with no later member under a co-satisfiable query setting a different value. The scheme-mirror shape (one logical dark rule spelled as both `@media (prefers-color-scheme: dark)` under `:root:not([data-scheme='light'])` and the bare `:root[data-scheme='dark']` toggle) now passes the gate built for it, while a producer that emits only one half still refuses. Crossings are verified against the crossed rule's final members, so a re-establishing setter may arrive from a rule later than the moved block. Blocks nesting style rules refuse as before. Refusal messages now name the unshadowed declaration and the crossing rule. The change is strictly more permissive: every sheet that passed `{ strict: true }` before still passes.
+
 ## 0.2.0
 
 ### Minor Changes
