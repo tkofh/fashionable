@@ -86,26 +86,26 @@ export const refsOf = <R extends string>(declaration: Declaration<R>): ReadonlyS
   (declaration as unknown as DeclarationImpl).refSet as ReadonlySet<R>
 
 /** @internal */
-export function make<Refs extends string = never>(
+export function make<Vars extends string = never>(
   name: string,
-  value: Value<Refs> | number,
-): Declaration<Refs> {
+  value: Value<Vars> | number,
+): Declaration<Vars> {
   invariant(name.length > 0, 'Declaration name must be a non-empty string')
   return new DeclarationImpl(
     name,
     typeof value === 'number' ? toCalc(value) : value,
-  ) as Declaration<Refs>
+  ) as Declaration<Vars>
 }
 
 /** @internal */
 export const bind: {
   <const B extends Bindings>(
     bindings: B,
-  ): <Refs extends string>(declaration: Declaration<Refs>) => Declaration<ApplyBindings<Refs, B>>
-  <Refs extends string, const B extends Bindings>(
-    declaration: Declaration<Refs>,
+  ): <Vars extends string>(declaration: Declaration<Vars>) => Declaration<ApplyBindings<Vars, B>>
+  <Vars extends string, const B extends Bindings>(
+    declaration: Declaration<Vars>,
     bindings: B,
-  ): Declaration<ApplyBindings<Refs, B>>
+  ): Declaration<ApplyBindings<Vars, B>>
 } = dual(
   2,
   (
@@ -124,7 +124,7 @@ export const bind: {
 )
 
 /** @internal */
-export function refs<Refs extends string>(declaration: Declaration<Refs>): ReadonlySet<Refs> {
+export function refs<Vars extends string>(declaration: Declaration<Vars>): ReadonlySet<Vars> {
   return refsOf(declaration)
 }
 

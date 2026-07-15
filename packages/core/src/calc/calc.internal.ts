@@ -39,11 +39,11 @@ export interface RefNode {
 /**
  * A bare CSS identifier leaf — an unquoted token resolved from its surrounding
  * context, not the custom-property channel. Serializes as its name (`l`, not
- * `var(--l)`) and contributes no references; `bind` passes it through untouched.
- * It carries a leaf brand (`Unit.ChannelLeaf`), so `solve` demands a value for
- * it by name through the context, the way a viewport unit demands a ratio.
- * Today the relative-color channel keywords (`Channel.L`, `Channel.C`, ...) are
- * its only source.
+ * `var(--l)`) and contributes no variables; `bind` passes it through untouched.
+ * It carries a leaf brand (`Calc.Ident`), so `solve` demands a value for it by
+ * name through the `idents` section of its options, the way a viewport unit
+ * demands a ratio through `units`. Today the relative-color channel keywords
+ * (`Channel.L`, `Channel.C`, ...) are its only source.
  *
  * @internal
  */
@@ -377,63 +377,87 @@ export const substituteNode = (node: CalcNode, bindings: Record<string, CalcNode
  * The units that lower with no caller-supplied ratio: `px` is the pixel base
  * (`1`), a radian is already the numeric measure of its angle (`1`), and a
  * degree is a fixed `pi / 180` of one. Every other unit is context-dependent
- * and must appear in the solve context.
+ * and must appear in the `units` section of the solve options.
  *
  * @internal
  */
 export const DEFAULT_RATIOS: Record<string, number> = { px: 1, rad: 1, deg: Math.PI / 180 }
 
 /** @internal */
-export const evaluateNode = (node: CalcNode, context: Record<string, number>): number => {
+export const evaluateNode = (
+  node: CalcNode,
+  unitRatios: Record<string, number>,
+  identValues: Record<string, number>,
+): number => {
   switch (node._tag) {
     case 'Constant': {
       if (node.unit === undefined) {
         return node.value
       }
-      const ratio = context[node.unit] ?? DEFAULT_RATIOS[node.unit]
+      const ratio = unitRatios[node.unit] ?? DEFAULT_RATIOS[node.unit]
       invariant(
         ratio !== undefined,
-        `Cannot evaluate ${node.value}${node.unit}: no ratio for '${node.unit}' in the unit context`,
+        `Cannot evaluate ${node.value}${node.unit}: no ratio for '${node.unit}' in the units section`,
       )
       return node.value * ratio
     }
     case 'Ref':
-      throw new Error(`Cannot evaluate non-constant reference: ${node.name}`)
+      throw new Error(`Cannot evaluate unbound variable: ${node.name}`)
     case 'Ident': {
-      const value = context[node.name]
+      const value = identValues[node.name]
       invariant(
         value !== undefined,
-        `Cannot evaluate '${node.name}': no value for it in the solve context`,
+        `Cannot evaluate '${node.name}': no value for it in the idents section`,
       )
       return value
     }
     case 'Add':
-      return node.terms.reduce((total, term) => total + evaluateNode(term, context), 0)
+      return node.terms.reduce(
+        (total, term) => total + evaluateNode(term, unitRatios, identValues),
+        0,
+      )
     case 'Subtract':
-      return evaluateNode(node.left, context) - evaluateNode(node.right, context)
+      return (
+        evaluateNode(node.left, unitRatios, identValues) -
+        evaluateNode(node.right, unitRatios, identValues)
+      )
     case 'Multiply':
-      return evaluateNode(node.left, context) * evaluateNode(node.right, context)
+      return (
+        evaluateNode(node.left, unitRatios, identValues) *
+        evaluateNode(node.right, unitRatios, identValues)
+      )
     case 'Divide':
-      return evaluateNode(node.left, context) / evaluateNode(node.right, context)
+      return (
+        evaluateNode(node.left, unitRatios, identValues) /
+        evaluateNode(node.right, unitRatios, identValues)
+      )
     case 'Mod': {
-      const dividend = evaluateNode(node.left, context)
-      const divisor = evaluateNode(node.right, context)
+      const dividend = evaluateNode(node.left, unitRatios, identValues)
+      const divisor = evaluateNode(node.right, unitRatios, identValues)
       return dividend - divisor * Math.floor(dividend / divisor)
     }
     case 'Pow':
-      return evaluateNode(node.base, context) ** evaluateNode(node.exponent, context)
+      return (
+        evaluateNode(node.base, unitRatios, identValues) **
+        evaluateNode(node.exponent, unitRatios, identValues)
+      )
     case 'SignedPow': {
-      const base = evaluateNode(node.base, context)
-      return Math.abs(base) ** evaluateNode(node.exponent, context) * Math.sign(base)
+      const base = evaluateNode(node.base, unitRatios, identValues)
+      return (
+        Math.abs(base) ** evaluateNode(node.exponent, unitRatios, identValues) * Math.sign(base)
+      )
     }
     case 'Min':
-      return Math.min(...node.args.map((arg) => evaluateNode(arg, context)))
+      return Math.min(...node.args.map((arg) => evaluateNode(arg, unitRatios, identValues)))
     case 'Max':
-      return Math.max(...node.args.map((arg) => evaluateNode(arg, context)))
+      return Math.max(...node.args.map((arg) => evaluateNode(arg, unitRatios, identValues)))
     case 'Clamp':
       return Math.max(
-        evaluateNode(node.minimum, context),
-        Math.min(evaluateNode(node.value, context), evaluateNode(node.maximum, context)),
+        evaluateNode(node.minimum, unitRatios, identValues),
+        Math.min(
+          evaluateNode(node.value, unitRatios, identValues),
+          evaluateNode(node.maximum, unitRatios, identValues),
+        ),
       )
     case 'Abs':
     case 'Sign':
@@ -441,9 +465,12 @@ export const evaluateNode = (node: CalcNode, context: Record<string, number>): n
     case 'Cos':
     case 'Tan':
     case 'Acos':
-      return UNARY[node._tag].fn(evaluateNode(node.argument, context))
+      return UNARY[node._tag].fn(evaluateNode(node.argument, unitRatios, identValues))
     case 'Atan2':
-      return Math.atan2(evaluateNode(node.y, context), evaluateNode(node.x, context))
+      return Math.atan2(
+        evaluateNode(node.y, unitRatios, identValues),
+        evaluateNode(node.x, unitRatios, identValues),
+      )
   }
 }
 
@@ -762,44 +789,53 @@ export const nodeOf = (expr: Calc<string, Kind, unknown>): CalcNode => (expr as 
 export const refsOf = <R extends string>(expr: Calc<R, Kind, unknown>): ReadonlySet<R> =>
   (expr as unknown as CalcImpl).refSet as ReadonlySet<R>
 
-// Bare identifiers aren't tracked in the ref set (they are not custom
-// properties), so their names are gathered by walking the tree on demand —
-// the runtime counterpart to the `Leaves`-level channel typing.
-const collectIdents = (node: CalcNode, into: Set<string>): void => {
+// Neither leaf token kind is tracked in the ref set (they are not custom
+// properties), so both are gathered by walking the tree on demand — the
+// runtime counterpart to the `Leaves`-level typing, one pass collecting into
+// whichever sets are supplied.
+const collectTokens = (
+  node: CalcNode,
+  intoUnits: Set<string> | undefined,
+  intoIdents: Set<string> | undefined,
+): void => {
   switch (node._tag) {
     case 'Ident':
-      into.add(node.name)
+      intoIdents?.add(node.name)
       return
     case 'Constant':
+      if (node.unit !== undefined) {
+        intoUnits?.add(node.unit)
+      }
+      return
     case 'Ref':
       return
     case 'Add':
       for (const term of node.terms) {
-        collectIdents(term, into)
+        collectTokens(term, intoUnits, intoIdents)
       }
       return
     case 'Min':
     case 'Max':
       for (const arg of node.args) {
-        collectIdents(arg, into)
+        collectTokens(arg, intoUnits, intoIdents)
       }
       return
     case 'Subtract':
     case 'Multiply':
     case 'Divide':
     case 'Mod':
-      collectIdents(node.left, into)
-      collectIdents(node.right, into)
+      collectTokens(node.left, intoUnits, intoIdents)
+      collectTokens(node.right, intoUnits, intoIdents)
       return
     case 'Pow':
     case 'SignedPow':
-      collectIdents(node.base, into)
-      collectIdents(node.exponent, into)
+      collectTokens(node.base, intoUnits, intoIdents)
+      collectTokens(node.exponent, intoUnits, intoIdents)
       return
     case 'Clamp':
-      collectIdents(node.minimum, into)
-      collectIdents(node.value, into)
-      collectIdents(node.maximum, into)
+      collectTokens(node.minimum, intoUnits, intoIdents)
+      collectTokens(node.value, intoUnits, intoIdents)
+      collectTokens(node.maximum, intoUnits, intoIdents)
       return
     case 'Abs':
     case 'Sign':
@@ -807,11 +843,11 @@ const collectIdents = (node: CalcNode, into: Set<string>): void => {
     case 'Cos':
     case 'Tan':
     case 'Acos':
-      collectIdents(node.argument, into)
+      collectTokens(node.argument, intoUnits, intoIdents)
       return
     case 'Atan2':
-      collectIdents(node.y, into)
-      collectIdents(node.x, into)
+      collectTokens(node.y, intoUnits, intoIdents)
+      collectTokens(node.x, intoUnits, intoIdents)
       return
   }
 }
@@ -819,7 +855,14 @@ const collectIdents = (node: CalcNode, into: Set<string>): void => {
 /** @internal */
 export const identsOf = (node: CalcNode): ReadonlySet<string> => {
   const set = new Set<string>()
-  collectIdents(node, set)
+  collectTokens(node, undefined, set)
+  return set
+}
+
+/** @internal */
+export const unitsOf = (node: CalcNode): ReadonlySet<string> => {
+  const set = new Set<string>()
+  collectTokens(node, set, undefined)
   return set
 }
 
@@ -1009,19 +1052,13 @@ export function divide<A extends string = never, B extends string = never>(
 }
 
 /** @internal */
-export function pow<A extends string = never, B extends string = never>(
-  base: Input<A>,
-  exponent: Input<B>,
-): Calc<A | B> {
-  return powImpl(base, exponent) as Calc<A | B>
+export function pow(base: AnyInput, exponent: AnyInput): Bottom {
+  return powImpl(base, exponent) as Bottom
 }
 
 /** @internal */
-export function signedPow<A extends string = never, B extends string = never>(
-  base: Input<A>,
-  exponent: Input<B>,
-): Calc<A | B> {
-  return signedPowImpl(base, exponent) as Calc<A | B>
+export function signedPow(base: AnyInput, exponent: AnyInput): Bottom {
+  return signedPowImpl(base, exponent) as Bottom
 }
 
 const liftUnary =
@@ -1044,8 +1081,8 @@ export function abs(argument: AnyInput): Bottom {
 }
 
 /** @internal */
-export function sign<A extends string = never>(argument: Input<A>): Calc<A> {
-  return signImpl(argument) as Calc<A>
+export function sign(argument: AnyInput): Bottom {
+  return signImpl(argument) as Bottom
 }
 
 /** @internal */
@@ -1118,11 +1155,11 @@ export const collectBindings = (
 export const bind: {
   <const B extends Bindings>(
     bindings: B,
-  ): <Refs extends string>(expr: Calc<Refs, Kind, unknown>) => Calc<ApplyBindings<Refs, B>>
-  <Refs extends string, const B extends Bindings>(
-    expr: Calc<Refs, Kind, unknown>,
+  ): <Vars extends string>(expr: Calc<Vars, Kind, unknown>) => Calc<ApplyBindings<Vars, B>>
+  <Vars extends string, const B extends Bindings>(
+    expr: Calc<Vars, Kind, unknown>,
     bindings: B,
-  ): Calc<ApplyBindings<Refs, B>>
+  ): Calc<ApplyBindings<Vars, B>>
 } = dual(
   2,
   (expr: Calc<string, Kind, unknown>, bindings: Record<string, Input<string>>): Calc<string> => {
@@ -1131,27 +1168,35 @@ export const bind: {
   },
 )
 
-/** @internal */
-export function solve(
-  expr: Calc<string, Kind, unknown>,
-  bindings?: Record<string, Input<string>>,
-  context?: Record<string, number>,
-): number {
-  let node = nodeOf(expr)
-  let remaining: ReadonlySet<string> = refsOf(expr)
-  if (bindings !== undefined) {
-    const collected = collectBindings(remaining, bindings)
-    node = substituteNode(node, collected.nodeBindings)
-    remaining = collected.refSet
-  }
-  invariant(remaining.size === 0, 'Cannot convert expression to number: unbound references remain')
-  return evaluateNode(node, context ?? {})
+/**
+ * The erased solve options: each section optional, keys untyped. The precise
+ * per-section requiredness (`SolveOptions`) rides the public signature.
+ *
+ * @internal
+ */
+export interface AnySolveOptions {
+  readonly bindings?: Record<string, Input<string> | undefined>
+  readonly units?: Record<string, number>
+  readonly idents?: Record<string, number>
 }
 
 /** @internal */
-export function serialize<Refs extends string>(
-  expr: Calc<Refs, Kind, unknown>,
-  options?: SerializeOptions<Refs>,
+export function solve(expr: Calc<string, Kind, unknown>, options?: AnySolveOptions): number {
+  let node = nodeOf(expr)
+  let remaining: ReadonlySet<string> = refsOf(expr)
+  if (options?.bindings !== undefined) {
+    const collected = collectBindings(remaining, options.bindings)
+    node = substituteNode(node, collected.nodeBindings)
+    remaining = collected.refSet
+  }
+  invariant(remaining.size === 0, 'Cannot convert expression to number: unbound variables remain')
+  return evaluateNode(node, options?.units ?? {}, options?.idents ?? {})
+}
+
+/** @internal */
+export function serialize<Vars extends string>(
+  expr: Calc<Vars, Kind, unknown>,
+  options?: SerializeOptions<Vars>,
 ): string {
   let node = nodeOf(expr)
   if (options?.bindings !== undefined) {
@@ -1166,13 +1211,18 @@ export function serialize<Refs extends string>(
 }
 
 /** @internal */
-export function refs<Refs extends string>(expr: Calc<Refs, Kind, unknown>): ReadonlySet<Refs> {
+export function refs<Vars extends string>(expr: Calc<Vars, Kind, unknown>): ReadonlySet<Vars> {
   return refsOf(expr)
 }
 
 /** @internal */
-export function channels(expr: Calc<string, Kind, unknown>): ReadonlySet<string> {
+export function idents(expr: Calc<string, Kind, unknown>): ReadonlySet<string> {
   return identsOf(nodeOf(expr))
+}
+
+/** @internal */
+export function units(expr: Calc<string, Kind, unknown>): ReadonlySet<string> {
+  return unitsOf(nodeOf(expr))
 }
 
 /** @internal */

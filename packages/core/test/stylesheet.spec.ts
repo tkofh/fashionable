@@ -14,7 +14,7 @@ describe('stylesheet', () => {
   const depthRegistration = PropertyRule.make('--depth', PropertySyntax.number, 0)
   const buttonRule = StyleRule.make(
     Selector.class('btn'),
-    RuleSet.make(Declaration.make('--indent', Calc.multiply(Calc.ref('depth'), 8))),
+    RuleSet.make(Declaration.make('--indent', Calc.multiply(Calc.var('depth'), 8))),
   )
   const cardRule = StyleRule.make(
     Selector.class('card'),
@@ -565,15 +565,15 @@ describe('stylesheet', () => {
     test('unions across style rules', () => {
       const themed = StyleRule.make(
         Selector.root,
-        RuleSet.make(Declaration.make('--accent', Calc.ref('hue'))),
+        RuleSet.make(Declaration.make('--accent', Calc.var('hue'))),
       )
-      expect(Stylesheet.refs(Stylesheet.make(buttonRule, themed))).toEqual(
+      expect(Stylesheet.vars(Stylesheet.make(buttonRule, themed))).toEqual(
         new Set(['depth', 'hue']),
       )
     })
 
     test('at-rules contribute nothing', () => {
-      expect(Stylesheet.refs(Stylesheet.make(inter, depthRegistration))).toEqual(new Set())
+      expect(Stylesheet.vars(Stylesheet.make(inter, depthRegistration))).toEqual(new Set())
     })
   })
 

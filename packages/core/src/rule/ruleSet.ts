@@ -19,19 +19,19 @@ import type { StyleRule } from './styleRule.ts'
  * nested rule keep their source position rather than hoisting above it —
  * so what you append is what renders.
  *
- * The `Refs` parameter unions the members' unbound reference names, as on
- * `Calc`; `refs` is the runtime set.
+ * The `Vars` parameter unions the members' unbound variable names, as on
+ * `Calc`; `vars` is the runtime set.
  *
  * Construct via `make` (or `empty` and `append`).
  *
  * @since 0.1.0
  */
-export interface RuleSet<out Refs extends string = string> extends Pipeable {
+export interface RuleSet<out Vars extends string = string> extends Pipeable {
   readonly [RuleSetTypeId]: RuleSetTypeId
   /**
    * The block's members, in authored order.
    */
-  readonly members: ReadonlyArray<Member<Refs>>
+  readonly members: ReadonlyArray<Member<Vars>>
 }
 
 /**
@@ -44,19 +44,19 @@ export interface RuleSet<out Refs extends string = string> extends Pipeable {
  *
  * @since 0.1.0
  */
-export type Member<Refs extends string = string> =
-  | Declaration<Refs>
-  | StyleRule<Refs>
-  | MediaRule<Refs>
+export type Member<Vars extends string = string> =
+  | Declaration<Vars>
+  | StyleRule<Vars>
+  | MediaRule<Vars>
 
 /**
- * The unbound reference names of a `Member`, or the union of them for a
- * union of members — the type-level counterpart of `refs`, used by the
+ * The unbound variable names of a `Member`, or the union of them for a
+ * union of members — the type-level counterpart of `vars`, used by the
  * container constructors to thread their members' names into the result.
  *
  * @since 0.1.0
  */
-export type MemberRefs<M extends Member<string>> =
+export type MemberVars<M extends Member<string>> =
   M extends Declaration<infer R>
     ? R
     : M extends StyleRule<infer R>
@@ -101,11 +101,11 @@ export const isEmpty: (set: RuleSet<string>) => boolean = internal.isEmpty
  * Creates a rule set holding the given members, in the given order.
  *
  * @param members - Declarations and nested rules, in authored order.
- * @returns A `RuleSet` whose `Refs` unions the members' reference names.
+ * @returns A `RuleSet` whose `Vars` unions the members' variable names.
  * @example
  * ```ts
  * const block = RuleSet.make(
- *   Declaration.make('--depth', Calc.ref('depth')),
+ *   Declaration.make('--depth', Calc.var('depth')),
  *   Declaration.make('color', 'oklch(0.7 0.1 250)'),
  * ) // RuleSet<'depth'>
  * ```
@@ -113,7 +113,7 @@ export const isEmpty: (set: RuleSet<string>) => boolean = internal.isEmpty
  */
 export const make: <Members extends ReadonlyArray<Member<string>>>(
   ...members: Members
-) => RuleSet<MemberRefs<Members[number]>> = internal.make
+) => RuleSet<MemberVars<Members[number]>> = internal.make
 
 export const append: {
   /**
@@ -125,7 +125,7 @@ export const append: {
    */
   <M extends Member<string>>(
     member: M,
-  ): <Refs extends string>(self: RuleSet<Refs>) => RuleSet<Refs | MemberRefs<M>>
+  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | MemberVars<M>>
   /**
    * Returns a function that appends the style rule `selector { block }`
    * to its argument's block.
@@ -138,7 +138,7 @@ export const append: {
   <B extends string>(
     selector: Selector,
     block: RuleSet<B>,
-  ): <Refs extends string>(self: RuleSet<Refs>) => RuleSet<Refs | B>
+  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | B>
   /**
    * Returns a function that appends the media rule `@media query { block }`
    * to its argument's block.
@@ -151,27 +151,27 @@ export const append: {
   <B extends string>(
     query: MediaQuery,
     block: RuleSet<B>,
-  ): <Refs extends string>(self: RuleSet<Refs>) => RuleSet<Refs | B>
+  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | B>
   /**
    * Appends a member at the end of the block. The result is a new set;
    * the original is untouched.
    *
    * @param self - The block to extend.
    * @param member - The member to append.
-   * @returns The extended block, with the member's reference names joined in.
+   * @returns The extended block, with the member's variable names joined in.
    * @example
    * ```ts
    * RuleSet.empty.pipe(
    *   RuleSet.append(Declaration.make('color', 'red')),
-   *   RuleSet.append(Declaration.make('--depth', Calc.ref('depth'))),
+   *   RuleSet.append(Declaration.make('--depth', Calc.var('depth'))),
    * ) // RuleSet<'depth'>
    * ```
    * @since 0.1.0
    */
-  <Refs extends string, M extends Member<string>>(
-    self: RuleSet<Refs>,
+  <Vars extends string, M extends Member<string>>(
+    self: RuleSet<Vars>,
     member: M,
-  ): RuleSet<Refs | MemberRefs<M>>
+  ): RuleSet<Vars | MemberVars<M>>
   /**
    * Appends a nested style rule from its parts — sugar for
    * `append(self, StyleRule.make(selector, block))`, so blocks compose
@@ -180,18 +180,18 @@ export const append: {
    * @param self - The block to extend.
    * @param selector - The nested rule's selector.
    * @param block - The nested rule's block.
-   * @returns The extended block, with the nested block's reference names joined in.
+   * @returns The extended block, with the nested block's variable names joined in.
    * @example
    * ```ts
    * RuleSet.empty.pipe(RuleSet.append(Selector.class('btn'), RuleSet.make(Declaration.make('color', 'red'))))
    * ```
    * @since 0.1.0
    */
-  <Refs extends string, B extends string>(
-    self: RuleSet<Refs>,
+  <Vars extends string, B extends string>(
+    self: RuleSet<Vars>,
     selector: Selector,
     block: RuleSet<B>,
-  ): RuleSet<Refs | B>
+  ): RuleSet<Vars | B>
   /**
    * Appends a nested media rule from its parts — sugar for
    * `append(self, MediaRule.make(query, block))`, so blocks compose
@@ -200,7 +200,7 @@ export const append: {
    * @param self - The block to extend.
    * @param query - The nested rule's media query.
    * @param block - The nested rule's block.
-   * @returns The extended block, with the nested block's reference names joined in.
+   * @returns The extended block, with the nested block's variable names joined in.
    * @example
    * ```ts
    * RuleSet.make(Declaration.make('--gutter', 16)).pipe(
@@ -209,11 +209,11 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Refs extends string, B extends string>(
-    self: RuleSet<Refs>,
+  <Vars extends string, B extends string>(
+    self: RuleSet<Vars>,
     query: MediaQuery,
     block: RuleSet<B>,
-  ): RuleSet<Refs | B>
+  ): RuleSet<Vars | B>
 } = internal.append
 
 export const concat: {
@@ -232,7 +232,7 @@ export const concat: {
    *
    * @param self - The block whose members come first.
    * @param that - The block whose members come second.
-   * @returns The concatenated block, with both sides' reference names unioned.
+   * @returns The concatenated block, with both sides' variable names unioned.
    * @since 0.1.0
    */
   <A extends string, B extends string>(self: RuleSet<A>, that: RuleSet<B>): RuleSet<A | B>
@@ -247,12 +247,12 @@ export const forSelector: {
    * @returns A function that takes a block and returns the style rule applying it to `selector`.
    * @since 0.2.0
    */
-  (selector: Selector): <Refs extends string>(self: RuleSet<Refs>) => StyleRule<Refs>
+  (selector: Selector): <Vars extends string>(self: RuleSet<Vars>) => StyleRule<Vars>
   /**
    * Lifts a block into a style rule applying to `selector` — sugar for
    * `StyleRule.make(selector, self)` with the arguments flipped, so a
    * block built up through `pipe` caps off as a rule without naming
-   * `StyleRule` at the call site. The rule carries the block's reference
+   * `StyleRule` at the call site. The rule carries the block's variable
    * names unchanged; a selector contributes none.
    *
    * @param self - The block the rule applies.
@@ -260,13 +260,13 @@ export const forSelector: {
    * @returns The style rule pairing `selector` with the block.
    * @example
    * ```ts
-   * RuleSet.make(Declaration.make('--depth', Calc.ref('depth'))).pipe(
+   * RuleSet.make(Declaration.make('--depth', Calc.var('depth'))).pipe(
    *   RuleSet.forSelector(Selector.root),
    * ) // StyleRule<'depth'>
    * ```
    * @since 0.2.0
    */
-  <Refs extends string>(self: RuleSet<Refs>, selector: Selector): StyleRule<Refs>
+  <Vars extends string>(self: RuleSet<Vars>, selector: Selector): StyleRule<Vars>
 } = internal.forSelector
 
 export const forMediaQuery: {
@@ -278,12 +278,12 @@ export const forMediaQuery: {
    * @returns A function that takes a block and returns the media rule gating it by `query`.
    * @since 0.2.0
    */
-  (query: MediaQuery): <Refs extends string>(self: RuleSet<Refs>) => MediaRule<Refs>
+  (query: MediaQuery): <Vars extends string>(self: RuleSet<Vars>) => MediaRule<Vars>
   /**
    * Lifts a block into a nested `@media` rule gated by `query` — sugar
    * for `MediaRule.make(query, self)` with the arguments flipped, so a
    * block built up through `pipe` caps off as a rule without naming
-   * `MediaRule` at the call site. The rule carries the block's reference
+   * `MediaRule` at the call site. The rule carries the block's variable
    * names unchanged; a query contributes none.
    *
    * @param self - The block the rule gates.
@@ -291,24 +291,24 @@ export const forMediaQuery: {
    * @returns The media rule pairing `query` with the block.
    * @example
    * ```ts
-   * RuleSet.make(Declaration.make('--gutter', Calc.ref('gutter'))).pipe(
+   * RuleSet.make(Declaration.make('--gutter', Calc.var('gutter'))).pipe(
    *   RuleSet.forMediaQuery(MediaQuery.minWidth(768)),
    * ) // MediaRule<'gutter'>
    * ```
    * @since 0.2.0
    */
-  <Refs extends string>(self: RuleSet<Refs>, query: MediaQuery): MediaRule<Refs>
+  <Vars extends string>(self: RuleSet<Vars>, query: MediaQuery): MediaRule<Vars>
 } = internal.forMediaQuery
 
 /**
- * The block's unbound reference names, unioned across members —
+ * The block's unbound variable names, unioned across members —
  * including everything nested rules contribute.
  *
  * @param set - The block to inspect.
- * @returns The set of unbound reference names.
+ * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(set: RuleSet<Refs>) => ReadonlySet<Refs> = internal.refs
+export const vars: <Vars extends string>(set: RuleSet<Vars>) => ReadonlySet<Vars> = internal.refs
 
 /**
  * Options for `render`, extending `Declaration.RenderOptions` (and

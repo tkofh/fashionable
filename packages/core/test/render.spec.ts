@@ -14,7 +14,7 @@ describe('render', () => {
     test('a declaration renders as name: value;', () => {
       expect(Declaration.render(Declaration.make('--depth', 4))).toBe('--depth: 4;')
       expect(
-        Declaration.render(Declaration.make('--indent', Calc.multiply(Calc.ref('depth'), 8))),
+        Declaration.render(Declaration.make('--indent', Calc.multiply(Calc.var('depth'), 8))),
       ).toBe('--indent: calc(var(--depth) * 8);')
     })
 
@@ -134,7 +134,7 @@ describe('render', () => {
         StyleRule.make(
           Selector.root,
           RuleSet.make(
-            Declaration.make('--indent', Calc.multiply(Calc.ref('depth'), 8)),
+            Declaration.make('--indent', Calc.multiply(Calc.var('depth'), 8)),
             Declaration.make('--third', Calc.divide(1, 3)),
             Declaration.make('color', Color.oklch(0.7, 0.1, 250)),
           ),

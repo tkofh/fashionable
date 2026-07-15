@@ -151,7 +151,7 @@ export const dual: {
  * @example
  * ```ts
  * const evaluate = flow(Calc.bind({ x: 2 }), Calc.serialize)
- * evaluate(Calc.add(Calc.ref('x'), 1)) // '3'
+ * evaluate(Calc.add(Calc.var('x'), 1)) // '3'
  * ```
  * @since 0.1.0
  */
@@ -325,7 +325,7 @@ export function flow(
  * @returns The result of applying every function, in order, to the value.
  * @example
  * ```ts
- * pipe(Calc.add(Calc.ref('x'), 1), Calc.bind({ x: 2 }), Calc.serialize) // '3'
+ * pipe(Calc.add(Calc.var('x'), 1), Calc.bind({ x: 2 }), Calc.serialize) // '3'
  * ```
  * @since 0.1.0
  */
@@ -823,7 +823,7 @@ export class Pipeable {
    * @returns The result of applying every function, in order, to this value. With no arguments, this value.
    * @example
    * ```ts
-   * Calc.add(Calc.ref('x'), 1).pipe(Calc.bind({ x: 2 }), Calc.serialize) // '3'
+   * Calc.add(Calc.var('x'), 1).pipe(Calc.bind({ x: 2 }), Calc.serialize) // '3'
    * ```
    * @since 0.1.0
    */

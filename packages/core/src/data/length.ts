@@ -7,7 +7,7 @@
  *
  * Values pass through unrounded; the optional `Precision` pins serialization
  * exactly as `Calc.of` does. The unit is applied structurally, so it survives
- * `refs`, structural equality, and folding — no string assembly.
+ * `vars`, structural equality, and folding — no string assembly.
  *
  * @since 0.2.0
  */
@@ -19,10 +19,10 @@ import type { Em, Length as LengthUnit, Px, Rem, Vh, Vmax, Vmin, Vw } from './un
 
 /**
  * A `<length>` expression: a `Calc` of length kind, in any length unit. Names
- * the dimension without spelling `Calc<Refs, 'length', Unit.Length>` —
+ * the dimension without spelling `Calc<Vars, 'length', Unit.Length>` —
  * `Length.px(16)` produces one, and it composes with every `Calc` combinator
- * (adding two lengths is a length, dividing one by another is a number). `Refs`
- * unions the unbound reference names, as on `Calc`.
+ * (adding two lengths is a length, dividing one by another is a number). `Vars`
+ * unions the unbound variable names, as on `Calc`.
  *
  * The leaf is the widened `Unit.Length`, so a mixed-unit sum
  * (`Calc.add(Length.px(16), Length.vw(2))`) and every single-unit length are
@@ -30,7 +30,7 @@ import type { Em, Length as LengthUnit, Px, Rem, Vh, Vmax, Vmin, Vw } from './un
  *
  * @since 0.2.0
  */
-export type Length<Refs extends string = string> = Calc<Refs, 'length', LengthUnit>
+export type Length<Vars extends string = string> = Calc<Vars, 'length', LengthUnit>
 
 /**
  * A length in `px` (absolute pixels).

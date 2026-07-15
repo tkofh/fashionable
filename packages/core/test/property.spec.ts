@@ -202,7 +202,7 @@ describe('property', () => {
         PropertyRule.make(
           '--x',
           PropertySyntax.number,
-          Calc.ref('u') as unknown as Calc.Calc<never>,
+          Calc.var('u') as unknown as Calc.Calc<never>,
         ),
       ).toThrow('computationally independent')
     })

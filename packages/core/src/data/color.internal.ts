@@ -17,6 +17,7 @@ import * as Equal from '#internal/equal'
 import { DEFAULT_FORMAT, type FormatSpec } from '#internal/format'
 import { EMPTY_REFS, unionRefs } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
+import type { ChannelIdent } from './channels.ts'
 import type { Color, RelativeChannel } from './color.ts'
 import { dataOf as spaceDataOf, type Wrap } from './colorSpace.internal.ts'
 import type { ColorSpace } from './colorSpace.ts'
@@ -25,7 +26,6 @@ import type { HueInterpolation } from './hueInterpolation.ts'
 import { isNone } from './keywords.internal.ts'
 import type { None } from './keywords.ts'
 import { of as percentageOf } from './percentage.internal.ts'
-import type { ChannelLeaf } from './units.ts'
 
 export const ColorTypeId = Symbol.for('fashionable/color')
 export type ColorTypeId = typeof ColorTypeId
@@ -422,9 +422,9 @@ interface ResolvedChannel {
 
 // The erased channel input the constructors funnel through `toChannel`: a
 // number, `none`, or any number-kind expression — including one branded with a
-// relative-color channel keyword. The public signatures pin the precise refs
+// relative-color channel keyword. The public signatures pin the precise vars
 // and scope the keywords to the space; this stays wide enough to accept all.
-type RelativeChannelInput = RelativeChannel<string, ChannelLeaf<string>>
+type RelativeChannelInput = RelativeChannel<string, ChannelIdent<string>>
 
 const toChannel = (input: RelativeChannelInput): ResolvedChannel => {
   if (isNone(input)) {
@@ -665,11 +665,11 @@ const colorChannels = (node: ColorNode): ReadonlySet<string> => {
 export const bind: {
   <const B extends Bindings>(
     bindings: B,
-  ): <Refs extends string>(color: Color<Refs>) => Color<ApplyBindings<Refs, B>>
-  <Refs extends string, const B extends Bindings>(
-    color: Color<Refs>,
+  ): <Vars extends string>(color: Color<Vars>) => Color<ApplyBindings<Vars, B>>
+  <Vars extends string, const B extends Bindings>(
+    color: Color<Vars>,
     bindings: B,
-  ): Color<ApplyBindings<Refs, B>>
+  ): Color<ApplyBindings<Vars, B>>
 } = dual(2, (color: Color<string>, bindings: Record<string, Input<string>>): Color<string> => {
   const collected = collectBindings(refsOf(color), bindings)
   const node = mapColorNode(nodeOfColor(color), (channel) =>
@@ -679,9 +679,9 @@ export const bind: {
 })
 
 /** @internal */
-export function serialize<Refs extends string>(
-  color: Color<Refs>,
-  options?: SerializeOptions<Refs>,
+export function serialize<Vars extends string>(
+  color: Color<Vars>,
+  options?: SerializeOptions<Vars>,
 ): string {
   let node = nodeOfColor(color)
   if (options?.bindings !== undefined) {
@@ -696,7 +696,7 @@ export function serialize<Refs extends string>(
 }
 
 /** @internal */
-export function refs<Refs extends string>(color: Color<Refs>): ReadonlySet<Refs> {
+export function refs<Vars extends string>(color: Color<Vars>): ReadonlySet<Vars> {
   return refsOf(color)
 }
 

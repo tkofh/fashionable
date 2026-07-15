@@ -8,14 +8,14 @@ import * as internal from './styleRule.internal.ts'
  * A style rule: a compound selector and the block it applies.
  *
  * The block is a full `RuleSet`, so a style rule holds declarations and
- * nested `@media` rules in one authored order. The `Refs` parameter is
- * the block's — a selector contributes no reference names.
+ * nested `@media` rules in one authored order. The `Vars` parameter is
+ * the block's — a selector contributes no variable names.
  *
  * Construct via `make`.
  *
  * @since 0.1.0
  */
-export interface StyleRule<out Refs extends string = string> extends Pipeable {
+export interface StyleRule<out Vars extends string = string> extends Pipeable {
   readonly [StyleRuleTypeId]: StyleRuleTypeId
   /**
    * The compound selector the block applies to.
@@ -24,7 +24,7 @@ export interface StyleRule<out Refs extends string = string> extends Pipeable {
   /**
    * The rule's block.
    */
-  readonly block: RuleSet<Refs>
+  readonly block: RuleSet<Vars>
 }
 
 /**
@@ -44,30 +44,30 @@ export const isStyleRule: (u: unknown) => u is StyleRule<string> = internal.isSt
  *
  * @param selector - The compound selector the block applies to.
  * @param block - The rule's block.
- * @returns A `StyleRule` carrying the block's reference names.
+ * @returns A `StyleRule` carrying the block's variable names.
  * @example
  * ```ts
  * StyleRule.make(
  *   Selector.root,
- *   RuleSet.make(Declaration.make('--depth', Calc.ref('depth'))),
+ *   RuleSet.make(Declaration.make('--depth', Calc.var('depth'))),
  * ) // StyleRule<'depth'>
  * ```
  * @since 0.1.0
  */
-export const make: <Refs extends string>(
+export const make: <Vars extends string>(
   selector: Selector,
-  block: RuleSet<Refs>,
-) => StyleRule<Refs> = internal.make
+  block: RuleSet<Vars>,
+) => StyleRule<Vars> = internal.make
 
 /**
- * The rule's unbound reference names — the block's, since a selector
+ * The rule's unbound variable names — the block's, since a selector
  * contributes none.
  *
  * @param rule - The rule to inspect.
- * @returns The set of unbound reference names.
+ * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(rule: StyleRule<Refs>) => ReadonlySet<Refs> = internal.refs
+export const vars: <Vars extends string>(rule: StyleRule<Vars>) => ReadonlySet<Vars> = internal.refs
 
 /**
  * Options for `render` — the block renderers' shared shape,

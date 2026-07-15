@@ -22,7 +22,7 @@ import type { Selector } from '#selector/selector'
 import { render as renderSelector, specificity } from '#selector/selector.internal'
 import { compare as compareSpecificity } from '#selector/specificity.internal'
 import { dual, invariant, Pipeable } from '#util'
-import type { CoalesceOptions, Node, NodeRefs, RenderOptions, Stylesheet } from './stylesheet.ts'
+import type { CoalesceOptions, Node, NodeVars, RenderOptions, Stylesheet } from './stylesheet.ts'
 
 export const StylesheetTypeId = Symbol.for('fashionable/stylesheet')
 export type StylesheetTypeId = typeof StylesheetTypeId
@@ -112,10 +112,10 @@ export const isEmpty = (sheet: Stylesheet<string>): boolean => sheet.nodes.lengt
 /** @internal */
 export function make<Nodes extends ReadonlyArray<Node<string>>>(
   ...nodes: Nodes
-): Stylesheet<NodeRefs<Nodes[number]>> {
+): Stylesheet<NodeVars<Nodes[number]>> {
   const kept = distinct(nodes)
   return (kept.length === 0 ? empty : new StylesheetImpl(kept)) as Stylesheet<
-    NodeRefs<Nodes[number]>
+    NodeVars<Nodes[number]>
   >
 }
 
@@ -128,20 +128,20 @@ const resolveNode = (head: unknown, block: unknown): Node<string> =>
 export const append: {
   <N extends Node<string>>(
     node: N,
-  ): <Refs extends string>(self: Stylesheet<Refs>) => Stylesheet<Refs | NodeRefs<N>>
+  ): <Vars extends string>(self: Stylesheet<Vars>) => Stylesheet<Vars | NodeVars<N>>
   <B extends string>(
     selector: Selector,
     block: RuleSet<B>,
-  ): <Refs extends string>(self: Stylesheet<Refs>) => Stylesheet<Refs | B>
-  <Refs extends string, N extends Node<string>>(
-    self: Stylesheet<Refs>,
+  ): <Vars extends string>(self: Stylesheet<Vars>) => Stylesheet<Vars | B>
+  <Vars extends string, N extends Node<string>>(
+    self: Stylesheet<Vars>,
     node: N,
-  ): Stylesheet<Refs | NodeRefs<N>>
-  <Refs extends string, B extends string>(
-    self: Stylesheet<Refs>,
+  ): Stylesheet<Vars | NodeVars<N>>
+  <Vars extends string, B extends string>(
+    self: Stylesheet<Vars>,
     selector: Selector,
     block: RuleSet<B>,
-  ): Stylesheet<Refs | B>
+  ): Stylesheet<Vars | B>
 } = dual(
   (args: IArguments) => isStylesheet(args[0]),
   (self: Stylesheet<string>, head: unknown, block?: unknown): Stylesheet<string> => {
@@ -181,14 +181,14 @@ export const merge: {
 })
 
 /** @internal */
-export function mergeAll<Refs extends string>(
-  sheets: ReadonlyArray<Stylesheet<Refs>>,
-): Stylesheet<Refs> {
+export function mergeAll<Vars extends string>(
+  sheets: ReadonlyArray<Stylesheet<Vars>>,
+): Stylesheet<Vars> {
   let merged: Stylesheet<string> = empty
   for (const sheet of sheets) {
     merged = merge(merged, sheet)
   }
-  return merged as Stylesheet<Refs>
+  return merged as Stylesheet<Vars>
 }
 
 interface PendingPull {
@@ -298,10 +298,10 @@ const requireShadowedPull = (pull: PendingPull, nodes: ReadonlyArray<Node<string
 }
 
 /** @internal */
-export function coalesce<Refs extends string>(
-  sheet: Stylesheet<Refs>,
+export function coalesce<Vars extends string>(
+  sheet: Stylesheet<Vars>,
   options?: CoalesceOptions,
-): Stylesheet<Refs> {
+): Stylesheet<Vars> {
   const strict = options?.strict === true
   const nodes: Array<Node<string>> = []
   const seen = new Map<number, Array<{ readonly selector: Selector; readonly index: number }>>()
@@ -335,12 +335,12 @@ export function coalesce<Refs extends string>(
   for (const pull of pending) {
     requireShadowedPull(pull, nodes)
   }
-  return (changed ? new StylesheetImpl(nodes) : sheet) as Stylesheet<Refs>
+  return (changed ? new StylesheetImpl(nodes) : sheet) as Stylesheet<Vars>
 }
 
 /** @internal */
-export function refs<Refs extends string>(sheet: Stylesheet<Refs>): ReadonlySet<Refs> {
-  return (sheet as unknown as StylesheetImpl).refSet as ReadonlySet<Refs>
+export function refs<Vars extends string>(sheet: Stylesheet<Vars>): ReadonlySet<Vars> {
+  return (sheet as unknown as StylesheetImpl).refSet as ReadonlySet<Vars>
 }
 
 const propertyRenderOptions = (context: RenderContext): PropertyRenderOptions =>

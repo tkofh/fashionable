@@ -10,14 +10,14 @@ import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.t
  * This is the nested form — a member of an enclosing style rule's block,
  * per the CSSNestedDeclarations grammar — not a top-level `@media`
  * statement. Media enters the model inside a style rule
- * (`:root { @media ... { ... } }`) and renders there, nested. The `Refs`
+ * (`:root { @media ... { ... } }`) and renders there, nested. The `Vars`
  * parameter is the block's.
  *
  * Construct via `make`.
  *
  * @since 0.1.0
  */
-export interface MediaRule<out Refs extends string = string> extends Pipeable {
+export interface MediaRule<out Vars extends string = string> extends Pipeable {
   readonly [MediaRuleTypeId]: MediaRuleTypeId
   /**
    * The media query gating the block.
@@ -26,7 +26,7 @@ export interface MediaRule<out Refs extends string = string> extends Pipeable {
   /**
    * The rule's block.
    */
-  readonly block: RuleSet<Refs>
+  readonly block: RuleSet<Vars>
 }
 
 /**
@@ -46,7 +46,7 @@ export const isMediaRule: (u: unknown) => u is MediaRule<string> = internal.isMe
  *
  * @param query - The media query gating the block.
  * @param block - The rule's block.
- * @returns A `MediaRule` carrying the block's reference names.
+ * @returns A `MediaRule` carrying the block's variable names.
  * @example
  * ```ts
  * MediaRule.make(
@@ -56,20 +56,20 @@ export const isMediaRule: (u: unknown) => u is MediaRule<string> = internal.isMe
  * ```
  * @since 0.1.0
  */
-export const make: <Refs extends string>(
+export const make: <Vars extends string>(
   query: MediaQuery,
-  block: RuleSet<Refs>,
-) => MediaRule<Refs> = internal.make
+  block: RuleSet<Vars>,
+) => MediaRule<Vars> = internal.make
 
 /**
- * The rule's unbound reference names — the block's, since a query
+ * The rule's unbound variable names — the block's, since a query
  * contributes none.
  *
  * @param rule - The rule to inspect.
- * @returns The set of unbound reference names.
+ * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(rule: MediaRule<Refs>) => ReadonlySet<Refs> = internal.refs
+export const vars: <Vars extends string>(rule: MediaRule<Vars>) => ReadonlySet<Vars> = internal.refs
 
 /**
  * Options for `render` — the block renderers' shared shape,

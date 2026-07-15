@@ -5,6 +5,7 @@ import * as internal from './calc.internal.ts'
 import type { Precision } from './precision.ts'
 
 declare const CalcVariance: unique symbol
+declare const IdentId: unique symbol
 
 /**
  * The CSS dimension an expression carries: `<number>`, `<length>`, `<angle>`,
@@ -19,14 +20,33 @@ declare const CalcVariance: unique symbol
 export type Kind = 'number' | 'length' | 'angle' | 'percentage'
 
 /**
- * A CSS value expression: a tree of constants, unbound references, and math
+ * The leaf brand of a bare CSS identifier — a token like a relative color's
+ * `l` that serializes as itself and is resolved by the CSS construct around
+ * it, not read from the cascade. It rides the `Leaves` parameter of `Calc`,
+ * so `solve` demands a value for the token through the `idents` section of
+ * its options, the way a relative unit demands a ratio through `units`.
+ *
+ * Constructs that introduce identifiers refine this brand: the `Channel`
+ * keywords (`Channel.L`, ...) carry a subtype scoped to their color space,
+ * and `Color.from` admits them by that subtype. Generic machinery — the
+ * solve options, `idents` — keys on this base, so every identifier source
+ * is covered without new plumbing.
+ *
+ * @since 0.2.0
+ */
+export interface Ident<Name extends string = string> {
+  readonly [IdentId]: Name
+}
+
+/**
+ * A CSS value expression: a tree of constants, unbound variables, and math
  * operations that can be solved to a number, serialized to CSS `calc()`
  * text, or partially bound and passed along.
  *
  * Three type parameters track the expression structurally:
  *
- * - `Refs` — the unbound reference names. `ref('u')` is a `Calc<'u'>`;
- *   combining expressions unions their parameters; `bind` subtracts the
+ * - `Vars` — the unbound variable names. `var('u')` is a `Calc<'u'>`;
+ *   combining expressions unions their variables; `bind` subtracts the
  *   names it binds. A fully bound (or constant) expression is a
  *   `Calc<never>`.
  * - `Kind` — the CSS dimension (`'number'` by default, or `'length'` /
@@ -34,30 +54,32 @@ export type Kind = 'number' | 'length' | 'angle' | 'percentage'
  *   `divide` combine kinds (a `<length>` over a `<length>` is a
  *   `<number>`); an invalid pairing (a `<length>` plus a `<number>`) is a
  *   type error.
- * - `Leaves` — the units the tree contains, as a set of `Unit` brands
- *   (`never` when the tree is unit-free). It types the context `solve`
- *   needs to lower the tree to a number.
+ * - `Leaves` — the solve-relevant leaves the tree contains: `Unit` brands
+ *   for its dimensioned constants and `Ident` brands for its bare
+ *   identifiers (`never` when it has neither). It types the `units` and
+ *   `idents` sections of the options `solve` needs to lower the tree to a
+ *   number.
  *
  * Values are immutable and structurally comparable via `equals`.
  * Construction folds constant subtrees eagerly: `add(1, 2)` is the
- * constant `3`, and binding every reference of a tree collapses it to a
+ * constant `3`, and binding every variable of a tree collapses it to a
  * constant.
  *
- * An unbound reference serializes as `var(--name)` — the reference channel
- * is the custom-property channel.
+ * An unbound variable serializes as `var(--name)` — the read side of a CSS
+ * custom property.
  *
- * Construct via `of`, `ref`, the `Length`/`Angle` constructors in
+ * Construct via `of`, `var`, the `Length`/`Angle` constructors in
  * `fashionable/data`, and the math combinators.
  *
  * @since 0.1.0
  */
 export interface Calc<
-  out Refs extends string = string,
+  out Vars extends string = string,
   out K extends Kind = 'number',
   out Leaves = never,
 > extends Pipeable {
   readonly [CalcTypeId]: CalcTypeId
-  readonly [CalcVariance]?: { readonly refs: Refs; readonly kind: K; readonly leaves: Leaves }
+  readonly [CalcVariance]?: { readonly vars: Vars; readonly kind: K; readonly leaves: Leaves }
 }
 
 /**
@@ -70,14 +92,13 @@ export type Top = Calc<string, Kind, unknown>
 
 // ---------------------------------------------------------------------------
 // dimensioned-combinator type machinery (internal): facet extractors and the
-// kind/leaf algebra the combinator signatures below are built from. Validated
-// by the spike in docs/dimensioned-calc.md.
+// kind/leaf algebra the combinator signatures below are built from.
 // ---------------------------------------------------------------------------
 
 /** Any operand a combinator accepts: an expression of any kind, or a bare number. */
 type In = Top | number
 
-type RefsOf<A> = A extends Calc<infer R, Kind, unknown> ? R : never
+type VarsOf<A> = A extends Calc<infer V, Kind, unknown> ? V : never
 type KindOf<A> = A extends Calc<string, infer K, unknown> ? K : 'number'
 type LeavesOf<A> = A extends Calc<string, Kind, infer L> ? L : never
 
@@ -96,11 +117,11 @@ type SameKindIn<A> =
   | Calc<string, KindOf<A> & Kind, unknown>
   | (KindOf<A> extends 'number' ? number : never)
 
-type RefsOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: RefsOf<T[K]> }[number]
+type VarsOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: VarsOf<T[K]> }[number]
 type LeavesOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: LeavesOf<T[K]> }[number]
 
 // same-single-unit division cancels to a unit-free number; anything else keeps
-// both operands' units (conservative, but sound)
+// both operands' leaves (conservative, but sound)
 type IsUnion<T, U = T> = [T] extends [never]
   ? false
   : T extends T
@@ -112,11 +133,17 @@ type Singleton<T> = [T] extends [never] ? false : IsUnion<T> extends true ? fals
 type LeafFn<X> = <T>() => T extends X ? 1 : 2
 type LeafEqual<A, B> = LeafFn<A> extends LeafFn<B> ? true : false
 type SameSingleton<A, B> = LeafEqual<A, B> extends true ? Singleton<A> : false
+// Cancellation is sound only where eager folding guarantees the division
+// folds once bound: same-single-unit constants always do, ident leaves never
+// do (an `Ident` is not a constant), and a number-kind divisor can itself
+// carry leaves (`divide(vw, px)` is a number), so its leaves always survive.
 type DivLeaves<A, B> =
   KindOf<B> extends 'number'
-    ? LeavesOf<A>
+    ? LeavesOf<A> | LeavesOf<B>
     : SameSingleton<LeavesOf<A>, LeavesOf<B>> extends true
-      ? never
+      ? [Extract<LeavesOf<A>, Ident<string>>] extends [never]
+        ? never
+        : LeavesOf<A> | LeavesOf<B>
       : LeavesOf<A> | LeavesOf<B>
 
 /**
@@ -125,48 +152,92 @@ type DivLeaves<A, B> =
  *
  * @since 0.1.0
  */
-export type Input<Refs extends string = string> = Calc<Refs> | number
+export type Input<Vars extends string = string> = Calc<Vars> | number
 
 /**
- * A bindings record: reference names to the values that replace them. A
- * value may itself be an expression, whose own references join the result.
+ * A bindings record: variable names to the values that replace them. A
+ * value may itself be an expression, whose own variables join the result.
  *
  * @since 0.1.0
  */
-export type Bindings<Refs extends string = string> = Record<Refs, Input>
+export type Bindings<Vars extends string = string> = Record<Vars, Input>
 
-type ValueRefs<V> = V extends Calc<infer R> ? R : never
+type ValueVars<V> = V extends Calc<infer R> ? R : never
 
-type BindingRefs<T> = T extends Record<string, infer V> ? ValueRefs<V> : never
+type BindingVars<T> = T extends Record<string, infer V> ? ValueVars<V> : never
 
 /**
- * The reference names remaining after applying the bindings `B` to an
- * expression with references `Refs`: bound names are removed, and the
- * references of any expression-valued bindings are added.
+ * The variable names remaining after applying the bindings `B` to an
+ * expression with variables `Vars`: bound names are removed, and the
+ * variables of any expression-valued bindings are added.
  *
  * @since 0.1.0
  */
-export type ApplyBindings<Refs extends string, B> =
-  | Exclude<Refs, keyof B & string>
-  | BindingRefs<Pick<B, Extract<keyof B, Refs>>>
+export type ApplyBindings<Vars extends string, B> =
+  | Exclude<Vars, keyof B & string>
+  | BindingVars<Pick<B, Extract<keyof B, Vars>>>
 
 /**
  * Options for `serialize`.
  *
  * @since 0.1.0
  */
-export interface SerializeOptions<Refs extends string = string> {
+export interface SerializeOptions<Vars extends string = string> {
   /**
-   * Bindings applied before rendering. May be partial: references left
+   * Bindings applied before rendering. May be partial: variables left
    * unbound render as `var(--name)`.
    */
-  readonly bindings?: Partial<Bindings<Refs>>
+  readonly bindings?: Partial<Bindings<Vars>>
   /**
    * The precision for constants that carry no annotation of their own.
    * Defaults to `Precision.decimals(5)`.
    */
   readonly precision?: Precision
 }
+
+type IdentName<I> = I extends Ident<infer Name> ? Name : never
+
+/**
+ * The `idents` section of `SolveOptions`: a numeric value for each
+ * bare-identifier token in the leaves `L`. The value is the token's own —
+ * read directly, not multiplied as a ratio — so `{ l: 0.62 }` supplies the
+ * relative-color `l` keyword.
+ *
+ * @since 0.4.0
+ */
+export type IdentValues<L> = {
+  readonly [K in IdentName<Extract<L, Ident<string>>> & string]: number
+}
+
+/**
+ * Options for `solve`: the environments that satisfy an expression's
+ * dependency channels. Each section is required exactly when the
+ * expression's type demands it — `bindings` while unbound variables remain,
+ * `units` while a relative unit or percentage is present, `idents` while a
+ * bare identifier is — and optional otherwise.
+ *
+ * - `bindings` — a closed value (a number or a `Calc<never>`) for every
+ *   unbound variable. Substitution, as in `bind`, but total: a value
+ *   carrying its own unbound variables is a type error here, since nothing
+ *   later could close it.
+ * - `units` — a pixels-per-unit ratio for every context-dependent unit:
+ *   `vw` is `sampleWidth / 100`, `%` is `basis / 100`. Absolute lengths
+ *   default (`px` is `1`) unless overridden; angles never appear (radians
+ *   and degrees lower on their own).
+ * - `idents` — the value each bare-identifier token stands for
+ *   (`{ l: 0.62 }`).
+ *
+ * @since 0.4.0
+ */
+export type SolveOptions<Vars extends string, L> = ([Vars] extends [never]
+  ? { readonly bindings?: Record<string, Input<never>> }
+  : { readonly bindings: Record<Vars, Input<never>> }) &
+  ([Exclude<L, ContextFree | Ident<string>>] extends [never]
+    ? { readonly units?: UnitContext<L> }
+    : { readonly units: UnitContext<L> }) &
+  ([Extract<L, Ident<string>>] extends [never]
+    ? { readonly idents?: IdentValues<L> }
+    : { readonly idents: IdentValues<L> })
 
 /**
  * Checks if a value is a `Calc`.
@@ -196,30 +267,33 @@ export const isCalc: (u: unknown) => u is Calc<string, Kind, unknown> = internal
  * @example
  * ```ts
  * const k = Calc.of(0.8377580409572781, Precision.significant(10))
- * Calc.serialize(Calc.multiply(k, Calc.ref('t'))) // 'calc(0.837758041 * var(--t))'
+ * Calc.serialize(Calc.multiply(k, Calc.var('t'))) // 'calc(0.837758041 * var(--t))'
  * ```
  * @since 0.1.0
  */
 export const of: (value: number, precision?: Precision) => Calc<never> = internal.of
 
 /**
- * Creates a reference to an unbound name. References serialize as
- * `var(--name)` and are the channel through which expressions read CSS
- * custom properties; `bind` replaces them with values or other
- * expressions.
+ * Creates a read of a CSS variable (custom property): `var('width')`
+ * serializes as `var(--width)`. Variables are the substitutable dependency
+ * channel — `bind` replaces them with values or other expressions, and an
+ * expression's `Vars` parameter tracks the names still unbound. Exported as
+ * `var` (`Calc.var('width')`) because `var` is reserved in declaration
+ * position.
  *
  * Repeated calls with the same name return the same instance.
  *
- * @param name - The reference name, without the `--` prefix. Must be non-empty.
- * @returns A `Calc` with `name` as its one unbound reference.
+ * @param name - The variable name, without the `--` prefix. Must be non-empty.
+ * @returns A `Calc` with `name` as its one unbound variable.
  * @throws `Error` when `name` is empty.
  * @example
  * ```ts
- * Calc.serialize(Calc.ref('width')) // 'var(--width)'
+ * Calc.serialize(Calc.var('width')) // 'var(--width)'
  * ```
  * @since 0.1.0
  */
-export const ref: <Name extends string>(name: Name) => Calc<Name> = internal.ref
+const _var: <Name extends string>(name: Name) => Calc<Name> = internal.ref
+export { _var as var }
 
 /**
  * Adds expressions. Constant operands fold at construction.
@@ -230,10 +304,10 @@ export const ref: <Name extends string>(name: Name) => Calc<Name> = internal.ref
  *
  * @param a - The first operand.
  * @param b - The second operand.
- * @returns The sum, with the operands' references unioned.
+ * @returns The sum, with the operands' variables unioned.
  * @example
  * ```ts
- * Calc.serialize(Calc.add(Calc.ref('x'), 10)) // 'calc(var(--x) + 10)'
+ * Calc.serialize(Calc.add(Calc.var('x'), 10)) // 'calc(var(--x) + 10)'
  * ```
  * @since 0.1.0
  */
@@ -246,7 +320,7 @@ export const add: <
   b: B,
   ...rest: Rest
 ) => Calc<
-  RefsOf<A> | RefsOf<B> | RefsOfAll<Rest>,
+  VarsOf<A> | VarsOf<B> | VarsOfAll<Rest>,
   KindOf<A> & Kind,
   LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
 > = internal.add
@@ -256,13 +330,13 @@ export const add: <
  *
  * @param left - The minuend.
  * @param right - The subtrahend.
- * @returns The difference, with the operands' references unioned.
+ * @returns The difference, with the operands' variables unioned.
  * @since 0.1.0
  */
 export const subtract: <A extends In, B extends SameKindIn<A>>(
   left: A,
   right: B,
-) => Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.subtract
+) => Calc<VarsOf<A> | VarsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.subtract
 
 /**
  * The CSS `mod()` of `dividend` and `divisor` — the remainder that takes the
@@ -272,17 +346,17 @@ export const subtract: <A extends In, B extends SameKindIn<A>>(
  *
  * @param dividend - The value to reduce.
  * @param divisor - The modulus, sharing `dividend`'s kind.
- * @returns The modulo, with the operands' references unioned.
+ * @returns The modulo, with the operands' variables unioned.
  * @example
  * ```ts
- * Calc.serialize(Calc.mod(Calc.ref('h'), 360)) // 'mod(var(--h), 360)'
+ * Calc.serialize(Calc.mod(Calc.var('h'), 360)) // 'mod(var(--h), 360)'
  * ```
  * @since 0.2.0
  */
 export const mod: <A extends In, B extends SameKindIn<A>>(
   dividend: A,
   divisor: B,
-) => Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.mod
+) => Calc<VarsOf<A> | VarsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.mod
 
 /**
  * Multiplies expressions. Constant operands fold at construction.
@@ -292,18 +366,18 @@ export const mod: <A extends In, B extends SameKindIn<A>>(
  *
  * @param left - The first factor.
  * @param right - The second factor.
- * @returns The product, with the operands' references unioned.
+ * @returns The product, with the operands' variables unioned.
  * @since 0.1.0
  */
 export const multiply: {
   <A extends NumberIn, B extends In>(
     left: A,
     right: B,
-  ): Calc<RefsOf<A> | RefsOf<B>, KindOf<B> & Kind, LeavesOf<A> | LeavesOf<B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, KindOf<B> & Kind, LeavesOf<A> | LeavesOf<B>>
   <A extends In, B extends NumberIn>(
     left: A,
     right: B,
-  ): Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>>
 } = internal.multiply
 
 /**
@@ -311,32 +385,35 @@ export const multiply: {
  *
  * @param left - The dividend.
  * @param right - The divisor.
- * @returns The quotient, with the operands' references unioned.
+ * @returns The quotient, with the operands' variables unioned.
  * @since 0.1.0
  */
 export const divide: {
   <A extends In, B extends NumberIn>(
     left: A,
     right: B,
-  ): Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, DivLeaves<A, B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, KindOf<A> & Kind, DivLeaves<A, B>>
   <A extends In, B extends SameKindIn<A>>(
     left: A,
     right: B,
-  ): Calc<RefsOf<A> | RefsOf<B>, 'number', DivLeaves<A, B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, 'number', DivLeaves<A, B>>
 } = internal.divide
 
 /**
- * Raises `base` to `exponent`. Serializes as the CSS `pow()` function.
+ * Raises `base` to `exponent`. Serializes as the CSS `pow()` function,
+ * whose operands are `<number>`s — so both take number-kind expressions,
+ * which may carry identifier leaves (`pow(l, 2.2)` gamma-adjusts a
+ * relative-color channel).
  *
  * @param base - The base.
  * @param exponent - The exponent.
- * @returns The power, with the operands' references unioned.
+ * @returns The power, with the operands' variables unioned.
  * @since 0.1.0
  */
-export const pow: <A extends string = never, B extends string = never>(
-  base: Input<A>,
-  exponent: Input<B>,
-) => Calc<A | B> = internal.pow
+export const pow: <A extends NumberIn, B extends NumberIn>(
+  base: A,
+  exponent: B,
+) => Calc<VarsOf<A> | VarsOf<B>, 'number', LeavesOf<A> | LeavesOf<B>> = internal.pow
 
 /**
  * Sign-preserving power: `abs(base) ^ exponent * sign(base)`. Unlike
@@ -345,20 +422,20 @@ export const pow: <A extends string = never, B extends string = never>(
  *
  * @param base - The base.
  * @param exponent - The exponent.
- * @returns The signed power, with the operands' references unioned.
+ * @returns The signed power, with the operands' variables unioned.
  * @since 0.1.0
  */
-export const signedPow: <A extends string = never, B extends string = never>(
-  base: Input<A>,
-  exponent: Input<B>,
-) => Calc<A | B> = internal.signedPow
+export const signedPow: <A extends NumberIn, B extends NumberIn>(
+  base: A,
+  exponent: B,
+) => Calc<VarsOf<A> | VarsOf<B>, 'number', LeavesOf<A> | LeavesOf<B>> = internal.signedPow
 
 /**
  * The minimum of the operands. Serializes as the CSS `min()` function.
  *
  * @param a - The first operand.
  * @param b - The second operand.
- * @returns The minimum, with the operands' references unioned.
+ * @returns The minimum, with the operands' variables unioned.
  * @since 0.1.0
  */
 export const min: <
@@ -370,7 +447,7 @@ export const min: <
   b: B,
   ...rest: Rest
 ) => Calc<
-  RefsOf<A> | RefsOf<B> | RefsOfAll<Rest>,
+  VarsOf<A> | VarsOf<B> | VarsOfAll<Rest>,
   KindOf<A> & Kind,
   LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
 > = internal.min
@@ -380,7 +457,7 @@ export const min: <
  *
  * @param a - The first operand.
  * @param b - The second operand.
- * @returns The maximum, with the operands' references unioned.
+ * @returns The maximum, with the operands' variables unioned.
  * @since 0.1.0
  */
 export const max: <
@@ -392,7 +469,7 @@ export const max: <
   b: B,
   ...rest: Rest
 ) => Calc<
-  RefsOf<A> | RefsOf<B> | RefsOfAll<Rest>,
+  VarsOf<A> | VarsOf<B> | VarsOfAll<Rest>,
   KindOf<A> & Kind,
   LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
 > = internal.max
@@ -404,10 +481,10 @@ export const max: <
  * @param minimum - The lower bound.
  * @param value - The value to clamp.
  * @param maximum - The upper bound.
- * @returns The clamped expression, with the operands' references unioned.
+ * @returns The clamped expression, with the operands' variables unioned.
  * @example
  * ```ts
- * Calc.serialize(Calc.clamp(-1, Calc.ref('u'), 1)) // 'clamp(-1, var(--u), 1)'
+ * Calc.serialize(Calc.clamp(-1, Calc.var('u'), 1)) // 'clamp(-1, var(--u), 1)'
  * ```
  * @since 0.1.0
  */
@@ -416,7 +493,7 @@ export const clamp: <A extends In, B extends SameKindIn<A>, C extends SameKindIn
   value: B,
   maximum: C,
 ) => Calc<
-  RefsOf<A> | RefsOf<B> | RefsOf<C>,
+  VarsOf<A> | VarsOf<B> | VarsOf<C>,
   KindOf<A> & Kind,
   LeavesOf<A> | LeavesOf<B> | LeavesOf<C>
 > = internal.clamp
@@ -429,7 +506,7 @@ export const clamp: <A extends In, B extends SameKindIn<A>, C extends SameKindIn
  * @param a - The value at `t = 0`.
  * @param b - The value at `t = 1`.
  * @param t - The interpolation parameter.
- * @returns The interpolated expression, with the operands' references unioned.
+ * @returns The interpolated expression, with the operands' variables unioned.
  * @since 0.1.0
  */
 export const lerp: {
@@ -438,7 +515,7 @@ export const lerp: {
     b: B,
     t: T,
   ): Calc<
-    RefsOf<A> | RefsOf<B> | RefsOf<T>,
+    VarsOf<A> | VarsOf<B> | VarsOf<T>,
     KindOf<A> & Kind,
     LeavesOf<A> | LeavesOf<B> | LeavesOf<T>
   >
@@ -452,17 +529,21 @@ export const lerp: {
  * @since 0.1.0
  */
 export const abs: {
-  <A extends In>(argument: A): Calc<RefsOf<A>, KindOf<A> & Kind, LeavesOf<A>>
+  <A extends In>(argument: A): Calc<VarsOf<A>, KindOf<A> & Kind, LeavesOf<A>>
 } = internal.abs
 
 /**
- * The sign (`-1`, `0`, or `1`). Serializes as the CSS `sign()` function.
+ * The sign (`-1`, `0`, or `1`). Serializes as the CSS `sign()` function,
+ * which accepts a calculation of any dimension and returns a `<number>` —
+ * so any operand kind is accepted here.
  *
- * @param argument - The operand.
- * @returns The sign expression.
+ * @param argument - The operand, of any kind.
+ * @returns The sign, a `<number>`, carrying the operand's leaves.
  * @since 0.1.0
  */
-export const sign: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.sign
+export const sign: {
+  <A extends In>(argument: A): Calc<VarsOf<A>, 'number', LeavesOf<A>>
+} = internal.sign
 
 /**
  * The sine of its argument. Serializes as the CSS `sin()` function, which
@@ -470,11 +551,11 @@ export const sign: <A extends string = never>(argument: Input<A>) => Calc<A> = i
  * either an angle-kind expression or a number, and returns a number.
  *
  * @param argument - An angle, or a plain number in radians.
- * @returns The sine, a `<number>`, carrying the argument's units.
+ * @returns The sine, a `<number>`, carrying the argument's leaves.
  * @since 0.1.0
  */
 export const sin: {
-  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, 'number', LeavesOf<A>>
 } = internal.sin
 
 /**
@@ -483,11 +564,11 @@ export const sin: {
  * either an angle-kind expression or a number, and returns a number.
  *
  * @param argument - An angle, or a plain number in radians.
- * @returns The cosine, a `<number>`, carrying the argument's units.
+ * @returns The cosine, a `<number>`, carrying the argument's leaves.
  * @since 0.1.0
  */
 export const cos: {
-  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, 'number', LeavesOf<A>>
 } = internal.cos
 
 /**
@@ -498,11 +579,11 @@ export const cos: {
  * yet support `<length> / <length>` in `calc()`.
  *
  * @param argument - An angle, or a plain number in radians.
- * @returns The tangent, a `<number>`, carrying the argument's units.
+ * @returns The tangent, a `<number>`, carrying the argument's leaves.
  * @since 0.2.0
  */
 export const tan: {
-  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, 'number', LeavesOf<A>>
 } = internal.tan
 
 /**
@@ -514,17 +595,17 @@ export const tan: {
  * plain number added to it is a type error — supply the phase as an angle.
  *
  * @param argument - The cosine value, in `[-1, 1]`.
- * @returns The arccosine, an `<angle>`, carrying the argument's units.
+ * @returns The arccosine, an `<angle>`, carrying the argument's leaves.
  * @example
  * ```ts
  * const phase = Angle.rad(2.0943951)
- * Calc.serialize(Calc.cos(Calc.subtract(Calc.divide(Calc.acos(Calc.ref('u')), 3), phase)))
+ * Calc.serialize(Calc.cos(Calc.subtract(Calc.divide(Calc.acos(Calc.var('u')), 3), phase)))
  * // 'cos(acos(var(--u)) / 3 - 2.0944rad)'
  * ```
  * @since 0.1.0
  */
 export const acos: {
-  <A extends NumberIn>(argument: A): Calc<RefsOf<A>, 'angle', LeavesOf<A>>
+  <A extends NumberIn>(argument: A): Calc<VarsOf<A>, 'angle', LeavesOf<A>>
 } = internal.acos
 
 /**
@@ -536,7 +617,7 @@ export const acos: {
  *
  * @param y - The vertical component.
  * @param x - The horizontal component, sharing `y`'s kind.
- * @returns The angle, an `<angle>`, with the operands' units unioned.
+ * @returns The angle, an `<angle>`, with the operands' leaves unioned.
  * @example
  * ```ts
  * const ratio = Calc.tan(Calc.atan2(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160)))
@@ -548,111 +629,92 @@ export const atan2: {
   <A extends In, B extends SameKindIn<A>>(
     y: A,
     x: B,
-  ): Calc<RefsOf<A> | RefsOf<B>, 'angle', LeavesOf<A> | LeavesOf<B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, 'angle', LeavesOf<A> | LeavesOf<B>>
 } = internal.atan2
 
 export const bind: {
   /**
    * Returns a function that binds the given names in an expression.
    *
-   * @param bindings - Reference names to values or expressions. Names the expression does not reference are ignored, as are `undefined` values.
-   * @returns A function replacing bound references in its argument.
+   * @param bindings - Variable names to values or expressions. Names the expression does not read are ignored, as are `undefined` values.
+   * @returns A function replacing bound variables in its argument.
    * @since 0.1.0
    */
   <const B extends Bindings>(
     bindings: B,
-  ): <Refs extends string>(expr: Calc<Refs>) => Calc<ApplyBindings<Refs, B>>
+  ): <Vars extends string>(expr: Calc<Vars>) => Calc<ApplyBindings<Vars, B>>
   /**
-   * Replaces references with values or other expressions. Binding is
+   * Replaces variables with values or other expressions. Binding is
    * partial evaluation: substituted subtrees re-fold, so binding every
-   * reference collapses the tree to a constant.
+   * variable collapses the tree to a constant.
    *
-   * Names the expression does not reference are ignored (spreading a wider
+   * Names the expression does not read are ignored (spreading a wider
    * bindings object is fine), as are `undefined` values. Binding a
-   * reference to another expression composes trees; the bound expression's
-   * own references join the result, tracked in the return type by
+   * variable to another expression composes trees; the bound expression's
+   * own variables join the result, tracked in the return type by
    * `ApplyBindings`.
    *
    * @param expr - The expression to bind.
-   * @param bindings - Reference names to values or expressions.
+   * @param bindings - Variable names to values or expressions.
    * @returns The bound expression.
    * @example
    * ```ts
-   * const half = Calc.bind(Calc.divide(Calc.ref('x'), 2), { x: Calc.ref('width') })
+   * const half = Calc.bind(Calc.divide(Calc.var('x'), 2), { x: Calc.var('width') })
    * Calc.serialize(half) // 'calc(var(--width) / 2)'
    * Calc.solve(Calc.bind(half, { width: 100 })) // 50
    * ```
    * @since 0.1.0
    */
-  <Refs extends string, const B extends Bindings>(
-    expr: Calc<Refs>,
+  <Vars extends string, const B extends Bindings>(
+    expr: Calc<Vars>,
     bindings: B,
-  ): Calc<ApplyBindings<Refs, B>>
+  ): Calc<ApplyBindings<Vars, B>>
 } = internal.bind
 
 export const solve: {
   /**
    * Evaluates a closed expression to a number. Absolute lengths (`px`) and
-   * angles (radians) lower with no context; a viewport- or font-relative unit
-   * needs the context overload, and an unbound reference needs the bindings
-   * overload.
+   * angles (radians and degrees) lower with no options; an unbound
+   * variable, a relative unit, a percentage, or a bare identifier needs the
+   * options overload.
    *
-   * @param expr - The expression. No unbound references, only context-free units.
+   * @param expr - The expression. No unbound variables, only context-free units.
    * @returns The numeric value.
-   * @throws `Error` when unbound references or unresolvable units remain at runtime.
+   * @throws `Error` when unbound variables or unresolvable leaves remain at runtime.
    * @since 0.1.0
    */
   (expr: Calc<never, Kind, ContextFree>): number
   /**
-   * Applies bindings, then evaluates to a number. For expressions whose units,
-   * if any, are all context-free.
+   * Applies bindings, lowers each unit and identifier through the matching
+   * options section, then evaluates to a number. `SolveOptions` requires
+   * each section exactly when the expression's type demands it: `bindings`
+   * while variables are unbound, `units` while a relative unit or
+   * percentage is present, `idents` while a bare identifier is.
    *
    * @param expr - The expression to evaluate.
-   * @param bindings - Values for every unbound reference.
+   * @param options - The bindings, unit ratios, and identifier values the expression needs.
    * @returns The numeric value.
-   * @throws `Error` when unbound references remain after binding.
+   * @throws `Error` when unbound variables remain after binding, or a unit or identifier has no entry at runtime.
    * @example
    * ```ts
-   * Calc.solve(Calc.lerp(Calc.ref('a'), Calc.ref('b'), 0.5), { a: 0, b: 10 }) // 5
+   * Calc.solve(Calc.lerp(Calc.var('a'), Calc.var('b'), 0.5), { bindings: { a: 0, b: 10 } }) // 5
+   * const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
+   * Calc.solve(position, { units: { vw: 1280 / 100 } }) // 6
+   * Calc.solve(Calc.multiply(Channel.L, 0.8), { idents: { l: 0.62 } }) // 0.496
    * ```
    * @since 0.1.0
    */
-  <Refs extends string, B extends Bindings<Refs>>(
-    expr: Calc<Refs, Kind, ContextFree>,
-    bindings: B,
-  ): number
-  /**
-   * Applies bindings, lowers each context-dependent unit through the context,
-   * then evaluates to a number. The context supplies a pixels-per-unit ratio
-   * for every relative unit the expression carries (`vw` is `sampleWidth / 100`);
-   * absolute lengths default (`px` is `1`) unless overridden.
-   *
-   * @param expr - The expression to evaluate.
-   * @param bindings - Values for every unbound reference.
-   * @param context - Ratios for the expression's context-dependent units.
-   * @returns The numeric value.
-   * @example
-   * ```ts
-   * const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
-   * Calc.solve(position, {}, { vw: 1280 / 100 }) // 6
-   * ```
-   * @since 0.2.0
-   */
-  <Refs extends string, B extends Bindings<Refs>, L>(
-    expr: Calc<Refs, Kind, L>,
-    bindings: B,
-    context: UnitContext<L>,
-  ): number
+  <Vars extends string, L>(expr: Calc<Vars, Kind, L>, options: SolveOptions<Vars, L>): number
 } = internal.solve
 
 /**
  * Renders an expression as CSS text. Arithmetic gets a `calc()` wrapper;
  * function forms (`min`, `clamp`, `sin`, ...) and leaves stand alone.
- * References render as `var(--name)`.
+ * Variables render as `var(--name)`.
  *
  * Bindings in `options` are applied first and may be partial — this is
  * the serialize half of the solve/serialize duality, and unbound
- * references are the values left for the browser. Constants render with
+ * variables are the values left for the browser. Constants render with
  * their annotated precision, or the context `precision` option (default
  * `Precision.decimals(5)`). Constants equal to pi render as the CSS
  * constant `pi` where a math function surrounds them.
@@ -662,50 +724,70 @@ export const solve: {
  * @returns Deterministic CSS text.
  * @example
  * ```ts
- * const fluid = Calc.add(10, Calc.ref('runtime'))
+ * const fluid = Calc.add(10, Calc.var('runtime'))
  * Calc.serialize(fluid) // 'calc(10 + var(--runtime))'
  * Calc.serialize(fluid, { bindings: { runtime: 4 } }) // '14'
  * ```
  * @since 0.1.0
  */
-export const serialize: <Refs extends string>(
-  expr: Calc<Refs, Kind, unknown>,
-  options?: SerializeOptions<Refs>,
+export const serialize: <Vars extends string>(
+  expr: Calc<Vars, Kind, unknown>,
+  options?: SerializeOptions<Vars>,
 ) => string = internal.serialize
 
 /**
- * The expression's unbound reference names.
+ * The expression's unbound variable names.
  *
  * @param expr - The expression to inspect.
- * @returns The set of unbound reference names.
+ * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(expr: Calc<Refs, Kind, unknown>) => ReadonlySet<Refs> =
+export const vars: <Vars extends string>(expr: Calc<Vars, Kind, unknown>) => ReadonlySet<Vars> =
   internal.refs
 
 /**
- * The channel-keyword tokens the expression reads — the `Channel` keywords a
- * relative color introduces (`l`, `c`, `h`, ...). Empty for an expression with
- * no channel keywords.
+ * The bare-identifier tokens the expression reads — leaves that serialize
+ * as themselves (`l`, not `var(--l)`) and are resolved by the CSS construct
+ * around them, the `Channel` keywords being the only source today. Empty
+ * for an expression with none.
  *
- * This is the runtime companion to the `Leaves`-level scoping that `solve`'s
- * context requires: `channels` reports which values a context must supply,
- * exactly as `refs` reports the custom properties a binding must, and — unlike
- * a `Calc`'s `Kind`/`Leaves` type — survives on a `Calc<Refs, Kind, unknown>`
- * whose leaves have been erased. Channel keywords are not references, so `refs`
- * never lists them and they never reach a `Stylesheet`'s dependency report.
+ * The runtime mirror of the `Ident` brands in `Leaves`: it reports which
+ * values the `idents` section of `solve`'s options must supply, exactly as
+ * `vars` reports what `bindings` must — and, unlike the type parameter, it
+ * survives on a `Calc<Vars, Kind, unknown>` whose leaves have been erased.
+ * Identifiers are not variables, so `vars` never lists them and they never
+ * reach a `Stylesheet`'s dependency report.
  *
  * @param expr - The expression to inspect.
- * @returns The set of channel-keyword tokens the expression reads.
+ * @returns The set of bare-identifier tokens the expression reads.
  * @example
  * ```ts
- * Calc.channels(Calc.multiply(Channel.L, 0.8)) // Set { 'l' }
- * Calc.channels(Calc.ref('x')) // Set {}
+ * Calc.idents(Calc.multiply(Channel.L, 0.8)) // Set { 'l' }
+ * Calc.idents(Calc.var('x')) // Set {}
  * ```
  * @since 0.2.0
  */
-export const channels: (expr: Calc<string, Kind, unknown>) => ReadonlySet<string> =
-  internal.channels
+export const idents: (expr: Calc<string, Kind, unknown>) => ReadonlySet<string> = internal.idents
+
+/**
+ * The unit tokens the expression's dimensioned constants carry (`'vw'`,
+ * `'px'`, `'%'`). Empty for a unit-free expression.
+ *
+ * The runtime mirror of the `Unit` brands in `Leaves`: it reports which
+ * ratios the `units` section of `solve`'s options may need to supply, and —
+ * unlike the type parameter — it survives on a `Calc<Vars, Kind, unknown>`
+ * whose leaves have been erased. Context-free units (`px`, `rad`, `deg`)
+ * are reported too; they lower with no entry.
+ *
+ * @param expr - The expression to inspect.
+ * @returns The set of unit tokens the expression's constants carry.
+ * @example
+ * ```ts
+ * Calc.units(Calc.subtract(Length.vw(100), Length.px(320))) // Set { 'vw', 'px' }
+ * ```
+ * @since 0.4.0
+ */
+export const units: (expr: Calc<string, Kind, unknown>) => ReadonlySet<string> = internal.units
 
 export const equals: {
   /**

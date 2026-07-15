@@ -56,16 +56,16 @@ export const isMediaRule = (u: unknown): u is MediaRule<string> =>
   typeof u === 'object' && u !== null && MediaRuleTypeId in u
 
 /** @internal */
-export function make<Refs extends string>(
+export function make<Vars extends string>(
   query: MediaQuery,
-  block: RuleSet<Refs>,
-): MediaRule<Refs> {
-  return new MediaRuleImpl(query, block) as unknown as MediaRule<Refs>
+  block: RuleSet<Vars>,
+): MediaRule<Vars> {
+  return new MediaRuleImpl(query, block) as unknown as MediaRule<Vars>
 }
 
 /** @internal */
-export function refs<Refs extends string>(rule: MediaRule<Refs>): ReadonlySet<Refs> {
-  return refSetOf(rule) as ReadonlySet<Refs>
+export function refs<Vars extends string>(rule: MediaRule<Vars>): ReadonlySet<Vars> {
+  return refSetOf(rule) as ReadonlySet<Vars>
 }
 
 /** @internal */

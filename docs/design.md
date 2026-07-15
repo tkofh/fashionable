@@ -24,21 +24,21 @@ One subpath export per module, no root export (the curvy convention). Each modul
 ```
 src/utils.ts                -> fashionable/utils        [shipped]  pipe, dual, flow, Pipeable, invariant
 src/internal/               (not exported)              [shipped]  equal, format, refs
-src/calc/                   -> fashionable/calc         [shipped]  Calc<Refs>, Precision
-src/data/                   -> fashionable/data         [shipped]  Color<Refs> (oklch, srgb, light-dark, color-mix, relative color via `from`, named, ref); Angle (rad, deg), Length, Percentage, Unit; Keyword (none); Channel (relative-color keywords); ColorSpace (color-space values for `from` and `mix`, polar-ness a type-level trait); HueInterpolation (mix hue strategies, plus `interpolate` — the branchless-via-`mod` degree-space fixup that builds a hue expression the browser also computes)
+src/calc/                   -> fashionable/calc         [shipped]  Calc<Vars>, Precision
+src/data/                   -> fashionable/data         [shipped]  Color<Vars> (oklch, srgb, light-dark, color-mix, relative color via `from`, named, var); Angle (rad, deg), Length, Percentage, Unit; Keyword (none); Channel (relative-color keywords); ColorSpace (color-space values for `from` and `mix`, polar-ness a type-level trait); HueInterpolation (mix hue strategies, plus `interpolate` — the branchless-via-`mod` degree-space fixup that builds a hue expression the browser also computes)
 src/selector/               -> fashionable/selector     [shipped]  Selector, Specificity
 src/query/                  -> fashionable/query        [shipped]  MediaQuery
-src/declaration/            -> fashionable/declaration  [shipped]  Declaration<Refs>
+src/declaration/            -> fashionable/declaration  [shipped]  Declaration<Vars>
 src/rule/                   -> fashionable/rule         [shipped]  RuleSet, StyleRule, MediaRule
 src/fontFace/               -> fashionable/font-face    [shipped]  FontFaceRule
 src/property/               -> fashionable/property     [shipped]  PropertyRule, PropertySyntax
-src/stylesheet/             -> fashionable/stylesheet   [shipped]  Stylesheet<Refs>, render
+src/stylesheet/             -> fashionable/stylesheet   [shipped]  Stylesheet<Vars>, render
 ```
 
 Dependency DAG (acyclic, internals at the root):
 `utils` <- `internal/*` <- `calc` <- `data` <- `declaration` <- `rule` <- `stylesheet`; `selector` and `query` depend only on `utils`/`internal`; `fontFace` and `property` depend on `calc`/`data` (for `@property` initial values). The render-options family (section 7) adds type-only edges — `declaration` -> `query`, `fontFace`/`property` -> `declaration` — which erase at build time.
 
-Placement notes: `calc` names the CSS construct and gives the type its natural name (`Calc<Refs>`); `data/` collects the value-layer data types beyond bare expressions — the dimension constructors (`Angle`, `Length`, `Percentage`, with `Unit` naming their kinds) and `Color`, which is not solvable to a number and grows independently (`color-mix()` is its own node, weighting each arm with a `<percentage>` and interpolating in a `ColorSpace` value — polar-ness is a type-level **trait** on the space, curvy-style, so `Color.mix`'s overload admits a `HueInterpolation` only after a `PolarSpace` while rectangular spaces reject one; the same `ColorSpace` values serve as `from` destinations; relative color is another, built by `Color.from(origin, ColorSpace.oklch, ...)` — its channels read the origin through bare-identifier `Calc` leaves, a new leaf kind that serializes unwrapped, stays out of `Refs`, and carries a `ChannelLeaf` brand in `Leaves` so `solve` resolves it from a context value the way it resolves a relative unit from a ratio; surfaced as the `Channel` keyword module, scoped by the `ColorSpace` argument (whose value carries the space's channel brands), and joined by a color-valued `var()` reference, `Color.ref`); `query/` is the home for the condition grammars — `MediaQuery` today, container and supports queries as sibling types when a consumer arrives (they share the module because they share the "prelude condition" role, not a grammar); `declaration` is its own subpath because it is the seam where the two language halves meet; the declaration-block at-rules get one module each (`fontFace/`, `property/`) so the at-rule family scales — `@layer` and friends become sibling modules rather than crowding a shared folder, with the shared block-text helpers in `internal/render.ts`. There is deliberately no separate render module: every renderable type carries its own `render` (section 7), the shared nested-form block renderer lives in `rule.internal.ts`, and the whole-sheet projection lives on `Stylesheet.render` — the one module already downstream of every model module.
+Placement notes: `calc` names the CSS construct and gives the type its natural name (`Calc<Vars>`); `data/` collects the value-layer data types beyond bare expressions — the dimension constructors (`Angle`, `Length`, `Percentage`, with `Unit` naming their kinds) and `Color`, which is not solvable to a number and grows independently (`color-mix()` is its own node, weighting each arm with a `<percentage>` and interpolating in a `ColorSpace` value — polar-ness is a type-level **trait** on the space, curvy-style, so `Color.mix`'s overload admits a `HueInterpolation` only after a `PolarSpace` while rectangular spaces reject one; the same `ColorSpace` values serve as `from` destinations; relative color is another, built by `Color.from(origin, ColorSpace.oklch, ...)` — its channels read the origin through bare-identifier `Calc` leaves, a new leaf kind that serializes unwrapped, stays out of `Vars`, and carries a `ChannelIdent` brand (refining calc's `Ident`) in `Leaves` so `solve` resolves it from the `idents` section the way it resolves a relative unit from a `units` ratio; surfaced as the `Channel` keyword module, scoped by the `ColorSpace` argument (whose value carries the space's channel brands), and joined by a color-valued `var()` read, `Color.var`); `query/` is the home for the condition grammars — `MediaQuery` today, container and supports queries as sibling types when a consumer arrives (they share the module because they share the "prelude condition" role, not a grammar); `declaration` is its own subpath because it is the seam where the two language halves meet; the declaration-block at-rules get one module each (`fontFace/`, `property/`) so the at-rule family scales — `@layer` and friends become sibling modules rather than crowding a shared folder, with the shared block-text helpers in `internal/render.ts`. There is deliberately no separate render module: every renderable type carries its own `render` (section 7), the shared nested-form block renderer lives in `rule.internal.ts`, and the whole-sheet projection lives on `Stylesheet.render` — the one module already downstream of every model module.
 
 ## 3. The value layer (shipped)
 
@@ -46,16 +46,17 @@ Placement notes: `calc` names the CSS construct and gives the type its natural n
 
 `@ok-apca/calc-tree` 0.2.0 is the donor. The OO interpreter (node classes with `substitute`/`serialize` methods) became an immutable tagged-union ADT (`{ _tag: 'Add', terms }`, ...) with external exhaustive-switch walkers in `calc.internal.ts`. Dropped donor artifacts: the dead `NaryNode.identity`, the vestigial `format`/`formatChildren` methods, the `Properties` namespace (superseded by the rule layer, section 5), string-input constants.
 
-Kept semantics, pinned by the ported donor test suites: eager constant folding at construction and through `bind` (partial evaluation), refs bookkeeping (`Refs` phantom type parameter + runtime `ReadonlySet`), excess-binding tolerance, partial-binding serialization (`var(--name)`), calc-wrap discipline (a `calc()` wrapper only around arithmetic forms, never function forms), parenthesization (add/subtract operands parenthesized under multiply/divide), sign normalization (`a + -k` renders `a - k`, including negative-coefficient products).
+Kept semantics, pinned by the ported donor test suites: eager constant folding at construction and through `bind` (partial evaluation), vars bookkeeping (`Vars` phantom type parameter + runtime `ReadonlySet`), excess-binding tolerance, partial-binding serialization (`var(--name)`), calc-wrap discipline (a `calc()` wrapper only around arithmetic forms, never function forms), parenthesization (add/subtract operands parenthesized under multiply/divide), sign normalization (`a + -k` renders `a - k`, including negative-coefficient products).
 
 API deltas from the donor, deliberate:
 
-- `constant` and `reference` are `Calc.of` and `Calc.ref`; `of` takes an optional `Precision` annotation.
+- `constant` and `reference` are `Calc.of` and `Calc.var` (a reserved word, so bound as `_var` and re-exported — the `Selector.class` move); `of` takes an optional `Precision` annotation.
 - `serialize(expr, bindings?)` became `serialize(expr, { bindings?, precision? })`.
+- `solve(expr, bindings?)` became `solve(expr, { bindings?, units?, idents? })` — one options object, each section required exactly when the expression's type demands it (section 4.4). Solve bindings are `Input<never>`: a bound value carrying its own unbound variables can never close under single-pass substitution, so it is a type error.
 - `solve`'s no-bindings overload requires `Calc<never>` — closedness is a compile-time obligation, where the donor accepted anything and threw.
 - `bind` is dual (`expr.pipe(Calc.bind({ ... }))` works).
 - The `pi` special case only fires inside math-function context (`calc()`, `min()`, `sin()`, ...). A bare top-level constant near pi renders numerically — the donor emitted a bare `pi` token that is invalid outside math functions.
-- New: `cos`, `acos` (consumer 1's closed-form cardinal-segment inverses), `mod` (CSS `mod()`, floored to the divisor's sign), structural `equals`, `refs`, and `channels` (the relative-color-keyword companion to `refs`).
+- New: `cos`, `acos` (consumer 1's closed-form cardinal-segment inverses), `mod` (CSS `mod()`, floored to the divisor's sign), structural `equals`, `vars`, and `idents`/`units` (the runtime mirrors of the `Leaves` brands, per section 4.4).
 
 ### 3.2 Precision
 
@@ -96,9 +97,29 @@ The protocol stays internal; each namespace exports a typed dual `equals`. Merge
 
 Constructor-time ordering makes equality/hashing plain component-wise walks and rendering deterministic for free. The concrete orders above are stable public API (principle 2): consumers pin rendered text in tests and cache keys, so reordering any of them is a breaking change.
 
-### 4.3 Refs threading
+### 4.3 Vars threading
 
-`Calc<Refs>`/`Color<Refs>` phantom parameters carry unbound reference names; the runtime set is the source of truth. The containers (`Declaration<Refs>` through `Stylesheet<Refs>`) keep threading the union: an unbound ref serializes as `var(--name)`, so `Stylesheet<Refs>` reads as "this sheet reads these custom properties" — a dependency report, not an error state. This is what lets consumer 1 turn scheme-contract discovery into an assertion over the merged sheet. Escape hatch: the parameters default to `string`; if variadic inference over heterogeneous members proves noisy in practice, containers can relax to runtime-only ref sets without changing the runtime API.
+`Calc<Vars>`/`Color<Vars>` phantom parameters carry unbound variable names; the runtime set is the source of truth. The containers (`Declaration<Vars>` through `Stylesheet<Vars>`) keep threading the union: an unbound variable serializes as `var(--name)`, so `Stylesheet<Vars>` reads as "this sheet reads these custom properties" — a dependency report, not an error state, with `Stylesheet<never>` meaning the sheet stands alone. This is what lets consumer 1 turn scheme-contract discovery into an assertion over the merged sheet. Escape hatch: the parameters default to `string`; if variadic inference over heterogeneous members proves noisy in practice, containers can relax to runtime-only var sets without changing the runtime API.
+
+### 4.4 Dependency channels
+
+Everything an expression cannot resolve on its own rides one of three channels, and every channel pairs a type-level tracker with a runtime report and a section of `Calc.SolveOptions`:
+
+| channel   | type tracker               | runtime report | satisfied by                                                                              |
+| --------- | -------------------------- | -------------- | ----------------------------------------------------------------------------------------- |
+| variables | the `Vars` parameter       | `vars()`       | `bindings` — name -> closed value (also on `serialize`, where partial bindings are legal) |
+| units     | `Unit` brands in `Leaves`  | `units()`      | `units` — token -> ratio                                                                  |
+| idents    | `Ident` brands in `Leaves` | `idents()`     | `idents` — token -> value                                                                 |
+
+Litmus tests for routing a new dependency:
+
+- **Substitutable by the author, expression-valued, meaningful to serialization** -> a variable. `bind` substitutes it, `ApplyBindings` subtracts it, an unbound one serializes as `var(--name)` and threads through the containers (section 4.3).
+- **Browser-resolved token that lowers to a number** -> a leaf brand in `Leaves`, resolved by the matching solve section. A unit lowers by ratio (`value * ratio`: `vw` is `sampleWidth / 100`, `%` is `basis / 100` — per-hundred alike, with `px`/`rad`/`deg` context-free); an ident lowers by value (the token is the value: `{ l: 0.62 }`). Serialization never consults either — `10vw` serializes as `10vw`, `l` as `l`.
+- **Non-numeric resolution** (the scheme of a `light-dark()`, say) -> not solve's concern. It belongs to a future projection's own options; `solve`'s environment stays `bindings + units + idents`.
+
+Binder constructs — CSS syntax that introduces identifiers with a scope, as relative color's `from` introduces the channel keywords — follow a fixed recipe: the generic mechanism lives in calc (`IdentNode`, the `Ident` brand, `idents`), and the construct refines the brand (`ChannelIdent extends Ident`) and scopes its slots on the refinement (a `ColorSpace` names the `ChannelIdent`s it admits). Generic machinery keys on the base and covers every ident source with no new plumbing; scoping keys on the subtype, so a token collision between constructs can never smuggle a foreign ident into a slot.
+
+Two soundness notes the leaf algebra leans on: same-singleton division cancellation (`DivLeaves`) is sound for units only because eager folding guarantees an all-constant same-unit division folds before evaluation ever needs a ratio — so it never applies to idents, which are not constants and never fold; and number-kind expressions can carry leaves (a channel ident, or the units of a `vw / px` ratio), so no signature may assume number-kind means leaf-free.
 
 ## 5. The rule layer (shipped)
 
@@ -149,16 +170,16 @@ The model is semantic (a width lower bound); the rendered syntax is a **render o
 The seam where the language halves meet.
 
 ```ts
-interface Declaration<Refs> {
+interface Declaration<Vars> {
   name: string
-  value: string | Calc<Refs> | Color<Refs> // Declaration.Value<Refs>
+  value: string | Calc<Vars> | Color<Vars> // Declaration.Value<Vars>
 }
 Declaration.make(name, value) // value also accepts a bare number, coerced to an unannotated
 // constant per the Input convention; Declaration<never> for
 // literal text and numbers
 Declaration.bind // dual; binds expression values, identity on literal text
 Declaration.render(declaration, { precision? })  // 'name: value;'
-;(Declaration.refs, Declaration.equals, Declaration.isDeclaration)
+;(Declaration.vars, Declaration.equals, Declaration.isDeclaration)
 ```
 
 Values stay number-land; units are applied at the declaration boundary by consumers (calc-tree's posture). The API must not foreclose typed units later — revisit against consumer 1's unit-folding experience.
@@ -166,20 +187,20 @@ Values stay number-land; units are applied at the declaration boundary by consum
 ### 5.4 fashionable/rule — RuleSet, StyleRule, MediaRule
 
 ```ts
-type RuleSet.Member<Refs> = Declaration<Refs> | StyleRule<Refs> | MediaRule<Refs>
-interface RuleSet<Refs>   { members: ReadonlyArray<Member<Refs>> }   // ordered, never sorted
-interface StyleRule<Refs> { selector: Selector; block: RuleSet<Refs> }
-interface MediaRule<Refs> { query: MediaQuery; block: RuleSet<Refs> }
+type RuleSet.Member<Vars> = Declaration<Vars> | StyleRule<Vars> | MediaRule<Vars>
+interface RuleSet<Vars>   { members: ReadonlyArray<Member<Vars>> }   // ordered, never sorted
+interface StyleRule<Vars> { selector: Selector; block: RuleSet<Vars> }
+interface MediaRule<Vars> { query: MediaQuery; block: RuleSet<Vars> }
 RuleSet.empty, RuleSet.make(...members), RuleSet.append, RuleSet.concat   // dual append/concat
 RuleSet.append(set, selector, block)   // pair form: appends StyleRule.make(selector, block)
 RuleSet.append(set, query, block)      // pair form: appends MediaRule.make(query, block)
 RuleSet.forSelector(block, selector)   // dual; lift a block into StyleRule.make(selector, block)
 RuleSet.forMediaQuery(block, query)    // dual; lift a block into MediaRule.make(query, block)
-RuleSet.MemberRefs<M>   // type-level refs extraction over members; threads the unions
+RuleSet.MemberVars<M>   // type-level vars extraction over members; threads the unions
 RuleSet.render(set, options?)          // the body between the braces, nested form, no braces
 StyleRule.render(rule, options?)       // 'selector { body }'; empty block -> ''
 MediaRule.render(rule, options?)       // '@media query { body }'; declarations direct (nested form)
-// plus refs/equals/is* on all three types; StyleRule.make(selector, block), MediaRule.make(query, block)
+// plus vars/equals/is* on all three types; StyleRule.make(selector, block), MediaRule.make(query, block)
 ```
 
 `RuleSet` is the nesting unit; member order is preserved through rendering (the CSSNestedDeclarations fidelity requirement — declarations trailing a nested rule keep their source position, shipped across engines in late 2024). The pair-form `append` overloads are the API's posture: consumers think in rule sets, and `StyleRule`/`MediaRule` stay available as named types without needing to appear at construction sites. `forSelector`/`forMediaQuery` are the standalone-block counterpart — a data-last lift so a block built up through `pipe` caps off as a rule (to hand to `Stylesheet.make`, say) without naming the rule type. They are named for the argument, not the result: the block gains no selector, so `withSelector` would misattribute; the produced rule is the thing keyed on the selector or query. The dual mirror — `Selector.toStyleRule`/`MediaQuery.toMediaRule` on the upstream types — is deliberately absent: `selector` and `query` sit above `rule` in the DAG, so lifting a block there needs `StyleRule.make`/`MediaRule.make` as runtime values, which is a cycle (not a type-only edge that erases at build), violating principle 1's acyclic-DAG invariant.
@@ -210,27 +231,27 @@ FontFaceRule.render(rule, { indent?, precision? }), PropertyRule.render(rule, { 
 
 The syntax descriptor is a modeled value, not a string. Grammar constraints are construction invariants: the universal syntax stands alone (no combination, no multiplier), a multiplier takes a single unmultiplied component, `<transform-list>` is pre-multiplied, CSS-wide keywords are not custom idents. The phantom `V` on `PropertySyntax<V>` is the initial-value domain, and `PropertyRule.make` types `initialValue` with it (`NoInfer` keeps the syntax argument the sole inference site): `<number>`/`<integer>` take `number | Calc<never>`, `<color>` takes `string | Color<never>`, keyword sets take exactly their literals, everything else takes literal text carrying its own units.
 
-`Calc<never>`/`Color<never>` is the phantom channel doing spec enforcement: `@property` initial values must be computationally independent, so an expression with unbound refs is a type error (backed by a runtime refs check for untyped callers). Presence is enforced at both levels too: the universal-syntax overload (keyed on the branded `Universal` type, so a combination whose `V` happens to cover the full domain cannot slip through) is the only one with an optional initial value, and the runtime invariant backs it. Whether literal-text values parse under the declared syntax is not checked — the library does not parse CSS.
+`Calc<never>`/`Color<never>` is the phantom channel doing spec enforcement: `@property` initial values must be computationally independent, so an expression with unbound variables is a type error (backed by a runtime vars check for untyped callers). Presence is enforced at both levels too: the universal-syntax overload (keyed on the branded `Universal` type, so a combination whose `V` happens to cover the full domain cannot slip through) is the only one with an optional initial value, and the runtime invariant backs it. Whether literal-text values parse under the declared syntax is not checked — the library does not parse CSS.
 
 Descriptor order is fixed: `@font-face` renders family, weight, style, display, src, unicode-range (uppercase hex, canonical order), then metric overrides (consumer 1's emission order, byte-exact including the one-source-inline / multi-source-multiline src split); `@property` renders syntax, inherits, initial-value — the spec's conventional order, a deliberate delta from the donor's inherits-first emission.
 
-`PropertyRule` supersedes calc-tree's `Properties` namespace (a mutable parent-child registry). The donor's `Properties.number(set, 'x', expr)` chain becomes explicit nodes: `Declaration.make('--x', expr)` + `PropertyRule.make({ name: '--x', ... })` + `Calc.ref('x')` for downstream reads. The donor's hardcoded conventions (underscore prefix implies `inherits: false`; initial values `'0'`/`'transparent'`) become explicit options at the consumer's call site.
+`PropertyRule` supersedes calc-tree's `Properties` namespace (a mutable parent-child registry). The donor's `Properties.number(set, 'x', expr)` chain becomes explicit nodes: `Declaration.make('--x', expr)` + `PropertyRule.make({ name: '--x', ... })` + `Calc.var('x')` for downstream reads. The donor's hardcoded conventions (underscore prefix implies `inherits: false`; initial values `'0'`/`'transparent'`) become explicit options at the consumer's call site.
 
 ### 5.6 fashionable/stylesheet — Stylesheet
 
 ```ts
-type Stylesheet.Node<Refs> = StyleRule<Refs> | FontFaceRule | PropertyRule
-type Stylesheet.NodeRefs<N>     // refs extraction, as RuleSet.MemberRefs
+type Stylesheet.Node<Vars> = StyleRule<Vars> | FontFaceRule | PropertyRule
+type Stylesheet.NodeVars<N>     // vars extraction, as RuleSet.MemberVars
 Stylesheet.empty
 Stylesheet.isEmpty(sheet)       // structural: no nodes (RuleSet.isEmpty likewise: no members)
-Stylesheet.make(...nodes)       // variadic; NodeRefs<Nodes[number]> threading
+Stylesheet.make(...nodes)       // variadic; NodeVars<Nodes[number]> threading
 Stylesheet.append(sheet, node)  // dual; same sheet back when the node is already present
 Stylesheet.append(sheet, selector, block)  // pair form: appends StyleRule.make(selector, block)
 Stylesheet.render(sheet, options?)         // whole-sheet projection; see section 7
 Stylesheet.merge(a, b)          // dual; order-preserving concat + structural dedup (first occurrence wins)
 Stylesheet.mergeAll(sheets)
 Stylesheet.coalesce(sheet, { strict? })    // separate explicit op; merges same-selector StyleRules into first occurrence
-Stylesheet.refs(sheet)
+Stylesheet.vars(sheet)
 Stylesheet.equals(a, b)         // dual; structural, order-sensitive
 Stylesheet.isStylesheet(u)
 ```
@@ -289,15 +310,15 @@ Options change text, never meaning: `indent` (default tab), `precision` (the ser
 Each phase landed with its tests; the consumer smoke fixtures close the in-repo work — what remains for v1 is the consumer migrations, in the consumer repos.
 
 1. **selector + media** — shipped. Canonical-ordering equality, duplicate-part and `:not` specificity, consumer-1's selector shapes byte-exact, media and-composition dedup, `mediaSyntax` both ways.
-2. **declaration + rule** — shipped. Refs threading through variadic `make` (type tests), member-order preservation and order-sensitive equality, non-member rejection; the section-6 type tests that involve at-rules and stylesheets land with phases 3-4.
+2. **declaration + rule** — shipped. Vars threading through variadic `make` (type tests), member-order preservation and order-sensitive equality, non-member rejection; the section-6 type tests that involve at-rules and stylesheets land with phases 3-4.
 3. **at-rule** — shipped. Font-face descriptor rendering (weight ranges, multi-src, metric overrides) byte-exact against consumer 1's emission shape, `PropertyRule` with closed initial values; sections 6.1 and 6.5 are now pinned by type tests, 6.3-6.4 land with the stylesheet phase.
-4. **stylesheet** — shipped. Merge monoid laws (identity and idempotence hold with instance identity, not just structurally), dedup-across-emitters scenario, coalesce semantics and order documentation, refs aggregation; sections 6.3 and 6.4 are now pinned by type tests.
+4. **stylesheet** — shipped. Merge monoid laws (identity and idempotence hold with instance identity, not just structurally), dedup-across-emitters scenario, coalesce semantics and order documentation, vars aggregation; sections 6.3 and 6.4 are now pinned by type tests.
 5. **render** — shipped. Nested-form rendering mirroring the authored structure, `@media` kept inside its rule; CSSNestedDeclarations order fidelity (a declaration trailing a nested media rule keeps its cascade position); golden fixtures shaped like consumer 1's real output (`:root` base + nested min-width blocks + dark mirror pair + `@font-face` + `@property`, byte-exact); `mediaSyntax` both ways; the renderer throws on a nested style rule.
-6. **consumer smoke + docs** — shipped (`test/consumers.spec.ts`), checked against both consumers' real emitters. The ok-apca fixture: `@property` registrations under its conventions (underscore prefix means non-inheriting, initial values `0`/`transparent`), a `.fill` role block whose gamut-tent chain is authored once over named references and bound per hue (constants fold into the emitted `calc()` exactly as ok-apca's hue blocks do), byte-exact render, and solve/serialize duality — the same tree solved in JS matches the closed form on both tent branches. The dtcg fixture: three emitters (color, stroke, typography) each leading with the shared scheme contract, folded with `mergeAll` to one contract copy in first-occurrence order; `@font-face` real + metrics-adjusted fallback pair; ascending min-width block; the dark mirror pair in dtcg's order (prefers-color-scheme first); the fluid-curve helper property carrying the `cos(acos(...))` inverse; `refs` reporting the sheet's one unbound reference; and a coalesce pass folding the emitters' `:root` rules into one block. Two findings recorded for the migrations: dtcg emits no `@property` today (its fluid helper is a plain custom property), and ok-apca's calc-tree has no `cos`/`acos` — the trig-inverse shape is dtcg's fluid-curve helper, so the migrations exercise disjoint halves of the value layer. The migrations themselves: ok-apca replaces `Properties` (needs phases 2-4); dtcg-resolver migrates per its `css-rule-model.md` plan.
+6. **consumer smoke + docs** — shipped (`test/consumers.spec.ts`), checked against both consumers' real emitters. The ok-apca fixture: `@property` registrations under its conventions (underscore prefix means non-inheriting, initial values `0`/`transparent`), a `.fill` role block whose gamut-tent chain is authored once over named references and bound per hue (constants fold into the emitted `calc()` exactly as ok-apca's hue blocks do), byte-exact render, and solve/serialize duality — the same tree solved in JS matches the closed form on both tent branches. The dtcg fixture: three emitters (color, stroke, typography) each leading with the shared scheme contract, folded with `mergeAll` to one contract copy in first-occurrence order; `@font-face` real + metrics-adjusted fallback pair; ascending min-width block; the dark mirror pair in dtcg's order (prefers-color-scheme first); the fluid-curve helper property carrying the `cos(acos(...))` inverse; `vars` reporting the sheet's one unbound variable; and a coalesce pass folding the emitters' `:root` rules into one block. Two findings recorded for the migrations: dtcg emits no `@property` today (its fluid helper is a plain custom property), and ok-apca's calc-tree has no `cos`/`acos` — the trig-inverse shape is dtcg's fluid-curve helper, so the migrations exercise disjoint halves of the value layer. The migrations themselves: ok-apca replaces `Properties` (needs phases 2-4); dtcg-resolver migrates per its `css-rule-model.md` plan.
 
 ## 9. Open questions and risks
 
-- **Refs threading through containers** (section 4.3): the type machinery is the heaviest part of the design; relax to runtime-only sets if consumer inference pain shows up.
+- **Vars threading through containers** (section 4.3): the type machinery is the heaviest part of the design; relax to runtime-only sets if consumer inference pain shows up.
 - **Nested-only MediaRule and rendering** (sections 6.4, 7): v1 renders media nested inside its rule. dtcg's current `renderPhysical` emits the traditional flat shape (`@media conditions { selector { ... } }`), so a migration onto fashionable's nested output changes dtcg's emitted CSS — acceptable on the browsers the consumers target, where native `@media` nesting is baseline. A flat/hoisting render transform is deferred until a consumer needs it.
 - **Coalesce cascade safety**: v1 documents order sensitivity; the refusing variant is future work.
 - **Typed units**: values stay number-land with units at the declaration boundary; revisit after consumer 1 migrates.

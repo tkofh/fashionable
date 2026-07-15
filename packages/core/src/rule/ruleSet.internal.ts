@@ -7,7 +7,7 @@ import { dual, Pipeable } from '#util'
 import { make as makeMediaRule } from './mediaRule.internal.ts'
 import type { MediaRule } from './mediaRule.ts'
 import { blockBodyLines, memberRefs, refSetOf, resolveRenderOptions } from './rule.internal.ts'
-import type { Member, MemberRefs, RenderOptions, RuleSet } from './ruleSet.ts'
+import type { Member, MemberVars, RenderOptions, RuleSet } from './ruleSet.ts'
 import { make as makeStyleRule } from './styleRule.internal.ts'
 import type { StyleRule } from './styleRule.ts'
 
@@ -68,9 +68,9 @@ export const isEmpty = (set: RuleSet<string>): boolean => set.members.length ===
 /** @internal */
 export function make<Members extends ReadonlyArray<Member<string>>>(
   ...members: Members
-): RuleSet<MemberRefs<Members[number]>> {
+): RuleSet<MemberVars<Members[number]>> {
   return (members.length === 0 ? empty : new RuleSetImpl(members)) as RuleSet<
-    MemberRefs<Members[number]>
+    MemberVars<Members[number]>
   >
 }
 
@@ -87,29 +87,29 @@ const resolveMember = (head: unknown, block: unknown): Member<string> => {
 export const append: {
   <M extends Member<string>>(
     member: M,
-  ): <Refs extends string>(self: RuleSet<Refs>) => RuleSet<Refs | MemberRefs<M>>
+  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | MemberVars<M>>
   <B extends string>(
     selector: Selector,
     block: RuleSet<B>,
-  ): <Refs extends string>(self: RuleSet<Refs>) => RuleSet<Refs | B>
+  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | B>
   <B extends string>(
     query: MediaQuery,
     block: RuleSet<B>,
-  ): <Refs extends string>(self: RuleSet<Refs>) => RuleSet<Refs | B>
-  <Refs extends string, M extends Member<string>>(
-    self: RuleSet<Refs>,
+  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | B>
+  <Vars extends string, M extends Member<string>>(
+    self: RuleSet<Vars>,
     member: M,
-  ): RuleSet<Refs | MemberRefs<M>>
-  <Refs extends string, B extends string>(
-    self: RuleSet<Refs>,
+  ): RuleSet<Vars | MemberVars<M>>
+  <Vars extends string, B extends string>(
+    self: RuleSet<Vars>,
     selector: Selector,
     block: RuleSet<B>,
-  ): RuleSet<Refs | B>
-  <Refs extends string, B extends string>(
-    self: RuleSet<Refs>,
+  ): RuleSet<Vars | B>
+  <Vars extends string, B extends string>(
+    self: RuleSet<Vars>,
     query: MediaQuery,
     block: RuleSet<B>,
-  ): RuleSet<Refs | B>
+  ): RuleSet<Vars | B>
 } = dual(
   (args: IArguments) => isRuleSet(args[0]),
   (self: RuleSet<string>, head: unknown, block?: unknown): RuleSet<string> =>
@@ -128,8 +128,8 @@ export const concat: {
 
 /** @internal */
 export const forSelector: {
-  (selector: Selector): <Refs extends string>(self: RuleSet<Refs>) => StyleRule<Refs>
-  <Refs extends string>(self: RuleSet<Refs>, selector: Selector): StyleRule<Refs>
+  (selector: Selector): <Vars extends string>(self: RuleSet<Vars>) => StyleRule<Vars>
+  <Vars extends string>(self: RuleSet<Vars>, selector: Selector): StyleRule<Vars>
 } = dual(
   2,
   (self: RuleSet<string>, selector: Selector): StyleRule<string> => makeStyleRule(selector, self),
@@ -137,16 +137,16 @@ export const forSelector: {
 
 /** @internal */
 export const forMediaQuery: {
-  (query: MediaQuery): <Refs extends string>(self: RuleSet<Refs>) => MediaRule<Refs>
-  <Refs extends string>(self: RuleSet<Refs>, query: MediaQuery): MediaRule<Refs>
+  (query: MediaQuery): <Vars extends string>(self: RuleSet<Vars>) => MediaRule<Vars>
+  <Vars extends string>(self: RuleSet<Vars>, query: MediaQuery): MediaRule<Vars>
 } = dual(
   2,
   (self: RuleSet<string>, query: MediaQuery): MediaRule<string> => makeMediaRule(query, self),
 )
 
 /** @internal */
-export function refs<Refs extends string>(set: RuleSet<Refs>): ReadonlySet<Refs> {
-  return refSetOf(set) as ReadonlySet<Refs>
+export function refs<Vars extends string>(set: RuleSet<Vars>): ReadonlySet<Vars> {
+  return refSetOf(set) as ReadonlySet<Vars>
 }
 
 /** @internal */

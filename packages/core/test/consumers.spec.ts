@@ -29,29 +29,29 @@ describe('consumers', () => {
   // named references, bound per hue, solved in JS and serialized to CSS
   // from the same tree.
   describe('ok-apca: a computed @property color chain', () => {
-    const gate = Calc.max(0, Calc.sign(Calc.subtract(Calc.ref('lightness'), Calc.ref('apexL'))))
+    const gate = Calc.max(0, Calc.sign(Calc.subtract(Calc.var('lightness'), Calc.var('apexL'))))
     const rising = Calc.divide(
-      Calc.multiply(Calc.ref('apexC'), Calc.ref('lightness')),
-      Calc.ref('apexL'),
+      Calc.multiply(Calc.var('apexC'), Calc.var('lightness')),
+      Calc.var('apexL'),
     )
     const fallProgress = Calc.max(
       0,
       Calc.divide(
-        Calc.subtract(Calc.ref('lightness'), Calc.ref('apexL')),
-        Calc.subtract(1, Calc.ref('apexL')),
+        Calc.subtract(Calc.var('lightness'), Calc.var('apexL')),
+        Calc.subtract(1, Calc.var('apexL')),
       ),
     )
     const falling = Calc.add(
       Calc.divide(
-        Calc.multiply(Calc.ref('apexC'), Calc.subtract(1, Calc.ref('lightness'))),
-        Calc.subtract(1, Calc.ref('apexL')),
+        Calc.multiply(Calc.var('apexC'), Calc.subtract(1, Calc.var('lightness'))),
+        Calc.subtract(1, Calc.var('apexL')),
       ),
       Calc.multiply(
         Calc.multiply(
-          Calc.ref('tentK'),
+          Calc.var('tentK'),
           Calc.pow(Calc.sin(Calc.multiply(fallProgress, Math.PI)), 0.95),
         ),
-        Calc.ref('apexC'),
+        Calc.var('apexC'),
       ),
     )
     const tent = Calc.add(
@@ -79,8 +79,8 @@ describe('consumers', () => {
           Declaration.make(
             '--color-fill',
             Color.oklch(
-              Calc.ref('lightness'),
-              Calc.multiply(Calc.ref('_fill-mc'), Calc.ref('chroma')),
+              Calc.var('lightness'),
+              Calc.multiply(Calc.var('_fill-mc'), Calc.var('chroma')),
               30,
             ),
           ),
@@ -102,12 +102,15 @@ describe('consumers', () => {
 
     test('the serialized expression and the solved expression are the same tree', () => {
       for (const lightness of [0.2, 0.4, 0.654, 0.7, 0.9]) {
-        expect(Calc.solve(redTent, { lightness })).toBeCloseTo(tentClosedForm(lightness), 12)
+        expect(Calc.solve(redTent, { bindings: { lightness } })).toBeCloseTo(
+          tentClosedForm(lightness),
+          12,
+        )
       }
     })
 
     test('the sheet reports the custom properties it reads', () => {
-      expect(Stylesheet.refs(sheet)).toEqual(new Set(['lightness', 'chroma', '_fill-mc']))
+      expect(Stylesheet.vars(sheet)).toEqual(new Set(['lightness', 'chroma', '_fill-mc']))
     })
   })
 
@@ -147,7 +150,7 @@ describe('consumers', () => {
     // inverse, a cos(acos(...)) chain reading one unbound reference.
     const fluidT = Calc.cos(
       Calc.subtract(
-        Calc.divide(Calc.acos(Calc.clamp(-1, Calc.ref('type-fluid-u'), 1)), 3),
+        Calc.divide(Calc.acos(Calc.clamp(-1, Calc.var('type-fluid-u'), 1)), 3),
         Angle.rad(2.0943951),
       ),
     )
@@ -228,7 +231,7 @@ describe('consumers', () => {
     })
 
     test('the sheet reports its one unbound reference', () => {
-      expect(Stylesheet.refs(merged)).toEqual(new Set(['type-fluid-u']))
+      expect(Stylesheet.vars(merged)).toEqual(new Set(['type-fluid-u']))
     })
 
     test('coalesce folds same-selector rules into their first occurrence', () => {

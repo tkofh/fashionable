@@ -63,13 +63,13 @@ describe('data — solving through a unit context', () => {
   test('the fluid position term solves at a sample viewport width', () => {
     const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
     // (100 * 12.8 - 320) / 160 = 6 at a 1280px viewport
-    expect(Calc.solve(position, {}, { vw: 1280 / 100 })).toBe(6)
-    expect(Calc.solve(position, {}, { vw: 320 / 100 })).toBe(0)
+    expect(Calc.solve(position, { units: { vw: 1280 / 100 } })).toBe(6)
+    expect(Calc.solve(position, { units: { vw: 320 / 100 } })).toBe(0)
   })
 
   test('an absolute override changes the solve base', () => {
     // solve in half-pixels: every px counts double
-    expect(Calc.solve(Length.px(10), {}, { px: 2 })).toBe(20)
+    expect(Calc.solve(Length.px(10), { units: { px: 2 } })).toBe(20)
   })
 
   test('a relative unit with no ratio throws', () => {
@@ -77,6 +77,13 @@ describe('data — solving through a unit context', () => {
     expect(() => Calc.solve(Length.vw(10) as unknown as Calc.Calc<never>)).toThrow(
       "no ratio for 'vw'",
     )
+  })
+
+  test('units reports the unit tokens a tree carries', () => {
+    const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
+    expect(Calc.units(position)).toEqual(new Set(['vw', 'px']))
+    expect(Calc.units(Calc.add(Calc.var('x'), 1))).toEqual(new Set())
+    expect(Calc.units(Percentage.of(50))).toEqual(new Set(['%']))
   })
 })
 
@@ -92,7 +99,10 @@ describe('data — tan(atan2()) as a portable length ratio', () => {
   test('solves to the same value as the length division', () => {
     for (const width of [320, 768, 1280]) {
       const context = { vw: width / 100 }
-      expect(Calc.solve(viaTan, {}, context)).toBeCloseTo(Calc.solve(viaDivide, {}, context), 12)
+      expect(Calc.solve(viaTan, { units: context })).toBeCloseTo(
+        Calc.solve(viaDivide, { units: context }),
+        12,
+      )
     }
   })
 
@@ -141,7 +151,10 @@ describe('data — the full fluid curve', () => {
 
   test('solves against the closed form at sample viewport widths', () => {
     for (const width of [320, 480, 768, 1280]) {
-      expect(Calc.solve(curve, {}, { vw: width / 100 })).toBeCloseTo(fluidClosedForm(width), 9)
+      expect(Calc.solve(curve, { units: { vw: width / 100 } })).toBeCloseTo(
+        fluidClosedForm(width),
+        9,
+      )
     }
   })
 
@@ -163,7 +176,7 @@ describe('data — percentages', () => {
   test('same-unit percentages fold; a number scales one', () => {
     expect(Calc.serialize(Calc.add(Percentage.of(20), Percentage.of(5)))).toBe('25%')
     expect(Calc.serialize(Calc.multiply(Percentage.of(50), 2))).toBe('100%')
-    expect(Calc.serialize(Calc.multiply(Percentage.of(50), Calc.ref('t')))).toBe(
+    expect(Calc.serialize(Calc.multiply(Percentage.of(50), Calc.var('t')))).toBe(
       'calc(50% * var(--t))',
     )
   })
@@ -172,6 +185,18 @@ describe('data — percentages', () => {
     const ratio = Calc.divide(Percentage.of(50), Percentage.of(100))
     expect(Calc.serialize(ratio)).toBe('0.5')
     expect(Calc.solve(ratio)).toBe(0.5)
+  })
+
+  test('a percentage solves against a basis ratio, per-hundred like vw', () => {
+    expect(Calc.solve(Percentage.of(50), { units: { '%': 320 / 100 } })).toBe(160)
+    const scaled = Calc.multiply(Percentage.of(25), 2)
+    expect(Calc.solve(scaled, { units: { '%': 4 } })).toBe(200)
+  })
+
+  test('a percentage with no basis throws', () => {
+    expect(() => Calc.solve(Percentage.of(50) as unknown as Calc.Calc<never>)).toThrow(
+      "no ratio for '%'",
+    )
   })
 
   test('a percentage differs from the bare number and from a length', () => {
@@ -231,13 +256,17 @@ const dimensionalTypes = (): void => {
   // solve: context-free trees need no context; relative units require one
   const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
   expectTypeOf(Calc.solve(Length.px(10))).toBeNumber()
-  expectTypeOf(Calc.solve(position, {}, { vw: 12.8 })).toBeNumber()
-  // @ts-expect-error a viewport-relative tree is not solvable without a context
+  expectTypeOf(Calc.solve(position, { units: { vw: 12.8 } })).toBeNumber()
+  // @ts-expect-error a viewport-relative tree is not solvable without options
   Calc.solve(position)
-  // @ts-expect-error the context must supply the relative unit's ratio
-  Calc.solve(position, {}, {})
+  // @ts-expect-error the units section is required while a relative unit is present
+  Calc.solve(position, {})
   // @ts-expect-error px is an absolute override, not a substitute for the vw ratio
-  Calc.solve(position, {}, { px: 1 })
+  Calc.solve(position, { units: { px: 1 } })
+  // @ts-expect-error a percentage needs its basis ratio in the units section
+  Calc.solve(Percentage.of(50))
+  // @ts-expect-error a bound value must be closed — an open expression can never solve
+  Calc.solve(Calc.var('x'), { bindings: { x: Calc.var('y') } })
 
   // tan(atan2(length, length)) is a <number> carrying both units — a portable a/b
   expectTypeOf(

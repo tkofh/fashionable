@@ -47,7 +47,7 @@ export interface PropertyRule extends Pipeable {
  * The value forms an `initial-value` descriptor can hold once
  * constructed. The closed (`never`-ref) parameter is the spec rule in the
  * types: `@property` initial values must be computationally independent, so
- * only closed expressions — no unbound references — are accepted. A `Calc`
+ * only closed expressions — no unbound variables — are accepted. A `Calc`
  * of any dimension is admitted here; `make` narrows to the forms the declared
  * syntax accepts (the syntax's `V` parameter), where a `<length>` is limited
  * to absolute units.
@@ -93,7 +93,7 @@ export const make: {
    * @param syntax - The universal syntax; omit for the same effect.
    * @param initialValue - Optional under the universal syntax: any value form.
    * @returns A `PropertyRule` with `inherits: false`.
-   * @throws `Error` when `name` is not a `--`-prefixed custom property name (bare `--` included), or an expression value has unbound references.
+   * @throws `Error` when `name` is not a `--`-prefixed custom property name (bare `--` included), or an expression value has unbound variables.
    * @since 0.1.0
    */
   (name: `--${string}`, syntax?: Universal, initialValue?: Value | number): PropertyRule
@@ -104,7 +104,7 @@ export const make: {
    * accepts are admitted — numbers and closed `Calc` expressions under
    * `PropertySyntax.number`, exactly the declared literals under a
    * keyword set, and so on — and the computational-independence rule
-   * rides along, since an expression with unbound references is not a
+   * rides along, since an expression with unbound variables is not a
    * `Calc<never>` (backed by a runtime check for untyped callers). Bare
    * numbers coerce to unannotated constants. That literal-text values
    * parse under the syntax is not checked — this library does not parse
@@ -117,7 +117,7 @@ export const make: {
    * @param syntax - The modeled `syntax` descriptor; see `PropertySyntax`.
    * @param initialValue - The `initial-value` descriptor, required for every non-universal syntax and typed by it.
    * @returns A `PropertyRule` with `inherits: false`.
-   * @throws `Error` when `name` is not a `--`-prefixed custom property name (bare `--` included), `initialValue` is missing under a non-universal syntax, or an expression value has unbound references.
+   * @throws `Error` when `name` is not a `--`-prefixed custom property name (bare `--` included), `initialValue` is missing under a non-universal syntax, or an expression value has unbound variables.
    * @example
    * ```ts
    * PropertyRule.make('--depth', PropertySyntax.number, 0)

@@ -7,7 +7,7 @@ import { Selector } from '#selector'
 
 describe('rule', () => {
   const color = Declaration.make('color', 'red')
-  const depth = Declaration.make('--depth', Calc.ref('depth'))
+  const depth = Declaration.make('--depth', Calc.var('depth'))
 
   describe('RuleSet', () => {
     test('isEmpty is structural member absence', () => {
@@ -111,13 +111,13 @@ describe('rule', () => {
     test('refs union across members and through nesting', () => {
       const nested = StyleRule.make(
         Selector.class('btn'),
-        RuleSet.make(Declaration.make('--a', Calc.ref('a'))),
+        RuleSet.make(Declaration.make('--a', Calc.var('a'))),
       )
       const media = MediaRule.make(
         MediaQuery.minWidth(768),
-        RuleSet.make(Declaration.make('--b', Calc.ref('b'))),
+        RuleSet.make(Declaration.make('--b', Calc.var('b'))),
       )
-      expect(RuleSet.refs(RuleSet.make(depth, nested, media))).toEqual(new Set(['depth', 'a', 'b']))
+      expect(RuleSet.vars(RuleSet.make(depth, nested, media))).toEqual(new Set(['depth', 'a', 'b']))
     })
   })
 
@@ -131,7 +131,7 @@ describe('rule', () => {
 
     test('refs are the block refs', () => {
       const rule = StyleRule.make(Selector.root, RuleSet.make(depth))
-      expect(StyleRule.refs(rule)).toEqual(new Set(['depth']))
+      expect(StyleRule.vars(rule)).toEqual(new Set(['depth']))
     })
 
     test('media rules nest inside a style rule block', () => {
@@ -158,7 +158,7 @@ describe('rule', () => {
 
     test('refs are the block refs', () => {
       const rule = MediaRule.make(MediaQuery.minWidth(768), RuleSet.make(depth))
-      expect(MediaRule.refs(rule)).toEqual(new Set(['depth']))
+      expect(MediaRule.vars(rule)).toEqual(new Set(['depth']))
     })
   })
 
@@ -168,8 +168,8 @@ describe('rule', () => {
     })
 
     test('nested structures compare structurally', () => {
-      const a = StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--x', Calc.ref('u'))))
-      const b = StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--x', Calc.ref('u'))))
+      const a = StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--x', Calc.var('u'))))
+      const b = StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--x', Calc.var('u'))))
       expect(StyleRule.equals(a, b)).toBe(true)
       expect(a).toStructurallyEqual(b)
     })

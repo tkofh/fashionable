@@ -45,13 +45,13 @@ const rejectsNonNodes = (): void => {
 // Compile-time assertions only — never invoked.
 const rejectsOpenInitialValues = (): void => {
   // @ts-expect-error an initial value must be computationally independent — Calc.Calc<'u'> is not Calc.Calc<never>
-  PropertyRule.make('--depth', PropertySyntax.number, Calc.ref('u'))
+  PropertyRule.make('--depth', PropertySyntax.number, Calc.var('u'))
   // @ts-expect-error an initial value must be computationally independent — Color.Color<'l'> is not Color.Color<never>
-  PropertyRule.make('--accent', PropertySyntax.color, Color.oklch(Calc.ref('l'), 0.1, 250))
+  PropertyRule.make('--accent', PropertySyntax.color, Color.oklch(Calc.var('l'), 0.1, 250))
   // @ts-expect-error a color reference reads a custom property — Color.Color<'accent'> is not Color.Color<never>
-  PropertyRule.make('--accent', PropertySyntax.color, Color.ref('accent'))
+  PropertyRule.make('--accent', PropertySyntax.color, Color.var('accent'))
   // @ts-expect-error a length reading a reference is not computationally independent
-  PropertyRule.make('--gap', PropertySyntax.length, Calc.multiply(Length.px(10), Calc.ref('scale')))
+  PropertyRule.make('--gap', PropertySyntax.length, Calc.multiply(Length.px(10), Calc.var('scale')))
 }
 
 // Compile-time assertions only — never invoked.
@@ -96,18 +96,20 @@ const rejectsInvalidMixMethods = (): void => {
 
 // Compile-time assertions only — never invoked.
 const rejectsCrossSpaceRelativeChannels = (): void => {
-  const accent = Color.ref('accent')
+  const accent = Color.var('accent')
   // @ts-expect-error an srgb channel keyword is out of scope for an oklch relative color
   Color.from(accent, ColorSpace.oklch, Channel.R, Channel.C, Channel.H)
   // @ts-expect-error an oklch channel keyword is out of scope for an srgb relative color
   Color.from(accent, ColorSpace.srgb, Channel.L, Channel.G, Channel.B)
-  // @ts-expect-error a channel keyword needs a value in the solve context
+  // @ts-expect-error a channel keyword needs a value in the idents section
   Calc.solve(Calc.multiply(Channel.L, 0.8))
+  // @ts-expect-error the idents section is required while a channel leaf is present
+  Calc.solve(Calc.divide(2, Channel.L))
 }
 
 describe('types', () => {
   test('ref infers its name', () => {
-    expectTypeOf(Calc.ref('x')).toEqualTypeOf<Calc.Calc<'x'>>()
+    expectTypeOf(Calc.var('x')).toEqualTypeOf<Calc.Calc<'x'>>()
   })
 
   test('constants are closed', () => {
@@ -116,58 +118,58 @@ describe('types', () => {
   })
 
   test('combinators union refs', () => {
-    expectTypeOf(Calc.add(Calc.ref('x'), Calc.ref('y'))).toEqualTypeOf<Calc.Calc<'x' | 'y'>>()
-    expectTypeOf(Calc.add(Calc.ref('x'), 1)).toEqualTypeOf<Calc.Calc<'x'>>()
-    expectTypeOf(Calc.clamp(0, Calc.ref('u'), 1)).toEqualTypeOf<Calc.Calc<'u'>>()
-    expectTypeOf(Calc.lerp(Calc.ref('a'), Calc.ref('b'), Calc.ref('t'))).toEqualTypeOf<
+    expectTypeOf(Calc.add(Calc.var('x'), Calc.var('y'))).toEqualTypeOf<Calc.Calc<'x' | 'y'>>()
+    expectTypeOf(Calc.add(Calc.var('x'), 1)).toEqualTypeOf<Calc.Calc<'x'>>()
+    expectTypeOf(Calc.clamp(0, Calc.var('u'), 1)).toEqualTypeOf<Calc.Calc<'u'>>()
+    expectTypeOf(Calc.lerp(Calc.var('a'), Calc.var('b'), Calc.var('t'))).toEqualTypeOf<
       Calc.Calc<'a' | 'b' | 't'>
     >()
   })
 
   test('bind subtracts bound names', () => {
-    const expr = Calc.add(Calc.ref('x'), Calc.ref('y'))
+    const expr = Calc.add(Calc.var('x'), Calc.var('y'))
     expectTypeOf(Calc.bind(expr, { x: 1 })).toEqualTypeOf<Calc.Calc<'y'>>()
     expectTypeOf(Calc.bind(expr, { x: 1, y: 2 })).toEqualTypeOf<Calc.Calc<never>>()
   })
 
   test('binding to an expression adds its refs', () => {
-    expectTypeOf(Calc.bind(Calc.ref('x'), { x: Calc.ref('a') })).toEqualTypeOf<Calc.Calc<'a'>>()
+    expectTypeOf(Calc.bind(Calc.var('x'), { x: Calc.var('a') })).toEqualTypeOf<Calc.Calc<'a'>>()
   })
 
   test('data-last bind composes through pipe', () => {
-    const bound = Calc.ref('x').pipe(Calc.bind({ x: 2 }))
+    const bound = Calc.var('x').pipe(Calc.bind({ x: 2 }))
     expectTypeOf(bound).toEqualTypeOf<Calc.Calc<never>>()
   })
 
   test('solve requires a closed expression', () => {
     expect(() =>
       Calc.solve(
-        // @ts-expect-error an expression with unbound references needs the bindings overload
-        Calc.ref('x'),
+        // @ts-expect-error an expression with unbound variables needs the options overload
+        Calc.var('x'),
       ),
-    ).toThrow('unbound references remain')
+    ).toThrow('unbound variables remain')
   })
 
   test('color channels union refs', () => {
-    expectTypeOf(Color.oklch(Calc.ref('l'), 0.1, Calc.ref('h'))).toEqualTypeOf<
+    expectTypeOf(Color.oklch(Calc.var('l'), 0.1, Calc.var('h'))).toEqualTypeOf<
       Color.Color<'l' | 'h'>
     >()
   })
 
   test('color bind subtracts bound names', () => {
-    const color = Color.oklch(Calc.ref('l'), Calc.ref('c'), 250)
+    const color = Color.oklch(Calc.var('l'), Calc.var('c'), 250)
     expectTypeOf(Color.bind(color, { l: 0.5 })).toEqualTypeOf<Color.Color<'c'>>()
   })
 
   test('color ref carries its name', () => {
-    expectTypeOf(Color.ref('accent')).toEqualTypeOf<Color.Color<'accent'>>()
+    expectTypeOf(Color.var('accent')).toEqualTypeOf<Color.Color<'accent'>>()
   })
 
   test('relative color unions the origin and channel refs', () => {
     const color = Color.from(
-      Color.ref('accent'),
+      Color.var('accent'),
       ColorSpace.oklch,
-      Calc.multiply(Channel.L, Calc.ref('k')),
+      Calc.multiply(Channel.L, Calc.var('k')),
       Channel.C,
       Channel.H,
     )
@@ -176,29 +178,47 @@ describe('types', () => {
 
   test('relative alpha contributes its refs', () => {
     const color = Color.from(
-      Color.ref('x'),
+      Color.var('x'),
       ColorSpace.srgb,
       Channel.R,
       Channel.G,
       Channel.B,
-      Calc.multiply(Channel.Alpha, Calc.ref('a')),
+      Calc.multiply(Channel.Alpha, Calc.var('a')),
     )
     expectTypeOf(color).toEqualTypeOf<Color.Color<'x' | 'a'>>()
   })
 
   test('channel keywords carry their leaf brand', () => {
-    expectTypeOf(Channel.L).toEqualTypeOf<Calc.Calc<never, 'number', Unit.ChannelLeaf<'l'>>>()
+    expectTypeOf(Channel.L).toEqualTypeOf<Calc.Calc<never, 'number', Channel.ChannelIdent<'l'>>>()
   })
 
-  test('a channel keyword is solvable with its value in the context', () => {
-    expectTypeOf(Calc.solve(Calc.multiply(Channel.L, 0.8), {}, { l: 0.5 })).toEqualTypeOf<number>()
+  test('a channel keyword is solvable with its value in the idents section', () => {
+    expectTypeOf(
+      Calc.solve(Calc.multiply(Channel.L, 0.8), { idents: { l: 0.5 } }),
+    ).toEqualTypeOf<number>()
+  })
+
+  test('ident leaves survive the combinator algebra', () => {
+    // pow and sign propagate leaves instead of rejecting leaf-carrying operands
+    expectTypeOf(Calc.pow(Channel.L, 2.2)).toEqualTypeOf<
+      Calc.Calc<never, 'number', Channel.ChannelIdent<'l'>>
+    >()
+    expectTypeOf(Calc.sign(Length.px(-4))).toEqualTypeOf<Calc.Calc<never, 'number', Unit.Px>>()
+    // a number-kind divisor's leaves survive division
+    expectTypeOf(Calc.divide(2, Channel.L)).toEqualTypeOf<
+      Calc.Calc<never, 'number', Channel.ChannelIdent<'l'>>
+    >()
+    // same-singleton cancellation never fires for idents — they are not constants
+    expectTypeOf(Calc.divide(Calc.acos(Channel.L), Calc.acos(Channel.L))).toEqualTypeOf<
+      Calc.Calc<never, 'number', Channel.ChannelIdent<'l'>>
+    >()
   })
 
   test('color mix unions both arms and both percentage refs', () => {
     const color = Color.mix(
       ColorSpace.oklch,
-      [Color.oklch(Calc.ref('l'), 0.1, 250), Calc.multiply(Percentage.of(50), Calc.ref('t'))],
-      Color.srgb(Calc.ref('r'), 0.2, 0.3),
+      [Color.oklch(Calc.var('l'), 0.1, 250), Calc.multiply(Percentage.of(50), Calc.var('t'))],
+      Color.srgb(Calc.var('r'), 0.2, 0.3),
     )
     expectTypeOf(color).toEqualTypeOf<Color.Color<'l' | 't' | 'r'>>()
   })
@@ -207,8 +227,8 @@ describe('types', () => {
     const color = Color.mix(
       ColorSpace.oklch,
       HueInterpolation.longer,
-      Color.ref('a'),
-      Color.ref('b'),
+      Color.var('a'),
+      Color.var('b'),
     )
     expectTypeOf(color).toEqualTypeOf<Color.Color<'a' | 'b'>>()
   })
@@ -216,16 +236,16 @@ describe('types', () => {
   test('declarations carry their value refs', () => {
     expectTypeOf(Declaration.make('color', 'red')).toEqualTypeOf<Declaration.Declaration<never>>()
     expectTypeOf(Declaration.make('--depth', 4)).toEqualTypeOf<Declaration.Declaration<never>>()
-    expectTypeOf(Declaration.make('--x', Calc.ref('u'))).toEqualTypeOf<
+    expectTypeOf(Declaration.make('--x', Calc.var('u'))).toEqualTypeOf<
       Declaration.Declaration<'u'>
     >()
-    expectTypeOf(Declaration.make('color', Color.oklch(Calc.ref('l'), 0.1, 250))).toEqualTypeOf<
+    expectTypeOf(Declaration.make('color', Color.oklch(Calc.var('l'), 0.1, 250))).toEqualTypeOf<
       Declaration.Declaration<'l'>
     >()
   })
 
   test('declaration bind subtracts bound names', () => {
-    const declaration = Declaration.make('--x', Calc.add(Calc.ref('u'), Calc.ref('v')))
+    const declaration = Declaration.make('--x', Calc.add(Calc.var('u'), Calc.var('v')))
     expectTypeOf(Declaration.bind(declaration, { u: 1 })).toEqualTypeOf<
       Declaration.Declaration<'v'>
     >()
@@ -282,11 +302,11 @@ describe('types', () => {
 
   test('rule containers union their members refs', () => {
     const set = RuleSet.make(
-      Declaration.make('--a', Calc.ref('a')),
-      StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--b', Calc.ref('b')))),
+      Declaration.make('--a', Calc.var('a')),
+      StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--b', Calc.var('b')))),
       MediaRule.make(
         MediaQuery.minWidth(768),
-        RuleSet.make(Declaration.make('--c', Calc.ref('c'))),
+        RuleSet.make(Declaration.make('--c', Calc.var('c'))),
       ),
     )
     expectTypeOf(set).toEqualTypeOf<RuleSet.RuleSet<'a' | 'b' | 'c'>>()
@@ -298,18 +318,18 @@ describe('types', () => {
   })
 
   test('append and concat union refs', () => {
-    const set = RuleSet.make(Declaration.make('--a', Calc.ref('a')))
-    expectTypeOf(RuleSet.append(set, Declaration.make('--b', Calc.ref('b')))).toEqualTypeOf<
+    const set = RuleSet.make(Declaration.make('--a', Calc.var('a')))
+    expectTypeOf(RuleSet.append(set, Declaration.make('--b', Calc.var('b')))).toEqualTypeOf<
       RuleSet.RuleSet<'a' | 'b'>
     >()
     expectTypeOf(
-      RuleSet.concat(set, RuleSet.make(Declaration.make('--c', Calc.ref('c')))),
+      RuleSet.concat(set, RuleSet.make(Declaration.make('--c', Calc.var('c')))),
     ).toEqualTypeOf<RuleSet.RuleSet<'a' | 'c'>>()
   })
 
   test('pair-form appends union the block refs', () => {
-    const set = RuleSet.make(Declaration.make('--a', Calc.ref('a')))
-    const block = RuleSet.make(Declaration.make('--b', Calc.ref('b')))
+    const set = RuleSet.make(Declaration.make('--a', Calc.var('a')))
+    const block = RuleSet.make(Declaration.make('--b', Calc.var('b')))
     expectTypeOf(RuleSet.append(set, Selector.class('btn'), block)).toEqualTypeOf<
       RuleSet.RuleSet<'a' | 'b'>
     >()
@@ -320,7 +340,7 @@ describe('types', () => {
       RuleSet.RuleSet<'a' | 'b'>
     >()
     const sheet = Stylesheet.make(
-      StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--a', Calc.ref('a')))),
+      StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--a', Calc.var('a')))),
     )
     expectTypeOf(Stylesheet.append(sheet, Selector.class('btn'), block)).toEqualTypeOf<
       Stylesheet.Stylesheet<'a' | 'b'>
@@ -328,7 +348,7 @@ describe('types', () => {
   })
 
   test('forSelector and forMediaQuery thread the block refs', () => {
-    const block = RuleSet.make(Declaration.make('--a', Calc.ref('a')))
+    const block = RuleSet.make(Declaration.make('--a', Calc.var('a')))
     expectTypeOf(RuleSet.forSelector(block, Selector.class('btn'))).toEqualTypeOf<
       StyleRule.StyleRule<'a'>
     >()
@@ -345,8 +365,8 @@ describe('types', () => {
 
   test('stylesheets union their nodes refs', () => {
     const sheet = Stylesheet.make(
-      StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--a', Calc.ref('a')))),
-      StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('--b', Calc.ref('b')))),
+      StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--a', Calc.var('a')))),
+      StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('--b', Calc.var('b')))),
       PropertyRule.make('--a', PropertySyntax.number, 0),
     )
     expectTypeOf(sheet).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'b'>>()
@@ -365,14 +385,14 @@ describe('types', () => {
 
   test('append, merge, and mergeAll union refs', () => {
     const a = Stylesheet.make(
-      StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--a', Calc.ref('a')))),
+      StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--a', Calc.var('a')))),
     )
     const b = Stylesheet.make(
-      StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('--b', Calc.ref('b')))),
+      StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('--b', Calc.var('b')))),
     )
     const appended = Stylesheet.append(
       a,
-      StyleRule.make(Selector.class('card'), RuleSet.make(Declaration.make('--c', Calc.ref('c')))),
+      StyleRule.make(Selector.class('card'), RuleSet.make(Declaration.make('--c', Calc.var('c')))),
     )
     expectTypeOf(appended).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'c'>>()
     expectTypeOf(Stylesheet.merge(a, b)).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'b'>>()

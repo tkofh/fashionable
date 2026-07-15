@@ -1,9 +1,9 @@
 /**
- * Runtime helpers for the unbound-reference sets carried by expression
- * values. The matching type-level machinery (the phantom `Refs` parameter
+ * Runtime helpers for the unbound-variable sets carried by expression
+ * values. The matching type-level machinery (the phantom `Vars` parameter
  * and `ApplyBindings`) lives with the public types in calc/calc.ts;
- * container modules extract refs from heterogeneous members with
- * conditionals over their member unions (`RuleSet.MemberRefs`).
+ * container modules extract vars from heterogeneous members with
+ * conditionals over their member unions (`RuleSet.MemberVars`).
  */
 
 /** @internal */

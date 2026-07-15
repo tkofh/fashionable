@@ -56,16 +56,16 @@ export const isStyleRule = (u: unknown): u is StyleRule<string> =>
   typeof u === 'object' && u !== null && StyleRuleTypeId in u
 
 /** @internal */
-export function make<Refs extends string>(
+export function make<Vars extends string>(
   selector: Selector,
-  block: RuleSet<Refs>,
-): StyleRule<Refs> {
-  return new StyleRuleImpl(selector, block) as unknown as StyleRule<Refs>
+  block: RuleSet<Vars>,
+): StyleRule<Vars> {
+  return new StyleRuleImpl(selector, block) as unknown as StyleRule<Vars>
 }
 
 /** @internal */
-export function refs<Refs extends string>(rule: StyleRule<Refs>): ReadonlySet<Refs> {
-  return refSetOf(rule) as ReadonlySet<Refs>
+export function refs<Vars extends string>(rule: StyleRule<Vars>): ReadonlySet<Vars> {
+  return refSetOf(rule) as ReadonlySet<Vars>
 }
 
 /** @internal */

@@ -15,7 +15,7 @@ import * as internal from './declaration.internal.ts'
  * A `Calc` of any dimension is accepted: a `<number>`, or a `<length>` /
  * `<angle>` built from `fashionable/data`, which carries its own units.
  *
- * The `Refs` parameter carries the value's unbound reference names, as on
+ * The `Vars` parameter carries the value's unbound variable names, as on
  * `Calc`; literal text binds nothing and a text-valued declaration is a
  * `Declaration<never>`.
  *
@@ -23,7 +23,7 @@ import * as internal from './declaration.internal.ts'
  *
  * @since 0.1.0
  */
-export interface Declaration<out Refs extends string = string> extends Pipeable {
+export interface Declaration<out Vars extends string = string> extends Pipeable {
   readonly [DeclarationTypeId]: DeclarationTypeId
   /**
    * The property name, exactly as it renders — `font-size`, or `--depth`
@@ -33,7 +33,7 @@ export interface Declaration<out Refs extends string = string> extends Pipeable 
   /**
    * The declaration's value: literal CSS text or a value-layer expression.
    */
-  readonly value: Value<Refs>
+  readonly value: Value<Vars>
 }
 
 /**
@@ -42,7 +42,7 @@ export interface Declaration<out Refs extends string = string> extends Pipeable 
  *
  * @since 0.1.0
  */
-export type Value<Refs extends string = string> = string | Calc<Refs, Kind, unknown> | Color<Refs>
+export type Value<Vars extends string = string> = string | Calc<Vars, Kind, unknown> | Color<Vars>
 
 /**
  * Checks if a value is a `Declaration`.
@@ -66,59 +66,59 @@ export const isDeclaration: (u: unknown) => u is Declaration<string> = internal.
  *
  * @param name - The property name, exactly as it renders (`--x` keeps its dashes). Must be non-empty.
  * @param value - Literal CSS text, a number, or a `Calc`/`Color` expression.
- * @returns A `Declaration` carrying the value's reference names — `Declaration<never>` for text and numbers.
+ * @returns A `Declaration` carrying the value's variable names — `Declaration<never>` for text and numbers.
  * @throws `Error` when `name` is empty, or `value` is a non-finite number.
  * @example
  * ```ts
  * Declaration.make('color', 'red')
- * Declaration.make('--fluid', Calc.add(14, Calc.multiply(Calc.ref('vw'), 0.01)))
+ * Declaration.make('--fluid', Calc.add(14, Calc.multiply(Calc.var('vw'), 0.01)))
  * ```
  * @since 0.1.0
  */
-export const make: <Refs extends string = never>(
+export const make: <Vars extends string = never>(
   name: string,
-  value: Value<Refs> | number,
-) => Declaration<Refs> = internal.make
+  value: Value<Vars> | number,
+) => Declaration<Vars> = internal.make
 
 export const bind: {
   /**
    * Returns a function that binds the given names in a declaration's
    * value.
    *
-   * @param bindings - Reference names to values or expressions.
-   * @returns A function replacing bound references in its argument's value.
+   * @param bindings - Variable names to values or expressions.
+   * @returns A function replacing bound variables in its argument's value.
    * @since 0.1.0
    */
   <const B extends Bindings>(
     bindings: B,
-  ): <Refs extends string>(declaration: Declaration<Refs>) => Declaration<ApplyBindings<Refs, B>>
+  ): <Vars extends string>(declaration: Declaration<Vars>) => Declaration<ApplyBindings<Vars, B>>
   /**
-   * Replaces references in the declaration's value with values or other
+   * Replaces variables in the declaration's value with values or other
    * expressions, re-folding constant subtrees. Semantics match
-   * `Calc.bind`: unreferenced names and `undefined` values are ignored,
-   * and expression-valued bindings contribute their own references. A
+   * `Calc.bind`: unread names and `undefined` values are ignored, and
+   * expression-valued bindings contribute their own variables. A
    * literal-text value binds nothing; the declaration is returned as-is.
    *
    * @param declaration - The declaration to bind.
-   * @param bindings - Reference names to values or expressions.
+   * @param bindings - Variable names to values or expressions.
    * @returns The bound declaration.
    * @since 0.1.0
    */
-  <Refs extends string, const B extends Bindings>(
-    declaration: Declaration<Refs>,
+  <Vars extends string, const B extends Bindings>(
+    declaration: Declaration<Vars>,
     bindings: B,
-  ): Declaration<ApplyBindings<Refs, B>>
+  ): Declaration<ApplyBindings<Vars, B>>
 } = internal.bind
 
 /**
- * The declaration's unbound reference names — empty for literal text,
- * the value's references otherwise.
+ * The declaration's unbound variable names — empty for literal text,
+ * the value's variables otherwise.
  *
  * @param declaration - The declaration to inspect.
- * @returns The set of unbound reference names.
+ * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(declaration: Declaration<Refs>) => ReadonlySet<Refs> =
+export const vars: <Vars extends string>(declaration: Declaration<Vars>) => ReadonlySet<Vars> =
   internal.refs
 
 /**
@@ -140,14 +140,14 @@ export interface RenderOptions extends MediaQueryRenderOptions {
  * Renders the declaration as one CSS declaration, semicolon included:
  * `name: value;`. Literal text passes through verbatim; expression
  * values serialize as `Calc.serialize`/`Color.serialize` would, with
- * unbound references rendering as `var(--name)`.
+ * unbound variables rendering as `var(--name)`.
  *
  * @param declaration - The declaration to render.
  * @param options - Optional precision context for expression values.
  * @returns Deterministic CSS text.
  * @example
  * ```ts
- * Declaration.render(Declaration.make('--indent', Calc.multiply(Calc.ref('depth'), 8)))
+ * Declaration.render(Declaration.make('--indent', Calc.multiply(Calc.var('depth'), 8)))
  * // '--indent: calc(var(--depth) * 8);'
  * ```
  * @since 0.1.0
