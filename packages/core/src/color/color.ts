@@ -12,8 +12,8 @@ declare const ColorRefs: unique symbol
  * solved. The `Refs` parameter unions the channels' unbound reference
  * names, exactly as on `Calc`.
  *
- * Only `oklch` is modeled today; other color functions are additional
- * union arms when a consumer needs them.
+ * Only `oklch` is modeled today; other color functions arrive as a
+ * consumer needs them.
  *
  * Construct via `oklch`.
  *

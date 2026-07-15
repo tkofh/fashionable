@@ -67,7 +67,7 @@ export const isDeclaration: (u: unknown) => u is Declaration<string> = internal.
  * @param name - The property name, exactly as it renders (`--x` keeps its dashes). Must be non-empty.
  * @param value - Literal CSS text, a number, or a `Calc`/`Color` expression.
  * @returns A `Declaration` carrying the value's reference names — `Declaration<never>` for text and numbers.
- * @throws `Error` when `name` is empty.
+ * @throws `Error` when `name` is empty, or `value` is a non-finite number.
  * @example
  * ```ts
  * Declaration.make('color', 'red')

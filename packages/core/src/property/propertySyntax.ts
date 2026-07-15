@@ -20,7 +20,7 @@ declare const UniversalMarker: unique symbol
  * type its `initialValue` from the syntax it is registered under.
  *
  * Construct via the data type constants, `universal`, `keyword`,
- * `oneOf`, `listOf`, and `commaListOf`.
+ * `keywords`, `oneOf`, `listOf`, and `commaListOf`.
  *
  * @since 0.1.0
  */
@@ -246,7 +246,7 @@ export const keywords: <const Names extends readonly [string, ...ReadonlyArray<s
  * ```ts
  * const size = PropertySyntax.oneOf(PropertySyntax.keyword('small'), PropertySyntax.keyword('large'))
  * PropertySyntax.render(size) // 'small | large'
- * PropertyRule.make('--size', size, { inherits: true, initialValue: 'small' }) // 'small' | 'large' only
+ * PropertyRule.make('--size', size, 'small') // initialValue is 'small' | 'large' only
  * ```
  * @since 0.1.0
  */

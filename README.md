@@ -4,6 +4,10 @@ Structural stylesheet modeling and calc expression evaluation for TypeScript (np
 
 An Effect-style API for building CSS in code: a faithful structural model of the CSS language — rules, selectors, media queries, at-rules, nesting — unified with a `calc()` value-expression language that can be solved against bindings or serialized to CSS text. Immutable values, structural equality, deterministic output, zero runtime dependencies. No template literals anywhere.
 
+## Values
+
+A `Calc` is a `calc()` expression you can solve to a number or serialize to CSS — the same tree, two projections.
+
 ```ts
 import { Calc, Precision } from 'fashionable/calc'
 
@@ -14,11 +18,68 @@ Calc.solve(fluid, { vw: 800 }) // 20 — the thing you verified is the thing you
 Calc.of(0.8377580409572781, Precision.significant(10)) // per-constant precision
 ```
 
-## Status
+## Stylesheets
 
-Feature-complete for v1: the value layer (`fashionable/calc`, `fashionable/color`, `fashionable/utils`) and the full rule layer through rendering (`fashionable/selector`, `fashionable/query`, `fashionable/declaration`, `fashionable/rule`, `fashionable/font-face`, `fashionable/property`, `fashionable/stylesheet`) are implemented and tested, including end-to-end smoke fixtures shaped like both consumers' real output. The consumer migrations remain before a first release. See [docs/design.md](./docs/design.md) for the full design, module map, and sequencing.
+Build a stylesheet from typed parts — selectors, declarations, rules, nested media — then render it flat or nested from the one model.
 
-fashionable absorbs [`@ok-apca/calc-tree`](https://github.com/tkofh/ok-apca) and is built to serve two consumers: ok-apca's computed `@property` color system and dtcg-resolver's design-token CSS generator.
+```ts
+import { Calc } from 'fashionable/calc'
+import { Declaration } from 'fashionable/declaration'
+import { MediaQuery } from 'fashionable/query'
+import { MediaRule, RuleSet, StyleRule } from 'fashionable/rule'
+import { Selector } from 'fashionable/selector'
+import { Stylesheet } from 'fashionable/stylesheet'
+
+const card = StyleRule.make(
+  Selector.class('card'),
+  RuleSet.make(
+    Declaration.make('padding', '1rem'),
+    Declaration.make('gap', Calc.multiply(Calc.ref('space'), 2)),
+    MediaRule.make(
+      MediaQuery.minWidth(768),
+      RuleSet.make(Declaration.make('gap', Calc.multiply(Calc.ref('space'), 3))),
+    ),
+  ),
+)
+
+const sheet = Stylesheet.make(card) // Stylesheet<'space'>
+
+Stylesheet.render(sheet, { format: 'flat', indent: '  ' }) // media hoisted to top-level blocks
+Stylesheet.render(sheet, { format: 'nested', indent: '  ' }) // @media nested in the rule
+```
+
+Both formats describe the same cascade. Flat hoists the `@media` to its own top-level block:
+
+```css
+.card {
+  padding: 1rem;
+  gap: calc(var(--space) * 2);
+}
+
+@media (min-width: 768px) {
+  .card {
+    gap: calc(var(--space) * 3);
+  }
+}
+```
+
+Nested keeps it inside the rule:
+
+```css
+.card {
+  padding: 1rem;
+  gap: calc(var(--space) * 2);
+  @media (min-width: 768px) {
+    gap: calc(var(--space) * 3);
+  }
+}
+```
+
+## Refs
+
+Every value and container is generic over `Refs`, the CSS custom properties it reads but has not bound. `Calc.ref('space')` is a `Calc<'space'>`. Combining expressions unions their `Refs`, and `bind` subtracts the names it binds. A closed expression — fully bound or constant — is a `Calc<never>`, which is what `solve` accepts with no bindings.
+
+The parameter threads up through the model, so `Declaration<Refs>`, `RuleSet<Refs>`, `StyleRule<Refs>`, and `Stylesheet<Refs>` carry the union of the refs they contain. The `Stylesheet<'space'>` above is the compiler reporting that the sheet reads `var(--space)` and nothing else. `Stylesheet.refs` returns the same set at runtime. Unbound refs serialize as `var(--name)` — the reference channel is the custom-property channel.
 
 ## Modules
 

@@ -95,25 +95,53 @@ export type Style = 'normal' | 'italic' | 'oblique'
 export type Display = 'auto' | 'block' | 'swap' | 'fallback' | 'optional'
 
 /**
- * The descriptors accepted by `make`. `family` and `src` are required;
- * everything else renders only when given.
+ * The descriptors accepted by `make`.
  *
- * The four metric descriptors take percentages as numbers — `90` means
- * `90%`. Metrics-adjusted fallback faces are the expected use: a face
- * whose sole source is `local(...)`, carrying overrides computed from the
- * primary face's metrics.
+ * Metrics-adjusted fallback faces are the expected use: a face whose sole
+ * source is `local(...)`, carrying overrides computed from the primary
+ * face's metrics.
  *
  * @since 0.1.0
  */
 export interface Descriptors {
+  /**
+   * The `font-family` descriptor: the name the face binds to. Required.
+   */
   readonly family: string
+  /**
+   * The `src` descriptor's sources, tried in the order given — the
+   * browser uses the first it supports. Required and non-empty.
+   */
   readonly src: ReadonlyArray<Source>
+  /**
+   * The `font-weight` descriptor: one weight or an ordered `[min, max]`
+   * range, each in `[1, 1000]`.
+   */
   readonly weight?: Weight
+  /**
+   * The `font-style` descriptor keyword.
+   */
   readonly style?: Style
+  /**
+   * The `font-display` descriptor keyword.
+   */
   readonly display?: Display
+  /**
+   * The `ascent-override` metric, as a percentage number (`90` means
+   * `90%`).
+   */
   readonly ascentOverride?: number
+  /**
+   * The `descent-override` metric, as a percentage number.
+   */
   readonly descentOverride?: number
+  /**
+   * The `line-gap-override` metric, as a percentage number.
+   */
   readonly lineGapOverride?: number
+  /**
+   * The `size-adjust` metric, as a percentage number.
+   */
   readonly sizeAdjust?: number
 }
 
@@ -183,7 +211,7 @@ export const local: (name: string) => Source = internal.local
  *
  * @param descriptors - The face's descriptors; `family` and `src` are required.
  * @returns A `FontFaceRule`.
- * @throws `Error` when `family` is empty, `src` is empty, a weight is outside `[1, 1000]` or a range is out of order, or a metric override is negative.
+ * @throws `Error` when `family` is empty, `src` is empty, a weight is outside `[1, 1000]` or a range is out of order, or a metric override is negative or non-finite.
  * @example
  * ```ts
  * FontFaceRule.make({

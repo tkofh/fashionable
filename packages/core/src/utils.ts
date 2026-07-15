@@ -150,8 +150,8 @@ export const dual: {
  * @returns The left-to-right composite of the given functions.
  * @example
  * ```ts
- * const toRange = flow(normalize(0, 10), lerp(100, 200))
- * toRange(2.5) // 125
+ * const evaluate = flow(Calc.bind({ x: 2 }), Calc.serialize)
+ * evaluate(Calc.add(Calc.ref('x'), 1)) // '3'
  * ```
  * @since 0.1.0
  */
@@ -325,7 +325,7 @@ export function flow(
  * @returns The result of applying every function, in order, to the value.
  * @example
  * ```ts
- * pipe(0.3, normalize(0, 2), lerp(10, 20)) // 11.5
+ * pipe(Calc.add(Calc.ref('x'), 1), Calc.bind({ x: 2 }), Calc.serialize) // '3'
  * ```
  * @since 0.1.0
  */

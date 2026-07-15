@@ -28,8 +28,7 @@ export interface PropertyRule extends Pipeable {
    */
   readonly name: `--${string}`
   /**
-   * The modeled `syntax` descriptor. Rendered single-quoted via
-   * `PropertySyntax.render`.
+   * The modeled `syntax` descriptor; `render` emits it single-quoted.
    */
   readonly syntax: PropertySyntax
   /**
@@ -94,7 +93,7 @@ export const make: {
    * @param syntax - The universal syntax; omit for the same effect.
    * @param initialValue - Optional under the universal syntax: any value form.
    * @returns A `PropertyRule` with `inherits: false`.
-   * @throws `Error` when `name` lacks the `--` prefix, or an expression value has unbound references.
+   * @throws `Error` when `name` is not a `--`-prefixed custom property name (bare `--` included), or an expression value has unbound references.
    * @since 0.1.0
    */
   (name: `--${string}`, syntax?: Universal, initialValue?: Value | number): PropertyRule
@@ -118,7 +117,7 @@ export const make: {
    * @param syntax - The modeled `syntax` descriptor; see `PropertySyntax`.
    * @param initialValue - The `initial-value` descriptor, required for every non-universal syntax and typed by it.
    * @returns A `PropertyRule` with `inherits: false`.
-   * @throws `Error` when `name` lacks the `--` prefix, `initialValue` is missing under a non-universal syntax, or an expression value has unbound references.
+   * @throws `Error` when `name` is not a `--`-prefixed custom property name (bare `--` included), `initialValue` is missing under a non-universal syntax, or an expression value has unbound references.
    * @example
    * ```ts
    * PropertyRule.make('--depth', PropertySyntax.number, 0)

@@ -186,13 +186,17 @@ export const merge: {
    * the multi-emitter fold: emitters that each register the rules they
    * share merge to a sheet carrying one copy.
    *
+   * Identity and idempotence hold by reference, not just structurally:
+   * merging `empty` on either side, or a sheet with itself, returns that
+   * same instance.
+   *
    * @param self - The sheet whose nodes come first.
    * @param that - The sheet whose novel nodes follow.
    * @returns The merged sheet, with both sides' reference names unioned.
    * @example
    * ```ts
    * const contract = Stylesheet.make(PropertyRule.make('--depth', PropertySyntax.number, 0))
-   * Stylesheet.merge(contract, contract) // one node — merge is idempotent
+   * Stylesheet.merge(contract, contract) // === contract — merge is idempotent
    * ```
    * @since 0.1.0
    */
@@ -223,7 +227,7 @@ export const mergeAll: <Refs extends string>(
  * explicit opt-in normalization.
  *
  * @param sheet - The sheet to normalize.
- * @returns The coalesced sheet; the same sheet when no selector repeats.
+ * @returns The coalesced sheet; the same instance when no selector repeats, so coalesce is idempotent.
  * @since 0.1.0
  */
 export const coalesce: <Refs extends string>(sheet: Stylesheet<Refs>) => Stylesheet<Refs> =

@@ -7,7 +7,7 @@ import type { Specificity } from './specificity.ts'
  * A compound selector: a canonically ordered, non-empty collection of
  * simple-selector parts, all constraining the same element.
  *
- * Part constructors (`type`, `id`, `className`, `attribute`,
+ * Part constructors (`type`, `id`, `class`, `attribute`,
  * `pseudoClass`, `not`, `pseudoElement`, `universal`) return one-part
  * selectors; `and` merges compounds. Construction canonically orders the
  * parts, so structurally equal selectors compare equal however they were
@@ -76,8 +76,8 @@ export const id: (name: string) => Selector = internal.id
 
 /**
  * Creates a class selector, rendered `.name`. Exported as `class`
- * (`Selector.class('btn')`) — the local binding is `_class` only because
- * `class` is reserved in declaration position.
+ * (`Selector.class('btn')`) because `class` is reserved in declaration
+ * position.
  *
  * @param name - The class name, without the `.` prefix. Must be non-empty; passed through unescaped.
  * @returns A one-part `Selector`.
@@ -167,9 +167,8 @@ export const not: (argument: Selector) => Selector = internal.not
 export const pseudoElement: (name: string) => Selector = internal.pseudoElement
 
 /**
- * The `:root` pseudo-class selector — `pseudoClass('root')`, named
- * because it anchors every custom-property rule this library's consumers
- * emit.
+ * The `:root` pseudo-class selector — sugar for `pseudoClass('root')`,
+ * the usual anchor for custom-property rules.
  *
  * @since 0.1.0
  */
