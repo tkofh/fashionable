@@ -11,7 +11,7 @@ import {
   bind as bindColor,
   refsOf as colorRefsOf,
   serialize as serializeColor,
-} from '#color/color.internal'
+} from '#data/color.internal'
 import * as Equal from '#internal/equal'
 import { EMPTY_REFS } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'

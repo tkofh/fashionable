@@ -85,6 +85,19 @@ export const isRuleSet: (u: unknown) => u is RuleSet<string> = internal.isRuleSe
 export const empty: RuleSet<never> = internal.empty
 
 /**
+ * Checks if the block has no members.
+ *
+ * Structural emptiness only: a non-empty block can still *render* as the
+ * empty string, when every member is a nested rule whose block renders
+ * empty.
+ *
+ * @param set - The block to inspect.
+ * @returns `true` if the block has no members.
+ * @since 0.2.0
+ */
+export const isEmpty: (set: RuleSet<string>) => boolean = internal.isEmpty
+
+/**
  * Creates a rule set holding the given members, in the given order.
  *
  * @param members - Declarations and nested rules, in authored order.
@@ -224,6 +237,68 @@ export const concat: {
    */
   <A extends string, B extends string>(self: RuleSet<A>, that: RuleSet<B>): RuleSet<A | B>
 } = internal.concat
+
+export const forSelector: {
+  /**
+   * Returns a function that wraps its argument as the block of a style
+   * rule applying to `selector`.
+   *
+   * @param selector - The selector the resulting rule's block applies to.
+   * @returns A function that takes a block and returns the style rule applying it to `selector`.
+   * @since 0.2.0
+   */
+  (selector: Selector): <Refs extends string>(self: RuleSet<Refs>) => StyleRule<Refs>
+  /**
+   * Lifts a block into a style rule applying to `selector` — sugar for
+   * `StyleRule.make(selector, self)` with the arguments flipped, so a
+   * block built up through `pipe` caps off as a rule without naming
+   * `StyleRule` at the call site. The rule carries the block's reference
+   * names unchanged; a selector contributes none.
+   *
+   * @param self - The block the rule applies.
+   * @param selector - The selector the block applies to.
+   * @returns The style rule pairing `selector` with the block.
+   * @example
+   * ```ts
+   * RuleSet.make(Declaration.make('--depth', Calc.ref('depth'))).pipe(
+   *   RuleSet.forSelector(Selector.root),
+   * ) // StyleRule<'depth'>
+   * ```
+   * @since 0.2.0
+   */
+  <Refs extends string>(self: RuleSet<Refs>, selector: Selector): StyleRule<Refs>
+} = internal.forSelector
+
+export const forMediaQuery: {
+  /**
+   * Returns a function that wraps its argument as the block of a nested
+   * `@media` rule gated by `query`.
+   *
+   * @param query - The media query gating the resulting rule's block.
+   * @returns A function that takes a block and returns the media rule gating it by `query`.
+   * @since 0.2.0
+   */
+  (query: MediaQuery): <Refs extends string>(self: RuleSet<Refs>) => MediaRule<Refs>
+  /**
+   * Lifts a block into a nested `@media` rule gated by `query` — sugar
+   * for `MediaRule.make(query, self)` with the arguments flipped, so a
+   * block built up through `pipe` caps off as a rule without naming
+   * `MediaRule` at the call site. The rule carries the block's reference
+   * names unchanged; a query contributes none.
+   *
+   * @param self - The block the rule gates.
+   * @param query - The media query gating the block.
+   * @returns The media rule pairing `query` with the block.
+   * @example
+   * ```ts
+   * RuleSet.make(Declaration.make('--gutter', Calc.ref('gutter'))).pipe(
+   *   RuleSet.forMediaQuery(MediaQuery.minWidth(768)),
+   * ) // MediaRule<'gutter'>
+   * ```
+   * @since 0.2.0
+   */
+  <Refs extends string>(self: RuleSet<Refs>, query: MediaQuery): MediaRule<Refs>
+} = internal.forMediaQuery
 
 /**
  * The block's unbound reference names, unioned across members —

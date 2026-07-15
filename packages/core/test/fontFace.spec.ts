@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { Precision } from '#calc'
 import { FontFaceRule } from '#fontFace'
 
 describe('fontFace', () => {
@@ -86,6 +87,74 @@ describe('fontFace', () => {
       const rendered = FontFaceRule.render(rule)
       expect(rendered).toContain("font-family: 'It\\'s';")
       expect(rendered).toContain("src: local('O\\'Neil');")
+    })
+
+    test('renders unicode-range after src, uppercase hex, canonical order', () => {
+      const rule = FontFaceRule.make({
+        family: 'Latin',
+        src: [FontFaceRule.url('/latin.woff2', 'woff2')],
+        unicodeRange: [[0x500, 0x52f], 0x400, [0x0, 0xff]],
+      })
+      expect(FontFaceRule.render(rule, { indent: '  ' })).toBe(
+        [
+          '@font-face {',
+          "  font-family: 'Latin';",
+          "  src: url('/latin.woff2') format('woff2');",
+          '  unicode-range: U+0-FF, U+400, U+500-52F;',
+          '}',
+        ].join('\n'),
+      )
+    })
+
+    test('unicode-range construction order never matters', () => {
+      const src = [FontFaceRule.local('Arial')]
+      const a = FontFaceRule.make({ family: 'X', src, unicodeRange: [0x400, [0x500, 0x5ff]] })
+      const b = FontFaceRule.make({ family: 'X', src, unicodeRange: [[0x500, 0x5ff], 0x400] })
+      const duplicated = FontFaceRule.make({
+        family: 'X',
+        src,
+        unicodeRange: [0x400, [0x500, 0x5ff], 0x400],
+      })
+      expect(FontFaceRule.equals(a, b)).toBe(true)
+      expect(FontFaceRule.equals(a, duplicated)).toBe(true)
+    })
+
+    test('a single codepoint never equals a degenerate range', () => {
+      const src = [FontFaceRule.local('Arial')]
+      const single = FontFaceRule.make({ family: 'X', src, unicodeRange: [0x400] })
+      const range = FontFaceRule.make({ family: 'X', src, unicodeRange: [[0x400, 0x400]] })
+      expect(FontFaceRule.equals(single, range)).toBe(false)
+    })
+
+    test('rejects invalid unicode-range entries', () => {
+      const src = [FontFaceRule.local('Arial')]
+      expect(() => FontFaceRule.make({ family: 'X', src, unicodeRange: [] })).toThrow(
+        'at least one range',
+      )
+      expect(() => FontFaceRule.make({ family: 'X', src, unicodeRange: [0.5] })).toThrow(
+        'integer in [0x0, 0x10FFFF]',
+      )
+      expect(() => FontFaceRule.make({ family: 'X', src, unicodeRange: [-1] })).toThrow(
+        'integer in [0x0, 0x10FFFF]',
+      )
+      expect(() => FontFaceRule.make({ family: 'X', src, unicodeRange: [0x110000] })).toThrow(
+        'integer in [0x0, 0x10FFFF]',
+      )
+      expect(() => FontFaceRule.make({ family: 'X', src, unicodeRange: [[0x4ff, 0x400]] })).toThrow(
+        'ordered start then end',
+      )
+    })
+
+    test('numbers honor the precision context', () => {
+      const rule = FontFaceRule.make({
+        family: 'Inter Fallback',
+        src: [FontFaceRule.local('Arial')],
+        sizeAdjust: 100.49333,
+      })
+      expect(FontFaceRule.render(rule)).toContain('size-adjust: 100.49333%')
+      expect(FontFaceRule.render(rule, { precision: Precision.decimals(2) })).toContain(
+        'size-adjust: 100.49%',
+      )
     })
 
     test('rejects invalid descriptors', () => {

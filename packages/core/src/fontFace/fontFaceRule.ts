@@ -41,6 +41,11 @@ export interface FontFaceRule extends Pipeable {
    */
   readonly display: Display | undefined
   /**
+   * The `unicode-range` descriptor's ranges, canonically ordered (by
+   * start, then end) with exact duplicates dropped.
+   */
+  readonly unicodeRange: ReadonlyArray<UnicodeRange> | undefined
+  /**
    * The `ascent-override` metric, as a percentage number (`90` renders
    * `90%`).
    */
@@ -95,6 +100,17 @@ export type Style = 'normal' | 'italic' | 'oblique'
 export type Display = 'auto' | 'block' | 'swap' | 'fallback' | 'optional'
 
 /**
+ * One `unicode-range` descriptor entry: a single codepoint (`0x400`
+ * renders `U+400`) or an inclusive `[start, end]` range (`[0x400, 0x4ff]`
+ * renders `U+400-4FF`), each in `[0x0, 0x10FFFF]`.
+ *
+ * The wildcard spelling (`U+4??`) is range sugar and is not modeled.
+ *
+ * @since 0.2.0
+ */
+export type UnicodeRange = number | readonly [start: number, end: number]
+
+/**
  * The descriptors accepted by `make`.
  *
  * Metrics-adjusted fallback faces are the expected use: a face whose sole
@@ -127,6 +143,14 @@ export interface Descriptors {
    */
   readonly display?: Display
   /**
+   * The `unicode-range` descriptor: the codepoints the face applies to,
+   * as single codepoints and inclusive `[start, end]` ranges. Non-empty
+   * when given. The descriptor is a set union, so entries canonicalize —
+   * sorted by start then end, exact duplicates dropped — and
+   * construction order never matters.
+   */
+  readonly unicodeRange?: ReadonlyArray<UnicodeRange>
+  /**
    * The `ascent-override` metric, as a percentage number (`90` means
    * `90%`).
    */
@@ -148,7 +172,8 @@ export interface Descriptors {
 /**
  * Options for `render`, in the render-options family rooted at
  * `MediaQuery.RenderOptions` (via `Declaration.RenderOptions`). This
- * renderer consumes `indent`; the inherited keys are accepted and
+ * renderer consumes `indent` and the inherited `precision` (for the
+ * weight and metric-override numbers); `mediaSyntax` is accepted and
  * ignored, so one options object composes across the library.
  *
  * @since 0.1.0
@@ -211,7 +236,7 @@ export const local: (name: string) => Source = internal.local
  *
  * @param descriptors - The face's descriptors; `family` and `src` are required.
  * @returns A `FontFaceRule`.
- * @throws `Error` when `family` is empty, `src` is empty, a weight is outside `[1, 1000]` or a range is out of order, or a metric override is negative or non-finite.
+ * @throws `Error` when `family` is empty, `src` is empty, a weight is outside `[1, 1000]` or a range is out of order, a unicode-range entry is empty, out of order, or outside `[0x0, 0x10FFFF]`, or a metric override is negative or non-finite.
  * @example
  * ```ts
  * FontFaceRule.make({
@@ -230,13 +255,15 @@ export const make: (descriptors: Descriptors) => FontFaceRule = internal.make
  * Renders the rule as a complete `@font-face { ... }` block.
  *
  * Descriptors render in a fixed order — `font-family`, `font-weight`,
- * `font-style`, `font-display`, `src`, then the metric overrides — one
- * per line. A single-source `src` stays inline; multiple sources render
- * one per line at double indent, comma-separated. Numbers format at the
- * library default precision; the metric descriptors append `%`.
+ * `font-style`, `font-display`, `src`, `unicode-range`, then the metric
+ * overrides — one per line. A single-source `src` stays inline; multiple
+ * sources render one per line at double indent, comma-separated.
+ * Unicode ranges render uppercase-hex (`U+400, U+500-5FF`), in canonical
+ * order. Numbers format at the `precision` context (default
+ * `Precision.decimals(5)`); the metric descriptors append `%`.
  *
  * @param rule - The rule to render.
- * @param options - Optional indentation unit.
+ * @param options - Optional indentation unit and precision context.
  * @returns Deterministic CSS text.
  * @example
  * ```ts
@@ -260,8 +287,9 @@ export const equals: {
   (that: FontFaceRule): (self: FontFaceRule) => boolean
   /**
    * Structural equality over descriptors. `src` order participates (it is
-   * fallback order); a single weight never equals a range, even a
-   * degenerate one.
+   * fallback order); `unicode-range` order does not (entries canonicalize
+   * at construction); a single weight or codepoint never equals a range,
+   * even a degenerate one.
    *
    * @param self - The first rule.
    * @param that - The second rule.

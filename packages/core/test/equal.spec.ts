@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Calc, Precision } from '#calc'
-import { Color } from '#color'
+import { Color } from '#data'
 import * as Equal from '#internal/equal'
 
 describe('equal', () => {

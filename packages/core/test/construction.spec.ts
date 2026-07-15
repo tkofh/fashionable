@@ -58,6 +58,14 @@ describe('construction', () => {
       expect(Calc.solve(Calc.divide(12, 4))).toBe(3)
     })
 
+    test('creates mod expression, floored to the divisor sign', () => {
+      expect(Calc.solve(Calc.mod(370, 360))).toBe(10)
+      // the result takes the divisor's sign, so a negative dividend wraps up
+      expect(Calc.solve(Calc.mod(-30, 360))).toBe(330)
+      // constant operands fold; a symbolic one serializes as CSS mod()
+      expect(Calc.serialize(Calc.mod(Calc.ref('h'), 360))).toBe('mod(var(--h), 360)')
+    })
+
     test('creates pow expression', () => {
       expect(Calc.solve(Calc.pow(2, 3))).toBe(8)
     })

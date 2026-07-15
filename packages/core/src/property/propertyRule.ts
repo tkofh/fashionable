@@ -1,5 +1,5 @@
-import type { Calc } from '#calc/calc'
-import type { Color } from '#color/color'
+import type { Calc, Kind } from '#calc/calc'
+import type { Color } from '#data/color'
 import type { RenderOptions as DeclarationRenderOptions } from '#declaration/declaration'
 import type { Pipeable } from '#util'
 import type { PropertyRuleTypeId } from './propertyRule.internal.ts'
@@ -45,16 +45,16 @@ export interface PropertyRule extends Pipeable {
 
 /**
  * The value forms an `initial-value` descriptor can hold once
- * constructed. The `never` parameters are the spec rule in the types:
- * `@property` initial values must be computationally independent, so
- * only closed expressions — no unbound references — are accepted.
- *
- * `make` narrows further: its `initialValue` option takes only the forms
- * the declared syntax accepts (the syntax's `V` parameter).
+ * constructed. The closed (`never`-ref) parameter is the spec rule in the
+ * types: `@property` initial values must be computationally independent, so
+ * only closed expressions — no unbound references — are accepted. A `Calc`
+ * of any dimension is admitted here; `make` narrows to the forms the declared
+ * syntax accepts (the syntax's `V` parameter), where a `<length>` is limited
+ * to absolute units.
  *
  * @since 0.1.0
  */
-export type Value = string | Calc<never> | Color<never>
+export type Value = string | Calc<never, Kind, unknown> | Color<never>
 
 /**
  * Options for `render`, in the render-options family rooted at

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Calc, Precision } from '#calc'
-import { Color } from '#color'
+import { Angle, Color, Length } from '#data'
 import { PropertyRule, PropertySyntax } from '#property'
 
 describe('property', () => {
@@ -139,6 +139,22 @@ describe('property', () => {
       expect(PropertyRule.render(color)).toContain('initial-value: oklch(0.7 0.1 250);')
     })
 
+    test('renders a dimensioned expression initial value with its unit', () => {
+      const gap = PropertyRule.make('--gap', PropertySyntax.length, Length.px(8))
+      expect(PropertyRule.render(gap)).toContain('initial-value: 8px;')
+
+      const spin = PropertyRule.make('--spin', PropertySyntax.angle, Angle.rad(1.5708))
+      expect(PropertyRule.render(spin)).toContain('initial-value: 1.5708rad;')
+
+      // a folded length expression renders its computed unit value
+      const pad = PropertyRule.make(
+        '--pad',
+        PropertySyntax.length,
+        Calc.add(Length.px(4), Length.px(4)),
+      )
+      expect(PropertyRule.render(pad)).toContain('initial-value: 8px;')
+    })
+
     test('expression initial values honor the precision context', () => {
       const rule = PropertyRule.make('--third', PropertySyntax.number, Calc.of(1 / 3))
       expect(PropertyRule.render(rule)).toContain('initial-value: 0.33333;')
@@ -183,7 +199,11 @@ describe('property', () => {
         PropertyRule.make('--x', PropertySyntax.number),
       ).toThrow('universal syntax')
       expect(() =>
-        PropertyRule.make('--x', PropertySyntax.number, Calc.ref('u') as unknown as Calc<never>),
+        PropertyRule.make(
+          '--x',
+          PropertySyntax.number,
+          Calc.ref('u') as unknown as Calc.Calc<never>,
+        ),
       ).toThrow('computationally independent')
     })
 

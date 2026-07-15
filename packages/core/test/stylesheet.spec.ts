@@ -34,6 +34,19 @@ describe('stylesheet', () => {
       expect(sheet.nodes[0]).toBe(depthRegistration)
     })
 
+    test('isEmpty is structural node absence', () => {
+      expect(Stylesheet.isEmpty(Stylesheet.empty)).toBe(true)
+      expect(Stylesheet.isEmpty(Stylesheet.make())).toBe(true)
+      expect(Stylesheet.isEmpty(Stylesheet.make(cardRule))).toBe(false)
+    })
+
+    test('a sheet whose every node renders empty renders the empty string', () => {
+      expect(Stylesheet.render(Stylesheet.empty)).toBe('')
+      const hollow = Stylesheet.make(StyleRule.make(Selector.root, RuleSet.empty))
+      expect(Stylesheet.isEmpty(hollow)).toBe(false)
+      expect(Stylesheet.render(hollow)).toBe('')
+    })
+
     test('make() is the empty sheet', () => {
       expect(Stylesheet.make()).toBe(Stylesheet.empty)
       expect(Stylesheet.empty.nodes).toHaveLength(0)
@@ -183,6 +196,33 @@ describe('stylesheet', () => {
       expect(coalesced.nodes).toHaveLength(3)
       expect(coalesced.nodes[1]).toBe(inter)
       expect(coalesced.nodes[2]).toBe(depthRegistration)
+    })
+
+    test('strict mode refuses a pull across a specificity tie', () => {
+      // `.card` (0,1,0) ties `:root` (0,1,0): pulling the second `:root`
+      // block above it could change the cascade.
+      const sheet = Stylesheet.make(
+        StyleRule.make(Selector.root, blockA),
+        cardRule,
+        StyleRule.make(Selector.root, blockB),
+      )
+      expect(() => Stylesheet.coalesce(sheet, { strict: true })).toThrow('ties on specificity')
+      expect(Stylesheet.coalesce(sheet).nodes).toHaveLength(2)
+    })
+
+    test('strict mode allows pulls across other specificities and at-rules', () => {
+      const sheet = Stylesheet.make(
+        StyleRule.make(Selector.root, blockA),
+        StyleRule.make(Selector.id('app'), blockB),
+        inter,
+        depthRegistration,
+        StyleRule.make(Selector.root, blockB),
+      )
+      const coalesced = Stylesheet.coalesce(sheet, { strict: true })
+      expect(coalesced.nodes).toHaveLength(4)
+      expect(coalesced.nodes[0]).toStructurallyEqual(
+        StyleRule.make(Selector.root, RuleSet.concat(blockA, blockB)),
+      )
     })
 
     test('returns the same sheet when no selector repeats', () => {

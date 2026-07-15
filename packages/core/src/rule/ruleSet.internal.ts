@@ -5,9 +5,11 @@ import type { Selector } from '#selector/selector'
 import { isSelector } from '#selector/selector.internal'
 import { dual, Pipeable } from '#util'
 import { make as makeMediaRule } from './mediaRule.internal.ts'
+import type { MediaRule } from './mediaRule.ts'
 import { blockBodyLines, memberRefs, refSetOf, resolveRenderOptions } from './rule.internal.ts'
 import type { Member, MemberRefs, RenderOptions, RuleSet } from './ruleSet.ts'
 import { make as makeStyleRule } from './styleRule.internal.ts'
+import type { StyleRule } from './styleRule.ts'
 
 export const RuleSetTypeId = Symbol.for('fashionable/rule/ruleSet')
 export type RuleSetTypeId = typeof RuleSetTypeId
@@ -59,6 +61,9 @@ export const isRuleSet = (u: unknown): u is RuleSet<string> =>
 
 /** @internal */
 export const empty: RuleSet<never> = new RuleSetImpl([]) as unknown as RuleSet<never>
+
+/** @internal */
+export const isEmpty = (set: RuleSet<string>): boolean => set.members.length === 0
 
 /** @internal */
 export function make<Members extends ReadonlyArray<Member<string>>>(
@@ -119,6 +124,24 @@ export const concat: {
   2,
   (self: RuleSet<string>, that: RuleSet<string>): RuleSet<string> =>
     new RuleSetImpl([...self.members, ...that.members]),
+)
+
+/** @internal */
+export const forSelector: {
+  (selector: Selector): <Refs extends string>(self: RuleSet<Refs>) => StyleRule<Refs>
+  <Refs extends string>(self: RuleSet<Refs>, selector: Selector): StyleRule<Refs>
+} = dual(
+  2,
+  (self: RuleSet<string>, selector: Selector): StyleRule<string> => makeStyleRule(selector, self),
+)
+
+/** @internal */
+export const forMediaQuery: {
+  (query: MediaQuery): <Refs extends string>(self: RuleSet<Refs>) => MediaRule<Refs>
+  <Refs extends string>(self: RuleSet<Refs>, query: MediaQuery): MediaRule<Refs>
+} = dual(
+  2,
+  (self: RuleSet<string>, query: MediaQuery): MediaRule<string> => makeMediaRule(query, self),
 )
 
 /** @internal */

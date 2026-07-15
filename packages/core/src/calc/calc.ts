@@ -1,20 +1,42 @@
+import type { ContextFree, UnitContext } from '#data/units'
 import type { Pipeable } from '#util'
 import type { CalcTypeId } from './calc.internal.ts'
 import * as internal from './calc.internal.ts'
 import type { Precision } from './precision.ts'
 
-declare const CalcRefs: unique symbol
+declare const CalcVariance: unique symbol
 
 /**
- * A CSS number expression: a tree of constants, unbound references, and
- * math operations that can be solved to a number, serialized to CSS
- * `calc()` text, or partially bound and passed along.
+ * The CSS dimension an expression carries: `<number>`, `<length>`, `<angle>`,
+ * or `<percentage>`. It is the `Kind` parameter of `Calc`, and the algebra
+ * enforces it — same-kind addition, kind-merging multiplication, same-kind
+ * division yielding a number. A `<percentage>` is its own kind, not a
+ * length: it adds only to another percentage, and `<length-percentage>`
+ * mixing stays out of the model (see `docs/design.md`).
  *
- * The `Refs` parameter tracks the expression's unbound reference names at
- * the type level. `ref('u')` is a `Calc<'u'>`; combining expressions
- * unions their parameters; `bind` subtracts the names it binds. A fully
- * bound (or constant) expression is a `Calc<never>`, which is what `solve`
- * accepts without bindings.
+ * @since 0.2.0
+ */
+export type Kind = 'number' | 'length' | 'angle' | 'percentage'
+
+/**
+ * A CSS value expression: a tree of constants, unbound references, and math
+ * operations that can be solved to a number, serialized to CSS `calc()`
+ * text, or partially bound and passed along.
+ *
+ * Three type parameters track the expression structurally:
+ *
+ * - `Refs` — the unbound reference names. `ref('u')` is a `Calc<'u'>`;
+ *   combining expressions unions their parameters; `bind` subtracts the
+ *   names it binds. A fully bound (or constant) expression is a
+ *   `Calc<never>`.
+ * - `Kind` — the CSS dimension (`'number'` by default, or `'length'` /
+ *   `'angle'`). `add`/`subtract` require a shared kind; `multiply` and
+ *   `divide` combine kinds (a `<length>` over a `<length>` is a
+ *   `<number>`); an invalid pairing (a `<length>` plus a `<number>`) is a
+ *   type error.
+ * - `Leaves` — the units the tree contains, as a set of `Unit` brands
+ *   (`never` when the tree is unit-free). It types the context `solve`
+ *   needs to lower the tree to a number.
  *
  * Values are immutable and structurally comparable via `equals`.
  * Construction folds constant subtrees eagerly: `add(1, 2)` is the
@@ -24,14 +46,78 @@ declare const CalcRefs: unique symbol
  * An unbound reference serializes as `var(--name)` — the reference channel
  * is the custom-property channel.
  *
- * Construct via `of`, `ref`, and the math combinators.
+ * Construct via `of`, `ref`, the `Length`/`Angle` constructors in
+ * `fashionable/data`, and the math combinators.
  *
  * @since 0.1.0
  */
-export interface Calc<out Refs extends string = string> extends Pipeable {
+export interface Calc<
+  out Refs extends string = string,
+  out K extends Kind = 'number',
+  out Leaves = never,
+> extends Pipeable {
   readonly [CalcTypeId]: CalcTypeId
-  readonly [CalcRefs]?: Refs
+  readonly [CalcVariance]?: { readonly refs: Refs; readonly kind: K; readonly leaves: Leaves }
 }
+
+/**
+ * The widest `Calc` — the supertype every expression extends, used to
+ * constrain a combinator operand before its facets are extracted.
+ *
+ * @since 0.2.0
+ */
+export type Top = Calc<string, Kind, unknown>
+
+// ---------------------------------------------------------------------------
+// dimensioned-combinator type machinery (internal): facet extractors and the
+// kind/leaf algebra the combinator signatures below are built from. Validated
+// by the spike in docs/dimensioned-calc.md.
+// ---------------------------------------------------------------------------
+
+/** Any operand a combinator accepts: an expression of any kind, or a bare number. */
+type In = Top | number
+
+type RefsOf<A> = A extends Calc<infer R, Kind, unknown> ? R : never
+type KindOf<A> = A extends Calc<string, infer K, unknown> ? K : 'number'
+type LeavesOf<A> = A extends Calc<string, Kind, infer L> ? L : never
+
+/** An operand constrained to number-kind (or a bare number). */
+type NumberIn = number | Calc<string, 'number', unknown>
+
+/** An operand accepted by `sin`/`cos`: a plain number (radians) or an angle. */
+type NumberOrAngleIn = number | Calc<string, 'number' | 'angle', unknown>
+
+/**
+ * An operand constrained to `A`'s kind — a bare number only when `A` is
+ * number-kind, so `add(length, 1)` is rejected while `add(length, length)`
+ * holds.
+ */
+type SameKindIn<A> =
+  | Calc<string, KindOf<A> & Kind, unknown>
+  | (KindOf<A> extends 'number' ? number : never)
+
+type RefsOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: RefsOf<T[K]> }[number]
+type LeavesOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: LeavesOf<T[K]> }[number]
+
+// same-single-unit division cancels to a unit-free number; anything else keeps
+// both operands' units (conservative, but sound)
+type IsUnion<T, U = T> = [T] extends [never]
+  ? false
+  : T extends T
+    ? [U] extends [T]
+      ? false
+      : true
+    : never
+type Singleton<T> = [T] extends [never] ? false : IsUnion<T> extends true ? false : true
+type LeafFn<X> = <T>() => T extends X ? 1 : 2
+type LeafEqual<A, B> = LeafFn<A> extends LeafFn<B> ? true : false
+type SameSingleton<A, B> = LeafEqual<A, B> extends true ? Singleton<A> : false
+type DivLeaves<A, B> =
+  KindOf<B> extends 'number'
+    ? LeavesOf<A>
+    : SameSingleton<LeavesOf<A>, LeavesOf<B>> extends true
+      ? never
+      : LeavesOf<A> | LeavesOf<B>
 
 /**
  * A value accepted where an expression is expected: an existing `Calc` or
@@ -92,7 +178,7 @@ export interface SerializeOptions<Refs extends string = string> {
  * @returns `true` if the value is a `Calc`, `false` otherwise.
  * @since 0.1.0
  */
-export const isCalc: (u: unknown) => u is Calc<string> = internal.isCalc
+export const isCalc: (u: unknown) => u is Calc<string, Kind, unknown> = internal.isCalc
 
 /**
  * Creates a constant expression, optionally annotated with a serialization
@@ -151,26 +237,19 @@ export const ref: <Name extends string>(name: Name) => Calc<Name> = internal.ref
  * ```
  * @since 0.1.0
  */
-export const add: {
-  <A extends string = never, B extends string = never>(a: Input<A>, b: Input<B>): Calc<A | B>
-  <A extends string = never, B extends string = never, C extends string = never>(
-    a: Input<A>,
-    b: Input<B>,
-    c: Input<C>,
-  ): Calc<A | B | C>
-  <
-    A extends string = never,
-    B extends string = never,
-    C extends string = never,
-    D extends string = never,
-  >(
-    a: Input<A>,
-    b: Input<B>,
-    c: Input<C>,
-    d: Input<D>,
-  ): Calc<A | B | C | D>
-  (...args: readonly [Input, Input, ...ReadonlyArray<Input>]): Calc<string>
-} = internal.add
+export const add: <
+  A extends In,
+  B extends SameKindIn<A>,
+  Rest extends ReadonlyArray<SameKindIn<A>>,
+>(
+  a: A,
+  b: B,
+  ...rest: Rest
+) => Calc<
+  RefsOf<A> | RefsOf<B> | RefsOfAll<Rest>,
+  KindOf<A> & Kind,
+  LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
+> = internal.add
 
 /**
  * Subtracts `right` from `left`. Constant operands fold at construction.
@@ -180,10 +259,30 @@ export const add: {
  * @returns The difference, with the operands' references unioned.
  * @since 0.1.0
  */
-export const subtract: <A extends string = never, B extends string = never>(
-  left: Input<A>,
-  right: Input<B>,
-) => Calc<A | B> = internal.subtract
+export const subtract: <A extends In, B extends SameKindIn<A>>(
+  left: A,
+  right: B,
+) => Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.subtract
+
+/**
+ * The CSS `mod()` of `dividend` and `divisor` — the remainder that takes the
+ * sign of the divisor (the floored modulo), so `mod(x, 360)` lands in
+ * `[0, 360)` for a positive divisor. Same-kind operands, as `subtract`;
+ * constant operands fold at construction.
+ *
+ * @param dividend - The value to reduce.
+ * @param divisor - The modulus, sharing `dividend`'s kind.
+ * @returns The modulo, with the operands' references unioned.
+ * @example
+ * ```ts
+ * Calc.serialize(Calc.mod(Calc.ref('h'), 360)) // 'mod(var(--h), 360)'
+ * ```
+ * @since 0.2.0
+ */
+export const mod: <A extends In, B extends SameKindIn<A>>(
+  dividend: A,
+  divisor: B,
+) => Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.mod
 
 /**
  * Multiplies expressions. Constant operands fold at construction.
@@ -196,10 +295,16 @@ export const subtract: <A extends string = never, B extends string = never>(
  * @returns The product, with the operands' references unioned.
  * @since 0.1.0
  */
-export const multiply: <A extends string = never, B extends string = never>(
-  left: Input<A>,
-  right: Input<B>,
-) => Calc<A | B> = internal.multiply
+export const multiply: {
+  <A extends NumberIn, B extends In>(
+    left: A,
+    right: B,
+  ): Calc<RefsOf<A> | RefsOf<B>, KindOf<B> & Kind, LeavesOf<A> | LeavesOf<B>>
+  <A extends In, B extends NumberIn>(
+    left: A,
+    right: B,
+  ): Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>>
+} = internal.multiply
 
 /**
  * Divides `left` by `right`. Constant operands fold at construction.
@@ -209,10 +314,16 @@ export const multiply: <A extends string = never, B extends string = never>(
  * @returns The quotient, with the operands' references unioned.
  * @since 0.1.0
  */
-export const divide: <A extends string = never, B extends string = never>(
-  left: Input<A>,
-  right: Input<B>,
-) => Calc<A | B> = internal.divide
+export const divide: {
+  <A extends In, B extends NumberIn>(
+    left: A,
+    right: B,
+  ): Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, DivLeaves<A, B>>
+  <A extends In, B extends SameKindIn<A>>(
+    left: A,
+    right: B,
+  ): Calc<RefsOf<A> | RefsOf<B>, 'number', DivLeaves<A, B>>
+} = internal.divide
 
 /**
  * Raises `base` to `exponent`. Serializes as the CSS `pow()` function.
@@ -250,26 +361,19 @@ export const signedPow: <A extends string = never, B extends string = never>(
  * @returns The minimum, with the operands' references unioned.
  * @since 0.1.0
  */
-export const min: {
-  <A extends string = never, B extends string = never>(a: Input<A>, b: Input<B>): Calc<A | B>
-  <A extends string = never, B extends string = never, C extends string = never>(
-    a: Input<A>,
-    b: Input<B>,
-    c: Input<C>,
-  ): Calc<A | B | C>
-  <
-    A extends string = never,
-    B extends string = never,
-    C extends string = never,
-    D extends string = never,
-  >(
-    a: Input<A>,
-    b: Input<B>,
-    c: Input<C>,
-    d: Input<D>,
-  ): Calc<A | B | C | D>
-  (...args: readonly [Input, Input, ...ReadonlyArray<Input>]): Calc<string>
-} = internal.min
+export const min: <
+  A extends In,
+  B extends SameKindIn<A>,
+  Rest extends ReadonlyArray<SameKindIn<A>>,
+>(
+  a: A,
+  b: B,
+  ...rest: Rest
+) => Calc<
+  RefsOf<A> | RefsOf<B> | RefsOfAll<Rest>,
+  KindOf<A> & Kind,
+  LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
+> = internal.min
 
 /**
  * The maximum of the operands. Serializes as the CSS `max()` function.
@@ -279,26 +383,19 @@ export const min: {
  * @returns The maximum, with the operands' references unioned.
  * @since 0.1.0
  */
-export const max: {
-  <A extends string = never, B extends string = never>(a: Input<A>, b: Input<B>): Calc<A | B>
-  <A extends string = never, B extends string = never, C extends string = never>(
-    a: Input<A>,
-    b: Input<B>,
-    c: Input<C>,
-  ): Calc<A | B | C>
-  <
-    A extends string = never,
-    B extends string = never,
-    C extends string = never,
-    D extends string = never,
-  >(
-    a: Input<A>,
-    b: Input<B>,
-    c: Input<C>,
-    d: Input<D>,
-  ): Calc<A | B | C | D>
-  (...args: readonly [Input, Input, ...ReadonlyArray<Input>]): Calc<string>
-} = internal.max
+export const max: <
+  A extends In,
+  B extends SameKindIn<A>,
+  Rest extends ReadonlyArray<SameKindIn<A>>,
+>(
+  a: A,
+  b: B,
+  ...rest: Rest
+) => Calc<
+  RefsOf<A> | RefsOf<B> | RefsOfAll<Rest>,
+  KindOf<A> & Kind,
+  LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
+> = internal.max
 
 /**
  * Clamps `value` between `minimum` and `maximum`. Serializes as the CSS
@@ -314,11 +411,15 @@ export const max: {
  * ```
  * @since 0.1.0
  */
-export const clamp: <A extends string = never, B extends string = never, C extends string = never>(
-  minimum: Input<A>,
-  value: Input<B>,
-  maximum: Input<C>,
-) => Calc<A | B | C> = internal.clamp
+export const clamp: <A extends In, B extends SameKindIn<A>, C extends SameKindIn<A>>(
+  minimum: A,
+  value: B,
+  maximum: C,
+) => Calc<
+  RefsOf<A> | RefsOf<B> | RefsOf<C>,
+  KindOf<A> & Kind,
+  LeavesOf<A> | LeavesOf<B> | LeavesOf<C>
+> = internal.clamp
 
 /**
  * Linear interpolation from `a` to `b` by `t`. This is sugar, not a node:
@@ -331,11 +432,17 @@ export const clamp: <A extends string = never, B extends string = never, C exten
  * @returns The interpolated expression, with the operands' references unioned.
  * @since 0.1.0
  */
-export const lerp: <A extends string = never, B extends string = never, T extends string = never>(
-  a: Input<A>,
-  b: Input<B>,
-  t: Input<T>,
-) => Calc<A | B | T> = internal.lerp
+export const lerp: {
+  <A extends In, B extends SameKindIn<A>, T extends NumberIn>(
+    a: A,
+    b: B,
+    t: T,
+  ): Calc<
+    RefsOf<A> | RefsOf<B> | RefsOf<T>,
+    KindOf<A> & Kind,
+    LeavesOf<A> | LeavesOf<B> | LeavesOf<T>
+  >
+} = internal.lerp
 
 /**
  * The absolute value. Serializes as the CSS `abs()` function.
@@ -344,7 +451,9 @@ export const lerp: <A extends string = never, B extends string = never, T extend
  * @returns The absolute value expression.
  * @since 0.1.0
  */
-export const abs: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.abs
+export const abs: {
+  <A extends In>(argument: A): Calc<RefsOf<A>, KindOf<A> & Kind, LeavesOf<A>>
+} = internal.abs
 
 /**
  * The sign (`-1`, `0`, or `1`). Serializes as the CSS `sign()` function.
@@ -356,49 +465,91 @@ export const abs: <A extends string = never>(argument: Input<A>) => Calc<A> = in
 export const sign: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.sign
 
 /**
- * The sine of an angle in radians. Serializes as the CSS `sin()`
- * function; CSS treats a plain-number argument as radians, so no unit
- * conversion is involved.
+ * The sine of its argument. Serializes as the CSS `sin()` function, which
+ * accepts an `<angle>` or a plain number treated as radians — so this takes
+ * either an angle-kind expression or a number, and returns a number.
  *
- * @param argument - The angle, in radians.
- * @returns The sine expression.
+ * @param argument - An angle, or a plain number in radians.
+ * @returns The sine, a `<number>`, carrying the argument's units.
  * @since 0.1.0
  */
-export const sin: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.sin
+export const sin: {
+  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+} = internal.sin
 
 /**
- * The cosine of an angle in radians. Serializes as the CSS `cos()`
- * function; CSS treats a plain-number argument as radians, so no unit
- * conversion is involved.
+ * The cosine of its argument. Serializes as the CSS `cos()` function, which
+ * accepts an `<angle>` or a plain number treated as radians — so this takes
+ * either an angle-kind expression or a number, and returns a number.
  *
- * @param argument - The angle, in radians.
- * @returns The cosine expression.
+ * @param argument - An angle, or a plain number in radians.
+ * @returns The cosine, a `<number>`, carrying the argument's units.
  * @since 0.1.0
  */
-export const cos: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.cos
+export const cos: {
+  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+} = internal.cos
 
 /**
- * The arccosine of a value in `[-1, 1]`, in radians. Solving evaluates
- * `Math.acos`.
+ * The tangent of its argument. Serializes as the CSS `tan()` function, which
+ * accepts an `<angle>` or a plain number treated as radians. Paired with
+ * `atan2`, `tan(atan2(a, b))` divides two same-kind dimensions to a `<number>` —
+ * the length ratio that works where `a / b` does not, since Firefox does not
+ * yet support `<length> / <length>` in `calc()`.
  *
- * Serialization note: CSS's `acos()` returns an `<angle>`, not a number.
- * The serializer keeps such subtrees angle-typed — plain-number terms
- * added to or subtracted from an acos-carrying term are rendered with a
- * `rad` suffix (constants) or a `* 1rad` factor (anything else), so the
- * emitted CSS stays valid without typed division. In v1, consume
- * acos-carrying subtrees with `sin` or `cos`; feeding one into a plain
- * number context serializes to angle-typed CSS.
+ * @param argument - An angle, or a plain number in radians.
+ * @returns The tangent, a `<number>`, carrying the argument's units.
+ * @since 0.2.0
+ */
+export const tan: {
+  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+} = internal.tan
+
+/**
+ * The arccosine of a value in `[-1, 1]`, an `<angle>` in radians (CSS's
+ * `acos()` returns an `<angle>`). Solving evaluates `Math.acos`, in radians.
+ *
+ * Because the result is angle-kind, it composes only with other angles: divide
+ * or scale it by a number, and add or subtract an `Angle.rad(...)` phase. A
+ * plain number added to it is a type error — supply the phase as an angle.
  *
  * @param argument - The cosine value, in `[-1, 1]`.
- * @returns The arccosine expression, in radians.
+ * @returns The arccosine, an `<angle>`, carrying the argument's units.
  * @example
  * ```ts
- * Calc.serialize(Calc.cos(Calc.subtract(Calc.divide(Calc.acos(Calc.ref('u')), 3), 2.0943951)))
+ * const phase = Angle.rad(2.0943951)
+ * Calc.serialize(Calc.cos(Calc.subtract(Calc.divide(Calc.acos(Calc.ref('u')), 3), phase)))
  * // 'cos(acos(var(--u)) / 3 - 2.0944rad)'
  * ```
  * @since 0.1.0
  */
-export const acos: <A extends string = never>(argument: Input<A>) => Calc<A> = internal.acos
+export const acos: {
+  <A extends NumberIn>(argument: A): Calc<RefsOf<A>, 'angle', LeavesOf<A>>
+} = internal.acos
+
+/**
+ * The angle, in radians, of the vector from the origin to `(x, y)` — CSS's
+ * `atan2()`, which returns an `<angle>`. The operands must share a kind (two
+ * numbers, two lengths, two angles); their units cancel in the ratio, so
+ * `tan(atan2(a, b))` recovers `a / b` as a `<number>` and is the portable way to
+ * divide two `<length>`s.
+ *
+ * @param y - The vertical component.
+ * @param x - The horizontal component, sharing `y`'s kind.
+ * @returns The angle, an `<angle>`, with the operands' units unioned.
+ * @example
+ * ```ts
+ * const ratio = Calc.tan(Calc.atan2(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160)))
+ * Calc.serialize(ratio) // 'tan(atan2(100vw - 320px, 160px))'
+ * ```
+ * @since 0.2.0
+ */
+export const atan2: {
+  <A extends In, B extends SameKindIn<A>>(
+    y: A,
+    x: B,
+  ): Calc<RefsOf<A> | RefsOf<B>, 'angle', LeavesOf<A> | LeavesOf<B>>
+} = internal.atan2
 
 export const bind: {
   /**
@@ -441,21 +592,20 @@ export const bind: {
 
 export const solve: {
   /**
-   * Evaluates a fully bound expression to a number.
-   *
-   * The parameter type `Calc<never>` makes closedness a compile-time
-   * requirement; an expression with unbound references needs the bindings
+   * Evaluates a closed expression to a number. Absolute lengths (`px`) and
+   * angles (radians) lower with no context; a viewport- or font-relative unit
+   * needs the context overload, and an unbound reference needs the bindings
    * overload.
    *
-   * @param expr - The expression to evaluate. Must have no unbound references.
+   * @param expr - The expression. No unbound references, only context-free units.
    * @returns The numeric value.
-   * @throws `Error` when unbound references remain at runtime.
+   * @throws `Error` when unbound references or unresolvable units remain at runtime.
    * @since 0.1.0
    */
-  (expr: Calc<never>): number
+  (expr: Calc<never, Kind, ContextFree>): number
   /**
-   * Applies bindings, then evaluates to a number. The bindings must cover
-   * every unbound reference.
+   * Applies bindings, then evaluates to a number. For expressions whose units,
+   * if any, are all context-free.
    *
    * @param expr - The expression to evaluate.
    * @param bindings - Values for every unbound reference.
@@ -467,7 +617,32 @@ export const solve: {
    * ```
    * @since 0.1.0
    */
-  <Refs extends string, B extends Bindings<Refs>>(expr: Calc<Refs>, bindings: B): number
+  <Refs extends string, B extends Bindings<Refs>>(
+    expr: Calc<Refs, Kind, ContextFree>,
+    bindings: B,
+  ): number
+  /**
+   * Applies bindings, lowers each context-dependent unit through the context,
+   * then evaluates to a number. The context supplies a pixels-per-unit ratio
+   * for every relative unit the expression carries (`vw` is `sampleWidth / 100`);
+   * absolute lengths default (`px` is `1`) unless overridden.
+   *
+   * @param expr - The expression to evaluate.
+   * @param bindings - Values for every unbound reference.
+   * @param context - Ratios for the expression's context-dependent units.
+   * @returns The numeric value.
+   * @example
+   * ```ts
+   * const position = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))
+   * Calc.solve(position, {}, { vw: 1280 / 100 }) // 6
+   * ```
+   * @since 0.2.0
+   */
+  <Refs extends string, B extends Bindings<Refs>, L>(
+    expr: Calc<Refs, Kind, L>,
+    bindings: B,
+    context: UnitContext<L>,
+  ): number
 } = internal.solve
 
 /**
@@ -494,7 +669,7 @@ export const solve: {
  * @since 0.1.0
  */
 export const serialize: <Refs extends string>(
-  expr: Calc<Refs>,
+  expr: Calc<Refs, Kind, unknown>,
   options?: SerializeOptions<Refs>,
 ) => string = internal.serialize
 
@@ -505,7 +680,32 @@ export const serialize: <Refs extends string>(
  * @returns The set of unbound reference names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(expr: Calc<Refs>) => ReadonlySet<Refs> = internal.refs
+export const refs: <Refs extends string>(expr: Calc<Refs, Kind, unknown>) => ReadonlySet<Refs> =
+  internal.refs
+
+/**
+ * The channel-keyword tokens the expression reads — the `Channel` keywords a
+ * relative color introduces (`l`, `c`, `h`, ...). Empty for an expression with
+ * no channel keywords.
+ *
+ * This is the runtime companion to the `Leaves`-level scoping that `solve`'s
+ * context requires: `channels` reports which values a context must supply,
+ * exactly as `refs` reports the custom properties a binding must, and — unlike
+ * a `Calc`'s `Kind`/`Leaves` type — survives on a `Calc<Refs, Kind, unknown>`
+ * whose leaves have been erased. Channel keywords are not references, so `refs`
+ * never lists them and they never reach a `Stylesheet`'s dependency report.
+ *
+ * @param expr - The expression to inspect.
+ * @returns The set of channel-keyword tokens the expression reads.
+ * @example
+ * ```ts
+ * Calc.channels(Calc.multiply(Channel.L, 0.8)) // Set { 'l' }
+ * Calc.channels(Calc.ref('x')) // Set {}
+ * ```
+ * @since 0.2.0
+ */
+export const channels: (expr: Calc<string, Kind, unknown>) => ReadonlySet<string> =
+  internal.channels
 
 export const equals: {
   /**
@@ -515,17 +715,17 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: Calc<string>): (self: Calc<string>) => boolean
+  (that: Calc<string, Kind, unknown>): (self: Calc<string, Kind, unknown>) => boolean
   /**
    * Structural equality over expression trees. Two expressions are equal
-   * when their trees match node for node — including constant precision
-   * annotations, which affect serialization. Expression trees are ordered
-   * syntax: `add(a, b)` and `add(b, a)` are not equal.
+   * when their trees match node for node — including constant units and
+   * precision annotations, which affect serialization. Expression trees are
+   * ordered syntax: `add(a, b)` and `add(b, a)` are not equal.
    *
    * @param self - The first expression.
    * @param that - The second expression.
    * @returns `true` if the expressions are structurally equal.
    * @since 0.1.0
    */
-  (self: Calc<string>, that: Calc<string>): boolean
+  (self: Calc<string, Kind, unknown>, that: Calc<string, Kind, unknown>): boolean
 } = internal.equals

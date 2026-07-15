@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Calc, Precision } from '#calc'
-import { Color } from '#color'
+import { Color } from '#data'
 import { Declaration } from '#declaration'
 import { FontFaceRule } from '#fontFace'
 import { PropertyRule, PropertySyntax } from '#property'
