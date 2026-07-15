@@ -94,6 +94,16 @@ export interface Rad {
 }
 
 /**
+ * The `deg` unit (angle in degrees). Degrees lower to radians at solve
+ * (`180deg` is `pi`), a fixed ratio, so like `rad` a degree needs no context.
+ *
+ * @since 0.2.0
+ */
+export interface Deg {
+  readonly [AngleUnitId]: 'deg'
+}
+
+/**
  * The `%` unit (percentage). Keyed by its own dimension symbol, so a
  * percentage never unifies with a length or an angle — a `<percentage>`
  * is its own `Calc` kind, not a length that happens to be relative.
@@ -131,7 +141,7 @@ export type Length = Px | Rem | Em | Vw | Vh | Vmin | Vmax
  *
  * @since 0.2.0
  */
-export type Angle = Rad
+export type Angle = Rad | Deg
 
 /**
  * Any `<percentage>` unit. There is only one (`%`); the alias exists for

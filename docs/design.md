@@ -25,7 +25,7 @@ One subpath export per module, no root export (the curvy convention). Each modul
 src/utils.ts                -> fashionable/utils        [shipped]  pipe, dual, flow, Pipeable, invariant
 src/internal/               (not exported)              [shipped]  equal, format, refs
 src/calc/                   -> fashionable/calc         [shipped]  Calc<Refs>, Precision
-src/data/                   -> fashionable/data         [shipped]  Color<Refs> (oklch, srgb, light-dark, color-mix, relative color via `from`, named, ref); Angle, Length, Percentage, Unit; Keyword (none); Channel (relative-color keywords); ColorSpace (color-space values for `from` and `mix`, polar-ness a type-level trait); HueInterpolation (mix hue strategies)
+src/data/                   -> fashionable/data         [shipped]  Color<Refs> (oklch, srgb, light-dark, color-mix, relative color via `from`, named, ref); Angle (rad, deg), Length, Percentage, Unit; Keyword (none); Channel (relative-color keywords); ColorSpace (color-space values for `from` and `mix`, polar-ness a type-level trait); HueInterpolation (mix hue strategies, plus `interpolate` — the branchless-via-`mod` degree-space fixup that builds a hue expression the browser also computes)
 src/selector/               -> fashionable/selector     [shipped]  Selector, Specificity
 src/query/                  -> fashionable/query        [shipped]  MediaQuery
 src/declaration/            -> fashionable/declaration  [shipped]  Declaration<Refs>
@@ -55,7 +55,7 @@ API deltas from the donor, deliberate:
 - `solve`'s no-bindings overload requires `Calc<never>` — closedness is a compile-time obligation, where the donor accepted anything and threw.
 - `bind` is dual (`expr.pipe(Calc.bind({ ... }))` works).
 - The `pi` special case only fires inside math-function context (`calc()`, `min()`, `sin()`, ...). A bare top-level constant near pi renders numerically — the donor emitted a bare `pi` token that is invalid outside math functions.
-- New: `cos`, `acos` (consumer 1's closed-form cardinal-segment inverses), structural `equals`, `refs`.
+- New: `cos`, `acos` (consumer 1's closed-form cardinal-segment inverses), `mod` (CSS `mod()`, floored to the divisor's sign), structural `equals`, `refs`, and `channels` (the relative-color-keyword companion to `refs`).
 
 ### 3.2 Precision
 

@@ -15,6 +15,13 @@ describe('data — construction and serialization', () => {
     expect(Calc.serialize(Angle.rad(2.094395102, Precision.significant(10)))).toBe('2.094395102rad')
   })
 
+  test('degrees serialize with the deg unit and lower to radians at solve', () => {
+    expect(Calc.serialize(Angle.deg(45))).toBe('45deg')
+    expect(Calc.solve(Angle.deg(180))).toBeCloseTo(Math.PI)
+    // deg is context-free, like rad — no solve context needed
+    expect(Calc.solve(Angle.deg(90))).toBeCloseTo(Math.PI / 2)
+  })
+
   test('same-unit lengths fold; mixed units stay symbolic', () => {
     expect(Calc.serialize(Calc.add(Length.px(10), Length.px(5)))).toBe('15px')
     expect(Calc.serialize(Calc.add(Length.px(16), Length.vw(2)))).toBe('calc(16px + 2vw)')
@@ -256,10 +263,12 @@ const dimensionalTypes = (): void => {
   // @ts-expect-error a <percentage> plus a <length> is invalid CSS
   Calc.add(Percentage.of(20), Length.px(10))
 
-  // the dimension aliases name the widened Calc for each kind. Angle.rad and
-  // Percentage.of land exactly on their alias (one unit each today); any
-  // length — single- or mixed-unit — is assignable to the wide Length alias.
-  expectTypeOf(Angle.rad(2)).toEqualTypeOf<Angle.Angle<never>>()
+  // the dimension aliases name the widened Calc for each kind. A single-unit
+  // constructor lands on a narrower leaf than its alias — Angle now spans rad
+  // and deg, Percentage has just `%` — but every specific expression, single-
+  // or mixed-unit, is assignable to the wide alias.
+  expectTypeOf(Angle.rad(2)).toEqualTypeOf<Calc.Calc<never, 'angle', Unit.Rad>>()
+  expectTypeOf(Angle.deg(45)).toEqualTypeOf<Calc.Calc<never, 'angle', Unit.Deg>>()
   expectTypeOf(Percentage.of(40)).toEqualTypeOf<Percentage.Percentage<never>>()
   const wideAngle: Angle.Angle = Angle.rad(2)
   const wideLength: Length.Length = Calc.add(Length.px(16), Length.vw(2))

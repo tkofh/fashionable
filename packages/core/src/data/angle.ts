@@ -5,7 +5,7 @@
  * from an angle is a type error, so the radian phase of a trig expression is
  * written `Angle.rad(...)` rather than a bare number.
  *
- * Only `rad` is modeled today; `deg`/`turn`/`grad` arrive as a consumer needs
+ * `rad` and `deg` are modeled today; `turn`/`grad` arrive as a consumer needs
  * them.
  *
  * @since 0.2.0
@@ -14,7 +14,7 @@
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
 import * as internal from './angle.internal.ts'
-import type { Angle as AngleUnit, Rad } from './units.ts'
+import type { Angle as AngleUnit, Deg, Rad } from './units.ts'
 
 /**
  * An `<angle>` expression: a `Calc` of angle kind, in any angle unit. Names the
@@ -44,3 +44,18 @@ export type Angle<Refs extends string = string> = Calc<Refs, 'angle', AngleUnit>
  * @since 0.2.0
  */
 export const rad: (value: number, precision?: Precision) => Calc<never, 'angle', Rad> = internal.rad
+
+/**
+ * An angle in `deg` (degrees). Degrees lower to radians at solve (`180deg` is
+ * `pi`), a fixed ratio, so a degree-only expression solves with no unit context.
+ *
+ * @param value - The angle in degrees.
+ * @param precision - Optional serialization precision.
+ * @returns A `deg` angle expression.
+ * @example
+ * ```ts
+ * Calc.serialize(Angle.deg(45)) // '45deg'
+ * ```
+ * @since 0.2.0
+ */
+export const deg: (value: number, precision?: Precision) => Calc<never, 'angle', Deg> = internal.deg

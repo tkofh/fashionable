@@ -495,6 +495,55 @@ describe('color', () => {
     })
   })
 
+  describe('hue interpolation', () => {
+    test('folds constant arguments and stays symbolic in t', () => {
+      const symbolic = HueInterpolation.interpolate(HueInterpolation.shorter, 30, 60, Calc.ref('t'))
+      expect(Calc.serialize(symbolic)).toBe('calc(30 + 30 * var(--t))')
+      expect(Calc.refs(symbolic)).toEqual(new Set(['t']))
+      // the arc wraps past 0 when that is the short way, keeping from unmoved
+      expect(
+        Calc.serialize(
+          HueInterpolation.interpolate(HueInterpolation.shorter, 350, 20, Calc.ref('t')),
+        ),
+      ).toBe('calc(350 + 30 * var(--t))')
+    })
+
+    test('each strategy picks its arc; the result is an unwrapped degree number', () => {
+      expect(
+        Calc.serialize(HueInterpolation.interpolate(HueInterpolation.shorter, 30, 60, 0.5)),
+      ).toBe('45')
+      expect(
+        Calc.serialize(HueInterpolation.interpolate(HueInterpolation.longer, 30, 60, 0.5)),
+      ).toBe('-135')
+      expect(
+        Calc.serialize(HueInterpolation.interpolate(HueInterpolation.increasing, 20, 350, 0.5)),
+      ).toBe('185')
+      expect(
+        Calc.serialize(HueInterpolation.interpolate(HueInterpolation.decreasing, 20, 350, 0.5)),
+      ).toBe('5')
+    })
+
+    test('interpolates between symbolic hues, branchlessly via mod', () => {
+      const hue = HueInterpolation.interpolate(
+        HueInterpolation.shorter,
+        Calc.ref('from'),
+        Calc.ref('to'),
+        Calc.ref('t'),
+      )
+      expect(Calc.refs(hue)).toEqual(new Set(['from', 'to', 't']))
+      expect(Calc.serialize(hue)).toBe(
+        'calc(var(--from) + (mod(var(--to) - var(--from) + 180, 360) - 180) * var(--t))',
+      )
+    })
+
+    test('the hue drops into an oklch channel', () => {
+      const hue = HueInterpolation.interpolate(HueInterpolation.shorter, 30, 60, Calc.ref('t'))
+      expect(Color.serialize(Color.oklch(0.7, 0.15, hue))).toBe(
+        'oklch(0.7 0.15 calc(30 + 30 * var(--t)))',
+      )
+    })
+  })
+
   describe('none channels', () => {
     test('oklch renders the achromatic consumer shape byte-exact', () => {
       expect(Color.serialize(Color.oklch(0, 0, Keyword.none))).toBe('oklch(0 0 none)')

@@ -61,6 +61,7 @@ export type CalcNode =
   | { readonly _tag: 'Subtract'; readonly left: CalcNode; readonly right: CalcNode }
   | { readonly _tag: 'Multiply'; readonly left: CalcNode; readonly right: CalcNode }
   | { readonly _tag: 'Divide'; readonly left: CalcNode; readonly right: CalcNode }
+  | { readonly _tag: 'Mod'; readonly left: CalcNode; readonly right: CalcNode }
   | { readonly _tag: 'Pow'; readonly base: CalcNode; readonly exponent: CalcNode }
   | { readonly _tag: 'SignedPow'; readonly base: CalcNode; readonly exponent: CalcNode }
   | { readonly _tag: 'Min'; readonly args: ReadonlyArray<CalcNode> }
@@ -195,6 +196,20 @@ const divideNode = (left: CalcNode, right: CalcNode): CalcNode => {
   return { _tag: 'Divide', left, right }
 }
 
+// CSS mod(): the result takes the sign of the divisor, so it is the floored
+// modulo. Folds only when both operands share a unit (or are unit-free).
+const modNode = (left: CalcNode, right: CalcNode): CalcNode => {
+  if (isConstant(left) && isConstant(right) && left.unit === right.unit) {
+    return constantNode(
+      left.value - right.value * Math.floor(left.value / right.value),
+      bestPrecision([left, right]),
+      left.unit,
+      left.kind,
+    )
+  }
+  return { _tag: 'Mod', left, right }
+}
+
 const powNode = (base: CalcNode, exponent: CalcNode): CalcNode => {
   if (isConstant(base) && isConstant(exponent)) {
     return constantNode(base.value ** exponent.value, bestPrecision([base, exponent]))
@@ -327,6 +342,8 @@ export const substituteNode = (node: CalcNode, bindings: Record<string, CalcNode
       return multiplyNode(substituteNode(node.left, bindings), substituteNode(node.right, bindings))
     case 'Divide':
       return divideNode(substituteNode(node.left, bindings), substituteNode(node.right, bindings))
+    case 'Mod':
+      return modNode(substituteNode(node.left, bindings), substituteNode(node.right, bindings))
     case 'Pow':
       return powNode(substituteNode(node.base, bindings), substituteNode(node.exponent, bindings))
     case 'SignedPow':
@@ -358,12 +375,13 @@ export const substituteNode = (node: CalcNode, bindings: Record<string, CalcNode
 
 /**
  * The units that lower with no caller-supplied ratio: `px` is the pixel base
- * (`1`), and a radian is already the numeric measure of its angle (`1`). Every
- * other unit is context-dependent and must appear in the solve context.
+ * (`1`), a radian is already the numeric measure of its angle (`1`), and a
+ * degree is a fixed `pi / 180` of one. Every other unit is context-dependent
+ * and must appear in the solve context.
  *
  * @internal
  */
-export const DEFAULT_RATIOS: Record<string, number> = { px: 1, rad: 1 }
+export const DEFAULT_RATIOS: Record<string, number> = { px: 1, rad: 1, deg: Math.PI / 180 }
 
 /** @internal */
 export const evaluateNode = (node: CalcNode, context: Record<string, number>): number => {
@@ -397,6 +415,11 @@ export const evaluateNode = (node: CalcNode, context: Record<string, number>): n
       return evaluateNode(node.left, context) * evaluateNode(node.right, context)
     case 'Divide':
       return evaluateNode(node.left, context) / evaluateNode(node.right, context)
+    case 'Mod': {
+      const dividend = evaluateNode(node.left, context)
+      const divisor = evaluateNode(node.right, context)
+      return dividend - divisor * Math.floor(dividend / divisor)
+    }
     case 'Pow':
       return evaluateNode(node.base, context) ** evaluateNode(node.exponent, context)
     case 'SignedPow': {
@@ -541,6 +564,8 @@ export const serializeNode = (
       const right = wrapOperand(node.right, serializeNode(node.right, insideMath, context))
       return `${left} / ${right}`
     }
+    case 'Mod':
+      return `mod(${serializeNode(node.left, true, context)}, ${serializeNode(node.right, true, context)})`
     case 'Pow':
       return `pow(${serializeNode(node.base, true, context)}, ${serializeNode(node.exponent, true, context)})`
     case 'SignedPow': {
@@ -603,7 +628,8 @@ export const nodeEquals = (a: CalcNode, b: CalcNode): boolean => {
       return nodeArrayEquals(a.terms, (b as typeof a).terms)
     case 'Subtract':
     case 'Multiply':
-    case 'Divide': {
+    case 'Divide':
+    case 'Mod': {
       const other = b as typeof a
       return nodeEquals(a.left, other.left) && nodeEquals(a.right, other.right)
     }
@@ -668,6 +694,7 @@ export const nodeHash = (node: CalcNode): number => {
     case 'Subtract':
     case 'Multiply':
     case 'Divide':
+    case 'Mod':
       return hashNodeArray(node._tag, [node.left, node.right])
     case 'Pow':
     case 'SignedPow':
@@ -760,6 +787,7 @@ const collectIdents = (node: CalcNode, into: Set<string>): void => {
     case 'Subtract':
     case 'Multiply':
     case 'Divide':
+    case 'Mod':
       collectIdents(node.left, into)
       collectIdents(node.right, into)
       return
@@ -952,6 +980,7 @@ const liftBinary =
 const subtractImpl = liftBinary(subtractNode)
 const multiplyImpl = liftBinary(multiplyNode)
 const divideImpl = liftBinary(divideNode)
+const modImpl = liftBinary(modNode)
 const powImpl = liftBinary(powNode)
 const signedPowImpl = liftBinary(signedPowNode)
 const atan2Impl = liftBinary(atan2Node)
@@ -964,6 +993,11 @@ export function subtract(left: AnyInput, right: AnyInput): Bottom {
 /** @internal */
 export function multiply(left: AnyInput, right: AnyInput): Bottom {
   return multiplyImpl(left, right) as Bottom
+}
+
+/** @internal */
+export function mod(left: AnyInput, right: AnyInput): Bottom {
+  return modImpl(left, right) as Bottom
 }
 
 /** @internal */

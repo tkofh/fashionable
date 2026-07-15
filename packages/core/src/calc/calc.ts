@@ -265,6 +265,26 @@ export const subtract: <A extends In, B extends SameKindIn<A>>(
 ) => Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.subtract
 
 /**
+ * The CSS `mod()` of `dividend` and `divisor` — the remainder that takes the
+ * sign of the divisor (the floored modulo), so `mod(x, 360)` lands in
+ * `[0, 360)` for a positive divisor. Same-kind operands, as `subtract`;
+ * constant operands fold at construction.
+ *
+ * @param dividend - The value to reduce.
+ * @param divisor - The modulus, sharing `dividend`'s kind.
+ * @returns The modulo, with the operands' references unioned.
+ * @example
+ * ```ts
+ * Calc.serialize(Calc.mod(Calc.ref('h'), 360)) // 'mod(var(--h), 360)'
+ * ```
+ * @since 0.2.0
+ */
+export const mod: <A extends In, B extends SameKindIn<A>>(
+  dividend: A,
+  divisor: B,
+) => Calc<RefsOf<A> | RefsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.mod
+
+/**
  * Multiplies expressions. Constant operands fold at construction.
  *
  * Addition and subtraction operands are parenthesized when serialized
