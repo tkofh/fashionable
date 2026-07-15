@@ -234,12 +234,25 @@ export const mergeAll: <Refs extends string>(
  */
 export interface CoalesceOptions {
   /**
-   * When `true`, unsafe pulls throw instead of rewriting the cascade: a
-   * pull is unsafe when the coalesced rule's block would move backward
-   * across an intervening style rule whose selector ties the coalesced
-   * selector on specificity. The check is conservative — it cannot know
-   * whether tying selectors can match the same element, so any tie
-   * refuses. Defaults to `false`.
+   * When `true`, unsafe pulls throw instead of rewriting the cascade.
+   * Defaults to `false`.
+   *
+   * A pull moves the coalesced rule's block backward across every rule
+   * between the first occurrence of its selector and the later one. The
+   * pull throws when an intervening style rule ties the coalesced
+   * selector on specificity, unless every moved declaration is provably
+   * shadowed by that rule.
+   *
+   * Shadowed means the crossed rule, in its final coalesced form,
+   * re-establishes the declaration. It contains a structurally equal
+   * declaration under a media query implied by the moved one's query.
+   * No later member whose query can hold alongside the moved one's sets
+   * a different value.
+   *
+   * The check never reasons about whether tying selectors can match the
+   * same element. It refuses what it cannot prove: a crossing whose
+   * blocks nest style rules, or a moved declaration without a
+   * re-establishing twin.
    */
   readonly strict?: boolean
 }
@@ -257,10 +270,16 @@ export interface CoalesceOptions {
  * checked invariant — a build gate that proves the sheet's coalesce is
  * cascade-preserving.
  *
+ * Coalesce is a repair operation for sheets whose construction you
+ * don't control. If strict mode refuses a sheet you built yourself,
+ * don't weaken the check — assemble in the target shape instead:
+ * refusal usually means the operation is reconstructing an intent you
+ * could express directly.
+ *
  * @param sheet - The sheet to normalize.
  * @param options - Optional strictness.
  * @returns The coalesced sheet; the same instance when no selector repeats, so coalesce is idempotent.
- * @throws `Error` in strict mode, when a pull crosses an intervening rule that ties on specificity.
+ * @throws `Error` in strict mode, when a pull crosses an intervening tying rule that does not provably shadow every moved declaration.
  * @since 0.1.0
  */
 export const coalesce: <Refs extends string>(

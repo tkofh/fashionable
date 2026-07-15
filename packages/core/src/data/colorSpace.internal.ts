@@ -36,11 +36,13 @@ export interface ColorSpaceData {
 
 class ColorSpaceImpl {
   readonly [ColorSpaceTypeId]: ColorSpaceTypeId = ColorSpaceTypeId
+  readonly token: string
+  readonly wrap: Wrap
 
-  constructor(
-    readonly token: string,
-    readonly wrap: Wrap,
-  ) {}
+  constructor(token: string, wrap: Wrap) {
+    this.token = token
+    this.wrap = wrap
+  }
 
   get [Symbol.toStringTag]() {
     return `ColorSpace(${this.token})`

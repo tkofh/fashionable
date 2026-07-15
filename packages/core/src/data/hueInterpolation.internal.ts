@@ -7,8 +7,11 @@ export type HueInterpolationTypeId = typeof HueInterpolationTypeId
 
 class HueInterpolationImpl {
   readonly [HueInterpolationTypeId]: HueInterpolationTypeId = HueInterpolationTypeId
+  readonly strategy: string
 
-  constructor(readonly strategy: string) {}
+  constructor(strategy: string) {
+    this.strategy = strategy
+  }
 
   get [Symbol.toStringTag]() {
     return `HueInterpolation(${this.strategy})`
