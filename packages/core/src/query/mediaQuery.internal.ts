@@ -1,7 +1,13 @@
 import * as Equal from '#internal/equal'
 import { formatDecimals } from '#internal/format'
 import { dual, invariant, Pipeable } from '#util'
-import type { MaxWidth, MediaQuery, MinWidth, PrefersColorScheme, RenderOptions } from './mediaQuery.ts'
+import type {
+  MaxWidth,
+  MediaQuery,
+  MinWidth,
+  PrefersColorScheme,
+  RenderOptions,
+} from './mediaQuery.ts'
 
 export const MediaQueryTypeId = Symbol.for('fashionable/query/mediaQuery')
 export type MediaQueryTypeId = typeof MediaQueryTypeId
@@ -14,9 +20,7 @@ export type MediaQueryTypeId = typeof MediaQueryTypeId
  *
  * @internal
  */
-export const MediaQueryFeatures: unique symbol = Symbol.for(
-  'fashionable/query/mediaQuery/features',
-)
+export const MediaQueryFeatures: unique symbol = Symbol.for('fashionable/query/mediaQuery/features')
 export type MediaQueryFeatures = typeof MediaQueryFeatures
 
 // ---------------------------------------------------------------------------
@@ -247,6 +251,77 @@ export const hasMaxWidth = (query: MediaQuery): query is MediaQuery<MaxWidth> =>
 /** @internal */
 export const hasPrefersColorScheme = (query: MediaQuery): query is MediaQuery<PrefersColorScheme> =>
   featuresOf(query).some((feature) => feature._tag === 'PrefersColorScheme')
+
+// ---------------------------------------------------------------------------
+// query relations
+// ---------------------------------------------------------------------------
+
+// Conjunction reasoning for the shadow-safe strict coalesce check
+// (stylesheet.internal.ts). Both relations treat `undefined` as the empty
+// conjunction: a bare declaration applies in every state. They read the
+// canonical and-set part-wise rather than through the accessors — the
+// accessors report effective bounds, which cannot see a degenerate
+// `dark and light` query, and a setter that never applies must not count
+// as re-establishing a value.
+
+const EMPTY_FEATURES: ReadonlyArray<MediaFeature> = []
+
+const optionalFeaturesOf = (query: MediaQuery | undefined): ReadonlyArray<MediaFeature> =>
+  query === undefined ? EMPTY_FEATURES : featuresOf(query)
+
+const featureImplies = (source: MediaFeature, target: MediaFeature): boolean => {
+  switch (target._tag) {
+    case 'MinWidth':
+      return source._tag === 'MinWidth' && source.px >= target.px
+    case 'MaxWidth':
+      return source._tag === 'MaxWidth' && source.px <= target.px
+    case 'PrefersColorScheme':
+      return source._tag === 'PrefersColorScheme' && source.scheme === target.scheme
+  }
+}
+
+// `self` implies `that` when `that` holds in every state where `self`
+// holds: every part of `that` is implied by some part of `self` — a
+// larger min-width, a smaller max-width, the same scheme.
+/** @internal */
+export const implies = (self: MediaQuery | undefined, that: MediaQuery | undefined): boolean => {
+  const source = optionalFeaturesOf(self)
+  return optionalFeaturesOf(that).every((target) =>
+    source.some((feature) => featureImplies(feature, target)),
+  )
+}
+
+// The conjunction of both queries is satisfiable in some state: no
+// conflicting scheme values, and a non-empty width interval — the largest
+// min-width at most the smallest max-width, both bounds inclusive. Either
+// side's internal contradiction (dark and light, an empty interval) makes
+// the pair unsatisfiable, as it must.
+/** @internal */
+export const coSatisfiable = (
+  self: MediaQuery | undefined,
+  that: MediaQuery | undefined,
+): boolean => {
+  let lower = 0
+  let upper = Number.POSITIVE_INFINITY
+  let scheme: 'dark' | 'light' | undefined
+  for (const feature of [...optionalFeaturesOf(self), ...optionalFeaturesOf(that)]) {
+    switch (feature._tag) {
+      case 'MinWidth':
+        lower = Math.max(lower, feature.px)
+        break
+      case 'MaxWidth':
+        upper = Math.min(upper, feature.px)
+        break
+      case 'PrefersColorScheme':
+        if (scheme !== undefined && scheme !== feature.scheme) {
+          return false
+        }
+        scheme = feature.scheme
+        break
+    }
+  }
+  return lower <= upper
+}
 
 /** @internal */
 export const render = (query: MediaQuery, options?: RenderOptions): string =>

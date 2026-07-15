@@ -1,5 +1,5 @@
 ---
-"fashionable": minor
+'fashionable': minor
 ---
 
 `MediaQuery` now records statically known features as type-level brands (the curvy trait pattern `ColorSpace` already uses for polar-ness), and the feature set gains `max-width`. Each constructor brands its result — `minWidth` returns `MediaQuery<MinWidth>`, the new `maxWidth` returns `MediaQuery<MaxWidth>`, `prefersColorScheme` returns `MediaQuery<PrefersColorScheme>` — and `and` intersects both sides' brands, including through `pipe` composition. New accessors key their return type on the brand: `getMinWidth`, `getMaxWidth`, and `getPrefersColorScheme` return a bare value where the type proves the feature is present and `| undefined` anywhere else, with stacked thresholds reporting the conjunction's effective bound (the largest `min-width`, the smallest `max-width`). The `hasMinWidth`/`hasMaxWidth`/`hasPrefersColorScheme` guards recover a brand from a plain query at runtime. Brands erase at runtime and the `Features` parameter defaults to `unknown`, so existing `MediaQuery` annotations keep working unchanged. In canonical order, `max-width` renders between `min-width` and `prefers-color-scheme`; existing queries render exactly as before.
