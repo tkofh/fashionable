@@ -62,6 +62,34 @@ describe('rule', () => {
       expect(member).toStructurallyEqual(MediaRule.make(MediaQuery.minWidth(768), block))
     })
 
+    test('forSelector lifts a block into a style rule', () => {
+      const block = RuleSet.make(depth)
+      const rule = RuleSet.forSelector(block, Selector.class('btn'))
+      expect(StyleRule.isStyleRule(rule)).toBe(true)
+      expect(rule).toStructurallyEqual(StyleRule.make(Selector.class('btn'), block))
+    })
+
+    test('supports data-last forSelector through pipe', () => {
+      const rule = RuleSet.make(depth).pipe(RuleSet.forSelector(Selector.root))
+      expect(rule).toStructurallyEqual(StyleRule.make(Selector.root, RuleSet.make(depth)))
+    })
+
+    test('forMediaQuery lifts a block into a media rule', () => {
+      const block = RuleSet.make(depth)
+      const rule = RuleSet.forMediaQuery(block, MediaQuery.minWidth(768))
+      expect(MediaRule.isMediaRule(rule)).toBe(true)
+      expect(rule).toStructurallyEqual(MediaRule.make(MediaQuery.minWidth(768), block))
+    })
+
+    test('supports data-last forMediaQuery through pipe', () => {
+      const rule = RuleSet.make(depth).pipe(
+        RuleSet.forMediaQuery(MediaQuery.prefersColorScheme('dark')),
+      )
+      expect(rule).toStructurallyEqual(
+        MediaRule.make(MediaQuery.prefersColorScheme('dark'), RuleSet.make(depth)),
+      )
+    })
+
     test('concat keeps left members before right', () => {
       const set = RuleSet.concat(RuleSet.make(color), RuleSet.make(depth))
       expect(set.members[0]).toBe(color)

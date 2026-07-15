@@ -97,7 +97,9 @@ describe('types', () => {
   })
 
   test('color channels union refs', () => {
-    expectTypeOf(Color.oklch(Calc.ref('l'), 0.1, Calc.ref('h'))).toEqualTypeOf<Color.Color<'l' | 'h'>>()
+    expectTypeOf(Color.oklch(Calc.ref('l'), 0.1, Calc.ref('h'))).toEqualTypeOf<
+      Color.Color<'l' | 'h'>
+    >()
   })
 
   test('color bind subtracts bound names', () => {
@@ -108,7 +110,9 @@ describe('types', () => {
   test('declarations carry their value refs', () => {
     expectTypeOf(Declaration.make('color', 'red')).toEqualTypeOf<Declaration.Declaration<never>>()
     expectTypeOf(Declaration.make('--depth', 4)).toEqualTypeOf<Declaration.Declaration<never>>()
-    expectTypeOf(Declaration.make('--x', Calc.ref('u'))).toEqualTypeOf<Declaration.Declaration<'u'>>()
+    expectTypeOf(Declaration.make('--x', Calc.ref('u'))).toEqualTypeOf<
+      Declaration.Declaration<'u'>
+    >()
     expectTypeOf(Declaration.make('color', Color.oklch(Calc.ref('l'), 0.1, 250))).toEqualTypeOf<
       Declaration.Declaration<'l'>
     >()
@@ -116,7 +120,9 @@ describe('types', () => {
 
   test('declaration bind subtracts bound names', () => {
     const declaration = Declaration.make('--x', Calc.add(Calc.ref('u'), Calc.ref('v')))
-    expectTypeOf(Declaration.bind(declaration, { u: 1 })).toEqualTypeOf<Declaration.Declaration<'v'>>()
+    expectTypeOf(Declaration.bind(declaration, { u: 1 })).toEqualTypeOf<
+      Declaration.Declaration<'v'>
+    >()
     expectTypeOf(declaration.pipe(Declaration.bind({ u: 1, v: 2 }))).toEqualTypeOf<
       Declaration.Declaration<never>
     >()
@@ -166,6 +172,22 @@ describe('types', () => {
     )
     expectTypeOf(Stylesheet.append(sheet, Selector.class('btn'), block)).toEqualTypeOf<
       Stylesheet.Stylesheet<'a' | 'b'>
+    >()
+  })
+
+  test('forSelector and forMediaQuery thread the block refs', () => {
+    const block = RuleSet.make(Declaration.make('--a', Calc.ref('a')))
+    expectTypeOf(RuleSet.forSelector(block, Selector.class('btn'))).toEqualTypeOf<
+      StyleRule.StyleRule<'a'>
+    >()
+    expectTypeOf(block.pipe(RuleSet.forSelector(Selector.root))).toEqualTypeOf<
+      StyleRule.StyleRule<'a'>
+    >()
+    expectTypeOf(RuleSet.forMediaQuery(block, MediaQuery.minWidth(768))).toEqualTypeOf<
+      MediaRule.MediaRule<'a'>
+    >()
+    expectTypeOf(block.pipe(RuleSet.forMediaQuery(MediaQuery.minWidth(768)))).toEqualTypeOf<
+      MediaRule.MediaRule<'a'>
     >()
   })
 

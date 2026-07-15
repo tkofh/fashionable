@@ -166,6 +166,8 @@ interface MediaRule<Refs> { query: MediaQuery; block: RuleSet<Refs> }
 RuleSet.empty, RuleSet.make(...members), RuleSet.append, RuleSet.concat   // dual append/concat
 RuleSet.append(set, selector, block)   // pair form: appends StyleRule.make(selector, block)
 RuleSet.append(set, query, block)      // pair form: appends MediaRule.make(query, block)
+RuleSet.forSelector(block, selector)   // dual; lift a block into StyleRule.make(selector, block)
+RuleSet.forMediaQuery(block, query)    // dual; lift a block into MediaRule.make(query, block)
 RuleSet.MemberRefs<M>   // type-level refs extraction over members; threads the unions
 RuleSet.render(set, options?)          // the body between the braces, nested form, no braces
 StyleRule.render(rule, options?)       // 'selector { body }'; empty block -> ''
@@ -173,7 +175,7 @@ MediaRule.render(rule, options?)       // '@media query { body }'; declarations 
 // plus refs/equals/is* on all three types; StyleRule.make(selector, block), MediaRule.make(query, block)
 ```
 
-`RuleSet` is the nesting unit; member order is preserved through rendering (the CSSNestedDeclarations fidelity requirement — declarations trailing a nested rule keep their source position, shipped across engines in late 2024). The pair-form `append` overloads are the API's posture: consumers think in rule sets, and `StyleRule`/`MediaRule` stay available as named types without needing to appear at construction sites.
+`RuleSet` is the nesting unit; member order is preserved through rendering (the CSSNestedDeclarations fidelity requirement — declarations trailing a nested rule keep their source position, shipped across engines in late 2024). The pair-form `append` overloads are the API's posture: consumers think in rule sets, and `StyleRule`/`MediaRule` stay available as named types without needing to appear at construction sites. `forSelector`/`forMediaQuery` are the standalone-block counterpart — a data-last lift so a block built up through `pipe` caps off as a rule (to hand to `Stylesheet.make`, say) without naming the rule type. They are named for the argument, not the result: the block gains no selector, so `withSelector` would misattribute; the produced rule is the thing keyed on the selector or query. The dual mirror — `Selector.toStyleRule`/`MediaQuery.toMediaRule` on the upstream types — is deliberately absent: `selector` and `query` sit above `rule` in the DAG, so lifting a block there needs `StyleRule.make`/`MediaRule.make` as runtime values, which is a cycle (not a type-only edge that erases at build), violating principle 1's acyclic-DAG invariant.
 
 Each type keeps the usual public/internal file pair; the mutual recursion is broken by a shared `rule.internal.ts` holding the cross-type ref plumbing and the nested-form block renderer, so the per-type internals never import each other — with one sanctioned one-directional exception: `ruleSet.internal.ts` imports the StyleRule/MediaRule constructors for the pair-form appends (neither imports it back).
 
