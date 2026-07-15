@@ -5,6 +5,7 @@
     "lib": ["esnext"],
     "module": "esnext",
     "moduleResolution": "bundler",
+    "customConditions": ["development"],
     "moduleDetection": "force",
     "isolatedModules": true,
     "verbatimModuleSyntax": true,

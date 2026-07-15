@@ -35,9 +35,9 @@ const rejectsNonNodes = (): void => {
 
 // Compile-time assertions only — never invoked.
 const rejectsOpenInitialValues = (): void => {
-  // @ts-expect-error an initial value must be computationally independent — Calc<'u'> is not Calc<never>
+  // @ts-expect-error an initial value must be computationally independent — Calc.Calc<'u'> is not Calc.Calc<never>
   PropertyRule.make('--depth', PropertySyntax.number, Calc.ref('u'))
-  // @ts-expect-error an initial value must be computationally independent — Color<'l'> is not Color<never>
+  // @ts-expect-error an initial value must be computationally independent — Color.Color<'l'> is not Color.Color<never>
   PropertyRule.make('--accent', PropertySyntax.color, Color.oklch(Calc.ref('l'), 0.1, 250))
 }
 
@@ -55,36 +55,36 @@ const rejectsMismatchedInitialValues = (): void => {
 
 describe('types', () => {
   test('ref infers its name', () => {
-    expectTypeOf(Calc.ref('x')).toEqualTypeOf<Calc<'x'>>()
+    expectTypeOf(Calc.ref('x')).toEqualTypeOf<Calc.Calc<'x'>>()
   })
 
   test('constants are closed', () => {
-    expectTypeOf(Calc.of(1)).toEqualTypeOf<Calc<never>>()
-    expectTypeOf(Calc.add(1, 2)).toEqualTypeOf<Calc<never>>()
+    expectTypeOf(Calc.of(1)).toEqualTypeOf<Calc.Calc<never>>()
+    expectTypeOf(Calc.add(1, 2)).toEqualTypeOf<Calc.Calc<never>>()
   })
 
   test('combinators union refs', () => {
-    expectTypeOf(Calc.add(Calc.ref('x'), Calc.ref('y'))).toEqualTypeOf<Calc<'x' | 'y'>>()
-    expectTypeOf(Calc.add(Calc.ref('x'), 1)).toEqualTypeOf<Calc<'x'>>()
-    expectTypeOf(Calc.clamp(0, Calc.ref('u'), 1)).toEqualTypeOf<Calc<'u'>>()
+    expectTypeOf(Calc.add(Calc.ref('x'), Calc.ref('y'))).toEqualTypeOf<Calc.Calc<'x' | 'y'>>()
+    expectTypeOf(Calc.add(Calc.ref('x'), 1)).toEqualTypeOf<Calc.Calc<'x'>>()
+    expectTypeOf(Calc.clamp(0, Calc.ref('u'), 1)).toEqualTypeOf<Calc.Calc<'u'>>()
     expectTypeOf(Calc.lerp(Calc.ref('a'), Calc.ref('b'), Calc.ref('t'))).toEqualTypeOf<
-      Calc<'a' | 'b' | 't'>
+      Calc.Calc<'a' | 'b' | 't'>
     >()
   })
 
   test('bind subtracts bound names', () => {
     const expr = Calc.add(Calc.ref('x'), Calc.ref('y'))
-    expectTypeOf(Calc.bind(expr, { x: 1 })).toEqualTypeOf<Calc<'y'>>()
-    expectTypeOf(Calc.bind(expr, { x: 1, y: 2 })).toEqualTypeOf<Calc<never>>()
+    expectTypeOf(Calc.bind(expr, { x: 1 })).toEqualTypeOf<Calc.Calc<'y'>>()
+    expectTypeOf(Calc.bind(expr, { x: 1, y: 2 })).toEqualTypeOf<Calc.Calc<never>>()
   })
 
   test('binding to an expression adds its refs', () => {
-    expectTypeOf(Calc.bind(Calc.ref('x'), { x: Calc.ref('a') })).toEqualTypeOf<Calc<'a'>>()
+    expectTypeOf(Calc.bind(Calc.ref('x'), { x: Calc.ref('a') })).toEqualTypeOf<Calc.Calc<'a'>>()
   })
 
   test('data-last bind composes through pipe', () => {
     const bound = Calc.ref('x').pipe(Calc.bind({ x: 2 }))
-    expectTypeOf(bound).toEqualTypeOf<Calc<never>>()
+    expectTypeOf(bound).toEqualTypeOf<Calc.Calc<never>>()
   })
 
   test('solve requires a closed expression', () => {
@@ -97,28 +97,28 @@ describe('types', () => {
   })
 
   test('color channels union refs', () => {
-    expectTypeOf(Color.oklch(Calc.ref('l'), 0.1, Calc.ref('h'))).toEqualTypeOf<Color<'l' | 'h'>>()
+    expectTypeOf(Color.oklch(Calc.ref('l'), 0.1, Calc.ref('h'))).toEqualTypeOf<Color.Color<'l' | 'h'>>()
   })
 
   test('color bind subtracts bound names', () => {
     const color = Color.oklch(Calc.ref('l'), Calc.ref('c'), 250)
-    expectTypeOf(Color.bind(color, { l: 0.5 })).toEqualTypeOf<Color<'c'>>()
+    expectTypeOf(Color.bind(color, { l: 0.5 })).toEqualTypeOf<Color.Color<'c'>>()
   })
 
   test('declarations carry their value refs', () => {
-    expectTypeOf(Declaration.make('color', 'red')).toEqualTypeOf<Declaration<never>>()
-    expectTypeOf(Declaration.make('--depth', 4)).toEqualTypeOf<Declaration<never>>()
-    expectTypeOf(Declaration.make('--x', Calc.ref('u'))).toEqualTypeOf<Declaration<'u'>>()
+    expectTypeOf(Declaration.make('color', 'red')).toEqualTypeOf<Declaration.Declaration<never>>()
+    expectTypeOf(Declaration.make('--depth', 4)).toEqualTypeOf<Declaration.Declaration<never>>()
+    expectTypeOf(Declaration.make('--x', Calc.ref('u'))).toEqualTypeOf<Declaration.Declaration<'u'>>()
     expectTypeOf(Declaration.make('color', Color.oklch(Calc.ref('l'), 0.1, 250))).toEqualTypeOf<
-      Declaration<'l'>
+      Declaration.Declaration<'l'>
     >()
   })
 
   test('declaration bind subtracts bound names', () => {
     const declaration = Declaration.make('--x', Calc.add(Calc.ref('u'), Calc.ref('v')))
-    expectTypeOf(Declaration.bind(declaration, { u: 1 })).toEqualTypeOf<Declaration<'v'>>()
+    expectTypeOf(Declaration.bind(declaration, { u: 1 })).toEqualTypeOf<Declaration.Declaration<'v'>>()
     expectTypeOf(declaration.pipe(Declaration.bind({ u: 1, v: 2 }))).toEqualTypeOf<
-      Declaration<never>
+      Declaration.Declaration<never>
     >()
   })
 
@@ -131,41 +131,41 @@ describe('types', () => {
         RuleSet.make(Declaration.make('--c', Calc.ref('c'))),
       ),
     )
-    expectTypeOf(set).toEqualTypeOf<RuleSet<'a' | 'b' | 'c'>>()
+    expectTypeOf(set).toEqualTypeOf<RuleSet.RuleSet<'a' | 'b' | 'c'>>()
   })
 
   test('empty rule sets are closed', () => {
-    expectTypeOf(RuleSet.empty).toEqualTypeOf<RuleSet<never>>()
-    expectTypeOf(RuleSet.make()).toEqualTypeOf<RuleSet<never>>()
+    expectTypeOf(RuleSet.empty).toEqualTypeOf<RuleSet.RuleSet<never>>()
+    expectTypeOf(RuleSet.make()).toEqualTypeOf<RuleSet.RuleSet<never>>()
   })
 
   test('append and concat union refs', () => {
     const set = RuleSet.make(Declaration.make('--a', Calc.ref('a')))
     expectTypeOf(RuleSet.append(set, Declaration.make('--b', Calc.ref('b')))).toEqualTypeOf<
-      RuleSet<'a' | 'b'>
+      RuleSet.RuleSet<'a' | 'b'>
     >()
     expectTypeOf(
       RuleSet.concat(set, RuleSet.make(Declaration.make('--c', Calc.ref('c')))),
-    ).toEqualTypeOf<RuleSet<'a' | 'c'>>()
+    ).toEqualTypeOf<RuleSet.RuleSet<'a' | 'c'>>()
   })
 
   test('pair-form appends union the block refs', () => {
     const set = RuleSet.make(Declaration.make('--a', Calc.ref('a')))
     const block = RuleSet.make(Declaration.make('--b', Calc.ref('b')))
     expectTypeOf(RuleSet.append(set, Selector.class('btn'), block)).toEqualTypeOf<
-      RuleSet<'a' | 'b'>
+      RuleSet.RuleSet<'a' | 'b'>
     >()
     expectTypeOf(RuleSet.append(set, MediaQuery.minWidth(768), block)).toEqualTypeOf<
-      RuleSet<'a' | 'b'>
+      RuleSet.RuleSet<'a' | 'b'>
     >()
     expectTypeOf(set.pipe(RuleSet.append(MediaQuery.minWidth(768), block))).toEqualTypeOf<
-      RuleSet<'a' | 'b'>
+      RuleSet.RuleSet<'a' | 'b'>
     >()
     const sheet = Stylesheet.make(
       StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--a', Calc.ref('a')))),
     )
     expectTypeOf(Stylesheet.append(sheet, Selector.class('btn'), block)).toEqualTypeOf<
-      Stylesheet<'a' | 'b'>
+      Stylesheet.Stylesheet<'a' | 'b'>
     >()
   })
 
@@ -175,18 +175,18 @@ describe('types', () => {
       StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('--b', Calc.ref('b')))),
       PropertyRule.make('--a', PropertySyntax.number, 0),
     )
-    expectTypeOf(sheet).toEqualTypeOf<Stylesheet<'a' | 'b'>>()
+    expectTypeOf(sheet).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'b'>>()
   })
 
   test('empty stylesheets are closed', () => {
-    expectTypeOf(Stylesheet.empty).toEqualTypeOf<Stylesheet<never>>()
-    expectTypeOf(Stylesheet.make()).toEqualTypeOf<Stylesheet<never>>()
+    expectTypeOf(Stylesheet.empty).toEqualTypeOf<Stylesheet.Stylesheet<never>>()
+    expectTypeOf(Stylesheet.make()).toEqualTypeOf<Stylesheet.Stylesheet<never>>()
   })
 
   test('at-rule nodes contribute no refs', () => {
     const fontFace = FontFaceRule.make({ family: 'Inter', src: [FontFaceRule.local('Inter')] })
     const sheet = Stylesheet.make(fontFace, PropertyRule.make('--x'))
-    expectTypeOf(sheet).toEqualTypeOf<Stylesheet<never>>()
+    expectTypeOf(sheet).toEqualTypeOf<Stylesheet.Stylesheet<never>>()
   })
 
   test('append, merge, and mergeAll union refs', () => {
@@ -200,9 +200,9 @@ describe('types', () => {
       a,
       StyleRule.make(Selector.class('card'), RuleSet.make(Declaration.make('--c', Calc.ref('c')))),
     )
-    expectTypeOf(appended).toEqualTypeOf<Stylesheet<'a' | 'c'>>()
-    expectTypeOf(Stylesheet.merge(a, b)).toEqualTypeOf<Stylesheet<'a' | 'b'>>()
-    expectTypeOf(Stylesheet.mergeAll([a, b])).toEqualTypeOf<Stylesheet<'a' | 'b'>>()
+    expectTypeOf(appended).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'c'>>()
+    expectTypeOf(Stylesheet.merge(a, b)).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'b'>>()
+    expectTypeOf(Stylesheet.mergeAll([a, b])).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'b'>>()
   })
 
   test('non-members are rejected at compile time', () => {

@@ -41,43 +41,43 @@
   },
   "exports": {
     "./calc": {
-      "types": "./dist/calc/index.d.ts",
+      "types": "./dist/calc/index.d.mts",
       "import": "./dist/calc/index.mjs"
     },
     "./color": {
-      "types": "./dist/color/index.d.ts",
+      "types": "./dist/color/index.d.mts",
       "import": "./dist/color/index.mjs"
     },
     "./declaration": {
-      "types": "./dist/declaration/index.d.ts",
+      "types": "./dist/declaration/index.d.mts",
       "import": "./dist/declaration/index.mjs"
     },
     "./font-face": {
-      "types": "./dist/fontFace/index.d.ts",
+      "types": "./dist/fontFace/index.d.mts",
       "import": "./dist/fontFace/index.mjs"
     },
     "./property": {
-      "types": "./dist/property/index.d.ts",
+      "types": "./dist/property/index.d.mts",
       "import": "./dist/property/index.mjs"
     },
     "./query": {
-      "types": "./dist/query/index.d.ts",
+      "types": "./dist/query/index.d.mts",
       "import": "./dist/query/index.mjs"
     },
     "./rule": {
-      "types": "./dist/rule/index.d.ts",
+      "types": "./dist/rule/index.d.mts",
       "import": "./dist/rule/index.mjs"
     },
     "./selector": {
-      "types": "./dist/selector/index.d.ts",
+      "types": "./dist/selector/index.d.mts",
       "import": "./dist/selector/index.mjs"
     },
     "./stylesheet": {
-      "types": "./dist/stylesheet/index.d.ts",
+      "types": "./dist/stylesheet/index.d.mts",
       "import": "./dist/stylesheet/index.mjs"
     },
     "./utils": {
-      "types": "./dist/utils.d.ts",
+      "types": "./dist/utils.d.mts",
       "import": "./dist/utils.mjs"
     }
   },
@@ -85,7 +85,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown && tsc -p tsconfig.build.json",
+    "build": "tsdown",
     "build:watch": "tsdown --watch",
     "test": "vitest run",
     "test:watch": "vitest",
