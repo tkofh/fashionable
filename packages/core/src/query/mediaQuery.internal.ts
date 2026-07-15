@@ -1,10 +1,23 @@
 import * as Equal from '#internal/equal'
 import { formatDecimals } from '#internal/format'
 import { dual, invariant, Pipeable } from '#util'
-import type { MediaQuery, RenderOptions } from './mediaQuery.ts'
+import type { MaxWidth, MediaQuery, MinWidth, PrefersColorScheme, RenderOptions } from './mediaQuery.ts'
 
 export const MediaQueryTypeId = Symbol.for('fashionable/query/mediaQuery')
 export type MediaQueryTypeId = typeof MediaQueryTypeId
+
+/**
+ * Phantom key holding a `MediaQuery`'s `Features` parameter. The runtime
+ * never stores a value here — known features are type-level brands, so a
+ * query is identical at runtime whatever its type knows (the curvy trait
+ * pattern, as `ColorSpace` uses for polar-ness).
+ *
+ * @internal
+ */
+export const MediaQueryFeatures: unique symbol = Symbol.for(
+  'fashionable/query/mediaQuery/features',
+)
+export type MediaQueryFeatures = typeof MediaQueryFeatures
 
 // ---------------------------------------------------------------------------
 // feature ADT
@@ -13,18 +26,23 @@ export type MediaQueryTypeId = typeof MediaQueryTypeId
 /** @internal */
 export type MediaFeature =
   | { readonly _tag: 'MinWidth'; readonly px: number }
+  | { readonly _tag: 'MaxWidth'; readonly px: number }
   | { readonly _tag: 'PrefersColorScheme'; readonly scheme: 'dark' | 'light' }
 
-// Feature kinds order by definition rank, then within kind: min-widths
+// Feature kinds order by definition rank, then within kind: widths
 // ascending by threshold, scheme values alphabetically. Conjunction is
 // commutative and idempotent, so the model sorts and dedups at
 // construction; equal queries compare equal however they were built.
+// max-width slots beside min-width — a new kind reshuffles no existing
+// output, so it takes the rank that reads best, not the end of the ladder.
 const featureRank = (feature: MediaFeature): number => {
   switch (feature._tag) {
     case 'MinWidth':
       return 0
-    case 'PrefersColorScheme':
+    case 'MaxWidth':
       return 1
+    case 'PrefersColorScheme':
+      return 2
   }
 }
 
@@ -33,7 +51,7 @@ const compareFeatures = (a: MediaFeature, b: MediaFeature): number => {
   if (rank !== 0) {
     return rank
   }
-  if (a._tag === 'MinWidth') {
+  if (a._tag === 'MinWidth' || a._tag === 'MaxWidth') {
     return a.px - (b as typeof a).px
   }
   const x = (a as Extract<MediaFeature, { _tag: 'PrefersColorScheme' }>).scheme
@@ -45,7 +63,7 @@ const featureEquals = (a: MediaFeature, b: MediaFeature): boolean => {
   if (a._tag !== b._tag) {
     return false
   }
-  if (a._tag === 'MinWidth') {
+  if (a._tag === 'MinWidth' || a._tag === 'MaxWidth') {
     return a.px === (b as typeof a).px
   }
   return a.scheme === (b as typeof a).scheme
@@ -53,7 +71,7 @@ const featureEquals = (a: MediaFeature, b: MediaFeature): boolean => {
 
 const featureHash = (feature: MediaFeature): number => {
   const h = Equal.hashString(feature._tag)
-  if (feature._tag === 'MinWidth') {
+  if (feature._tag === 'MinWidth' || feature._tag === 'MaxWidth') {
     return Equal.combine(h, Equal.hashNumber(feature.px))
   }
   return Equal.combine(h, Equal.hashString(feature.scheme))
@@ -64,6 +82,10 @@ const renderFeature = (feature: MediaFeature, syntax: 'prefix' | 'range'): strin
     case 'MinWidth': {
       const px = formatDecimals(feature.px, 5)
       return syntax === 'prefix' ? `(min-width: ${px}px)` : `(width >= ${px}px)`
+    }
+    case 'MaxWidth': {
+      const px = formatDecimals(feature.px, 5)
+      return syntax === 'prefix' ? `(max-width: ${px}px)` : `(width <= ${px}px)`
     }
     case 'PrefersColorScheme':
       return `(prefers-color-scheme: ${feature.scheme})`
@@ -144,7 +166,7 @@ const renderImpl = (query: MediaQuery, syntax: 'prefix' | 'range'): string =>
 // ---------------------------------------------------------------------------
 
 /** @internal */
-export const minWidth = (px: number): MediaQuery => {
+export const minWidth = (px: number): MediaQuery<MinWidth> => {
   invariant(
     Number.isFinite(px) && px >= 0,
     `min-width threshold must be a non-negative finite number of pixels, got ${px}`,
@@ -153,18 +175,78 @@ export const minWidth = (px: number): MediaQuery => {
 }
 
 /** @internal */
-export const prefersColorScheme = (scheme: 'dark' | 'light'): MediaQuery =>
-  new MediaQueryImpl([{ _tag: 'PrefersColorScheme', scheme }])
+export const maxWidth = (px: number): MediaQuery<MaxWidth> => {
+  invariant(
+    Number.isFinite(px) && px >= 0,
+    `max-width threshold must be a non-negative finite number of pixels, got ${px}`,
+  )
+  return new MediaQueryImpl([{ _tag: 'MaxWidth', px }])
+}
 
 /** @internal */
+export const prefersColorScheme = (scheme: 'dark' | 'light'): MediaQuery<PrefersColorScheme> =>
+  new MediaQueryImpl([{ _tag: 'PrefersColorScheme', scheme }])
+
+// `MediaQuery<never>` is the bottom of the covariant trait parameter, so
+// the erased implementation assigns to every public trait instantiation
+// (the same move as `Color<never>` under `mix`).
+/** @internal */
 export const and = dual<
-  (that: MediaQuery) => (self: MediaQuery) => MediaQuery,
-  (self: MediaQuery, that: MediaQuery) => MediaQuery
+  (that: MediaQuery) => (self: MediaQuery) => MediaQuery<never>,
+  (self: MediaQuery, that: MediaQuery) => MediaQuery<never>
 >(
   2,
-  (self: MediaQuery, that: MediaQuery): MediaQuery =>
+  (self: MediaQuery, that: MediaQuery): MediaQuery<never> =>
     new MediaQueryImpl(canonicalize([...featuresOf(self), ...featuresOf(that)])),
 )
+
+// Accessors are single generic signatures, not two-overload sets: an
+// overloaded function contributes only its last signature to inference
+// when passed higher-order (a pipe tail), which would erase the brand
+// guarantee exactly where it earns its keep. The conditional return
+// survives both positions.
+/** @internal */
+export function getMinWidth<T>(
+  query: MediaQuery<T>,
+): T extends MinWidth ? number : number | undefined
+/** @internal */
+export function getMinWidth(query: MediaQuery): number | undefined {
+  // Min-widths sort ascending in canonical order, so the last one is the
+  // conjunction's effective lower bound (every feature must hold).
+  return featuresOf(query).findLast((feature) => feature._tag === 'MinWidth')?.px
+}
+
+/** @internal */
+export function getMaxWidth<T>(
+  query: MediaQuery<T>,
+): T extends MaxWidth ? number : number | undefined
+/** @internal */
+export function getMaxWidth(query: MediaQuery): number | undefined {
+  // Max-widths sort ascending in canonical order, so the first one is the
+  // conjunction's effective upper bound (every feature must hold).
+  return featuresOf(query).find((feature) => feature._tag === 'MaxWidth')?.px
+}
+
+/** @internal */
+export function getPrefersColorScheme<T>(
+  query: MediaQuery<T>,
+): T extends PrefersColorScheme ? 'dark' | 'light' : 'dark' | 'light' | undefined
+/** @internal */
+export function getPrefersColorScheme(query: MediaQuery): 'dark' | 'light' | undefined {
+  return featuresOf(query).find((feature) => feature._tag === 'PrefersColorScheme')?.scheme
+}
+
+/** @internal */
+export const hasMinWidth = (query: MediaQuery): query is MediaQuery<MinWidth> =>
+  featuresOf(query).some((feature) => feature._tag === 'MinWidth')
+
+/** @internal */
+export const hasMaxWidth = (query: MediaQuery): query is MediaQuery<MaxWidth> =>
+  featuresOf(query).some((feature) => feature._tag === 'MaxWidth')
+
+/** @internal */
+export const hasPrefersColorScheme = (query: MediaQuery): query is MediaQuery<PrefersColorScheme> =>
+  featuresOf(query).some((feature) => feature._tag === 'PrefersColorScheme')
 
 /** @internal */
 export const render = (query: MediaQuery, options?: RenderOptions): string =>

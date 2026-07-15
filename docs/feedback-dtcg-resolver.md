@@ -1,64 +1,68 @@
-# Consumer feedback: dtcg-resolver (toward 0.2.0)
+# Consumer feedback: dtcg-resolver (toward 0.3.0)
 
-Field notes from fashionable's first consumer. Context: dtcg-resolver's CSS generator completed its consumer-standpoint review of 0.1.0 and shipped migration slice 1 against it — `Gate` placement projections are `Selector`/`MediaQuery` nodes, rule assembly is `mergeAll` + `coalesce` into per-selector rules, and the generated file adopted the nested output form. Remaining slices: typed requirement/`@font-face` channels, rank retirement (ordering from specificity + per-kind comparisons), stylesheet-valued emitter payloads, and the calc swap for fluid expressions. That last one is what the units work unblocks, so it gets the most space here.
+Field notes from fashionable's first consumer, round two. Everything from the 0.2.0 round shipped (typed units + context-lowered solve, `tan`/`atan2`, the color coverage, canonical-order stability, the render/QoL items) and the resolver is bumped and green against the release. Adoption state: migration slices 1–3 are in — modeled preludes and nested output, typed requirement/`@font-face` channels, and rank retirement. This round has one subject: what rank retirement revealed about `coalesce`, and the investigation it motivates. (MediaQuery part inspectability is deliberately not specified here — that work is already in flight; §2 notes where it becomes a dependency.)
 
-## 1. Units: late binding works — put quantities in the bindings, not in parallel tables
+Nothing in this document blocks the resolver — it restructured its assembly and shipped. The question is whether `strict` coalesce should be completable into the checkable gate it was built to be.
 
-The question on the table: units tracked as a third generic where anything ≠ `never` is unsolvable, versus authoring number-land trees with refs standing where units go — bind numbers to solve, bind pre-built unit-bearing expressions to serialize.
+## 1. The finding: strict coalesce refuses the resolver's real output
 
-The late-binding shape is right for the fluid consumer, with one correction. What fluid needs per curve segment is **one tree serving three duties**: build-time verification (solve at sample viewport widths, compare against the curve sampler), JS-side runtime evaluation (same solve), and CSS serialization. The position term is `(100vw − 320px) / 448px`; the output rim multiplies unit factors into number-land coefficients (`0.875rem + 0.4375 * (pow(t, 2) * 1rem)`).
+The resolver's scheme dimension emits dark values through a **two-rule mirror**: one logical placement, two physical spellings — `@media (prefers-color-scheme: dark)` under `:root:not([data-scheme='light'])`, and the bare manual toggle `:root[data-scheme='dark']`. Both selectors compute to specificity 0-2-0, and every rule behind the gate lands in **both** projections with identical values. When dark values also vary by breakpoint, the pre-coalesce sheet (group-major order) looks like:
 
-The trap in "bind numbers at solve time, unit-expressions at serialize time" is that it creates **two hand-maintained binding tables that must stay numerically in sync** — and in the linear-clamp form the unit-bearing leaves are the coefficients themselves (`clamp(0.875rem, …, 1.125rem)`), so the coefficients migrate out of the tree and into both tables. Nothing checks the tables against each other. That is the numeric-twin drift class again, relocated into the binding layer — the exact thing the solve/serialize duality exists to kill.
+```css
+:root:not([data-scheme='light']) { @media (prefers-color-scheme: dark) { --w: 375; } }
+:root[data-scheme='dark'] { --w: 375; }
+:root:not([data-scheme='light']) { @media (min-width: 1280px) and (prefers-color-scheme: dark) { --w: 475; } }
+:root[data-scheme='dark'] { @media (min-width: 1280px) { --w: 475; } }
+```
 
-The fix is small: **bindings hold quantities, and solve lowers each quantity to a number through a unit context.**
+`coalesce` anchors each selector at its first occurrence, so the third rule's block moves backward across the second — an intervening rule whose selector **ties** the coalesced selector. That is exactly the move `{ strict: true }` refuses, and the refusal fires on every media×scheme cross the resolver emits.
 
-- One table: `{ vp: Qty.vw(100), x0: Qty.px(320), span: Qty.px(448), u: Qty.rem(1) }`.
-- `solve(expr, bindings, context)` where the context supplies px-per-unit: `{ vw: sampleWidth / 100, rem: 16, px: 1 }`. Each quantity lowers to a number independently; arithmetic stays numeric. No operator-level dimensional analysis is needed for solving — leaf lowering is mathematically identical to a full unit-aware evaluator whenever the tree's units are coherent.
-- `serialize(expr, { bindings })` renders the same quantities as `100vw`, `320px`, `1rem`.
+The refusal is *correct* per the conservative contract. Consider an element that matches both selectors — `data-scheme='dark'` set, OS in dark mode — at ≥1280px. Equal specificity means source order is the whole cascade. Pre-move, the last applicable `--w` is the dark∘1280 value, `475`. Post-move, the `475`-under-`prefers∧1280` block sits *before* the toggle's base `375`, which now beats it. The output stays correct only because the toggle rule re-establishes `475` in its own `@media (min-width: 1280px)` block afterward. A producer that emitted the width-gated value behind the `prefers` half only — no toggle-side twin — would get silently broken CSS from the same coalesce: the co-match state computes `375` instead of `475`. Structurally the safe world and the broken world look identical, so a checker that can't reason about shadowing has to refuse both.
 
-The thing you verified is now the thing you shipped, including the units — the verify gate covers the binding table because there is only one.
+Consequence: **`strict: true` cannot serve as a build gate for mirror-shaped sheets** — the one output shape whose producer most wants a gate is the shape the gate rejects.
 
-Two companion pieces make this safe:
+## 2. Proposal: shadow-safe strict coalesce
 
-1. **Post-bind typecheck.** An incoherent tree (raw number added to a length) lowers to a number silently where a browser would reject the `calc()`. Once quantities are bound the tree is unit-annotated, so a runtime projection can run the CSS calc type algebra — same types add, multiplication merges types, same-dimension division yields `<number>` (the position term depends on this rule) — and throw on invalid combinations. Consumers run it inside their build gates; it recovers most of the static guarantee dynamically, where the tests already live.
-2. **The third generic still earns its keep — as a context requirement, not a solvability gate.** Once solve can lower quantity leaves from bindings, lowering in-tree quantity leaves is the identical code path, so "units ≠ never → unsolvable" becomes an unnecessary restriction. The nicer typing: `Units` tracks which unit kinds appear, and the solve overload for `Calc<Refs, Units ≠ never>` _requires_ a `UnitContext<Units>` argument with exactly those keys. Unsolvable-without-context, solvable-with — and authoring style (quantities in the tree vs. late-bound through refs) becomes taste rather than capability.
+The refusal case is over-broad in a provable way. The move above is safe because the crossed rule *re-establishes* the moved content: it contains a structurally-equal declaration under a query the moved block's query implies. That's a checkable theorem, not a trust-me. The investigation: refine strict mode from "any tie refuses" to "a tie refuses unless every moved declaration is provably shadowed."
 
-Whatever lands first, one property is worth protecting: **keep quantities structured data, never pre-rendered text**, so the full unit-aware solve remains a compatible extension instead of a breaking change.
+**The hazard, precisely.** Moving block `X` — query `Q`, declarations `D`, selector `A` — backward across a tying rule `R` (selector `B`): for every state where `Q` holds and an element matches both `A` and `B`, declarations in `D` that formerly overrode `R`'s same-property members now lose to them.
 
-Caveat to design around: under late binding, refs do double duty — the `var(--…)` channel and unit slots. A forgotten serialize binding emits `var(--x0)`: silently wrong CSS that the solve-side verification cannot catch, and `Stylesheet.refs`'s dependency report now lies. A serialize option asserting the residual ref set (`expectRefs: […]` or similar) would close that hole cheaply; consumers can also police `refs(sheet) ⊆ declared-names` themselves once values are expression-shaped.
+**The sufficient check, per declaration `(p, v)` in `D`:** among `R`'s members that set `p`,
 
-Trig interplay: with units landing, `cos`/`sin` should keep accepting both plain numbers (radians) and angle-typed subtrees — the closed-form inverse serializes as `cos(acos(…) / 3 − 2.094395102rad)`, and the 0.1.0 serializer's automatic `rad`-typing of acos-carrying subtrees already does the right thing. And the output rim needs number × length products through `pow` factors to be constructible (`0.4375 * (pow(var(--t), 2) * 1rem)`) — though any cascade-equivalent form is fine; byte-stability was relaxed on the consumer side.
+1. there exists a setter `(Q′, v′)` with `Q ⇒ Q′` and `v′` structurally equal to `v` — it applies whenever `X` does, re-establishing the value; and
+2. every setter *after* it whose query is co-satisfiable with `Q` also sets a value structurally equal to `v` — a later divergent setter could win in some co-match state.
 
-### 1b. Addendum: same-dimension division without dividing lengths
+If both hold for every declaration in `D`, the move cannot change any computed value: in every `Q`-state the last applicable `p`-setter in `R` equals `v`, and where none applies, the moved `d` still wins with `v`. Both query relations are computable on canonical and-sets of the current features — implication is "every part of `Q′` is implied by some part of `Q`" (`min-width: a ⇒ min-width: b` iff `a ≥ b`; `prefers-color-scheme` by exact match), co-satisfiability is "no conflicting `prefers` values" (min-widths are always jointly satisfiable). **This is where part inspectability becomes a dependency** — the checker needs to read features back out of a `MediaQuery`, which the in-flight work provides.
 
-Typed division (`length / length → number`) is still unshipped in Firefox — and it is load-bearing in every fluid declaration, so the resolver's current output is Firefox-broken today. The escape is the type-cast identity **`tan(atan2(A, B)) ≡ A / B`** for same-dimension operands: `atan2()` accepts dimension pairs and returns an angle, `tan()` returns a number. `tan(atan2(100vw − 320px, 448px))` is the position term as a `<number>`, exact in all quadrants (`tan`'s π-periodicity cancels `atan2`'s quadrant shifts; `B = 0` yields an infinity-ish value rather than division's invalid-at-computed-value).
+Worked against §1: the moved block `(prefers∧1280, --w: 475)` finds the toggle rule's `(@1280, 475)` — `prefers∧1280 ⇒ 1280` ✓, values equal ✓, nothing after it ✓ → allowed. The asymmetric producer's crossed rule offers only `(∅, 375)` — no qualifying setter → refused, which is the genuine bug caught.
 
-Support makes this strictly better, not a tradeoff: `tan`/`atan2` shipped FF 108 / Chrome 111 / Safari 15.4, _below_ the `pow()`/`acos()` floor (FF 118 / Chrome 120) fluid's nonlinear segments already require. Restructuring the math instead doesn't reach: linear segments could use the classic `intercept + slope·100vw` form but that abandons the whole-expression rem-tracking invariant, and nonlinear segments need a unitless `u` no matter what (`pow`/`acos` take numbers; CSS has no squared-length type).
+**Semantics and scope notes:**
 
-**Decision (Tim): the cast stays consumer-side** — fashionable won't carry a polyfill-adjacent serialize mode; the resolver emits the `tan(atan2())` form itself (shipped in its fluid emission). The library ask this leaves behind: **`tan` and `atan2` constructors in the calc module** (only `sin`/`cos`/`acos` exist in 0.1.0), with `atan2` accepting same-dimension quantity pairs once units land — that's what lets the resolver build the cast explicitly in the calc swap. Solve-side both are plain `Math` calls. For the record, css-values-5's `progress(value, start, end)` computes exactly this normalized position natively (Chrome shipped 2025; other engines converging) — the platform is arriving at the same primitive, and native division-by-length may eventually moot the cast.
+- No new option. `strict`'s documented contract is "throws when coalescing can change the cascade"; this refines *can change* from conservative to proved-safe. Strictly more permissive strict mode is a minor bump.
+- v1 scope: moved blocks and crossed-rule members that are declarations or `MediaRule`s of declarations (one level — today's real shapes). A crossed rule containing nested style rules refuses as before rather than reasoning through nesting.
+- Multiple crossed rules: the check runs per crossing; all must pass. Multiple pulls into the same anchor: process in encounter order, checking each against the rules it actually crosses in the current (partially coalesced) sheet.
+- Refusal messages should name the unshadowed declaration and the crossing rule — the failure is now specific enough to be actionable.
 
-## 2. Color coverage: `color(srgb …)` and `light-dark()`
+**Test matrix for the investigation:**
 
-Only `oklch` was modeled at 0.1.0. The resolver emits `color(srgb r g b)` for srgb-authored tokens and `light-dark(a, b)` for scheme-varying values — today as literal text, which keeps the entire color channel out of the expression layer: invisible to `refs`, no structural equality, string-assembly sites survive. With `Color.srgb` and `Color.lightDark` the scheme value-level strategy (collapse when schemes agree, else `light-dark`) becomes structural end-to-end.
+1. The mirror×media cross (§1) → allowed; output byte-equal to non-strict coalesce.
+2. Asymmetric producer (no toggle-side re-establishment) → refused.
+3. Partial shadow — moved block sets `--w` and `--x`, crossed rule re-establishes only `--w` → refused.
+4. Later divergence — crossed rule re-establishes `v`, then a later co-satisfiable setter gives a different value → refused.
+5. Disjoint queries — crossed setter under `prefers: light` against a moved `prefers: dark` block is not co-satisfiable → ignored; move allowed.
+6. Ties with no property overlap at all → allowed (already-safe case the current conservative check refuses).
+7. Non-tying crossings → unchanged from today.
 
-**Status: COMPLETE (2026-07-15).** `Color.srgb` and `Color.lightDark` shipped with the move of `Color` into the `data` module (`lightDark` takes whole colors — `LightDarkNode` over two `ColorNode`s, refs unioned, arms positional and nestable). The two remaining leaves followed the same day: `Keyword.none` (`fashionable/data`) models the missing-component keyword and color channels accept it (`oklch(0 0 none)`, the resolver's achromatic-hue emission), and named colors (`Color.named` / `Color.transparent`, which the resolver's `'none'` color value formats to). Every color form the resolver emits is now expressible in the model.
+**How the resolver would consume it.** Production assembly stays the per-selector fold (below) — but the shadow-safe gate gives the resolver an *independent test oracle*: build the group-major sheet, run `coalesce({ strict: true })`, and assert the result equals the fold's output. Two constructions, one checked by the library, agreeing — that's the verification shape the whole adoption has been chasing.
 
-## 3. Canonical orderings as documented-stable API
+## 3. What the resolver did meanwhile (context, not an ask)
 
-Deterministic rendering means rendered text becomes cache-key and test-pin material downstream. The media-query kind order (min-width before prefers-color-scheme) changed the resolver's emitted condition order relative to its old string core — fine as a one-time migration, but reorderings churn every consumer's output. One sentence in the docs — "canonical orders are stable within a major" — makes the contract explicit.
+Rank retirement replaced `mergeAll` + `coalesce` with a per-selector fold: one `StyleRule` per selector, anchored at first appearance over the ordered groups, members appended in group order. It emits the byte-identical sheet — so the cascade still rests on the mirror's lockstep property — but that property is now *constructional* in the resolver's gate algebra: declarations attach to the logical gate and all projections share the one array, so an emitter physically cannot populate the halves asymmetrically. The unverifiable claim moved from a repair operation's precondition into the producer's structure, which is the only place it can be enforced. Residual exposure, recorded for honesty: a future non-mirror gate targeting a selector that ties the mirror halves would reopen the question — §2's checker is also the right answer to that day.
 
-## 4. Smaller consistency and QoL items — ALL SHIPPED (2026-07-15, toward 0.2.0)
+## 4. The deeper alternative, parked: a projection rule
 
-- **`FontFaceRule.render` honors the precision context** — weight and metric-override numbers format at the inherited `precision` option (default unchanged, `decimals(5)`), completing the render-options family's "a key means the same thing wherever it appears" promise.
-- **`Stylesheet.isEmpty` / `RuleSet.isEmpty`** — structural predicates; `Stylesheet.render` now documents the guarantee that a sheet whose every node renders empty renders the empty string.
-- **`coalesce(sheet, { strict: true })`** — throws when a pull would cross an intervening style rule that ties the coalesced selector on specificity (conservative: tying-but-disjoint selectors also refuse). Default behavior unchanged.
-- **`unicode-range` on `FontFaceRule`** — `UnicodeRange = codepoint | [start, end]` (the `Weight` pattern), validated in `[0x0, 0x10FFFF]`; the descriptor is a set union so entries canonicalize (sorted, exact duplicates dropped) and construction order never matters; renders uppercase hex after `src`.
-- **Canonical-order stability** (§3) — pinned in `design.md` principle 2: canonical orders are stable within a major; reordering rendered text is a breaking change.
+The root cause, read structurally: the resolver has a *logical* rule that CSS forces into N physical spellings — one body, N `(selector, query?)` preludes. Fashionable could model that directly: a projection rule whose shared block renders as N style rules. Lockstep would be a fact of the model (one block, by type), strict coalesce would be trivially safe within a projection group, adjacency survives merging, and a future flat renderer keeps projections together for free. It is also a new node kind threading through containers, merge, refs, and render — real weight, with exactly one known consumer shape. Lean: park it. Revisit if a second mirror-shaped consumer appears, or if the §2 checker's implementation finds itself reconstructing "these rules are one rule" badly enough that modeling it would be simpler.
 
-## 5. What worked — keep these properties
+## 5. A cheap doc steer, independent of the above
 
-- **`merge` as a lawful monoid with `coalesce` separate.** The resolver's entire rule-assembly core is ~40 lines of group → sort → `mergeAll` → `coalesce`, and requirement dedup (the scheme contract emitted by many independent emitters) falls out of structural first-wins for free.
-- **The render-options family.** One `{ indent }` object at the top-level render call, composing through every renderer beneath.
-- **`Calc.ref` serializing bare as `var(--x)`.** Covers alias-chain emission (`--a: var(--b)`) with zero new API, and makes `Stylesheet.refs` a real dependency graph once declaration values go expression-shaped — the resolver plans to assert generated sheets are self-contained (every var read is a defined token) on the back of it.
-- **`Precision.decimals(5)` default + per-constant `significant(10)` annotations.** Mapped one-to-one onto the resolver's two formatting regimes (unit-carrying output values vs. unit-free inverse constants amplified through cubics).
-- **Namespace-only exports (`Calc.Calc`).** Effect-shaped and fine; the consumer migration is mechanical.
+`coalesce` reads today like an assembly step; it's really a *repair* operation for sheets whose construction you don't control. One sentence in its docs would have saved this consumer a detour: **"If strict coalesce refuses a sheet you built yourself, don't weaken the check — assemble in the target shape instead; refusal usually means the operation is reconstructing an intent you could express directly."**

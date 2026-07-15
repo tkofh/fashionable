@@ -89,7 +89,7 @@ The protocol stays internal; each namespace exports a typed dual `equals`. Merge
 ### 4.2 Canonical ordering
 
 - **Compound selector parts**: stable sort by `(kind rank, rendered text)` — type/universal, id, class, pseudo-class, attribute, `:not()`, pseudo-element — enforced in constructors. Any fixed order renders a semantically identical compound; simple pseudo-classes deliberately precede attribute qualifiers and negations so the root-scoped house shapes render in consumer 1's exact current spelling (`:root[data-scheme='dark']`, `:root:not([data-scheme='light'])`), keeping the migration byte-diffable. Duplicates are kept (`.a.a` legally has specificity (0,2,0)); the grammar's own constraints are enforced (at most one type/universal part, at most one pseudo-element).
-- **MediaQuery and-sets**: sort by `(feature-kind rank, within-kind key)` — `min-width` before `prefers-color-scheme`; min-widths ascending by threshold, scheme values alphabetically; identical features dedup (idempotent conjunction). New feature kinds append to the rank ladder rather than reshuffling it.
+- **MediaQuery and-sets**: sort by `(feature-kind rank, within-kind key)` — `min-width`, then `max-width`, then `prefers-color-scheme`; widths ascending by threshold, scheme values alphabetically; identical features dedup (idempotent conjunction). Shipped kinds never reorder — rendered text is consumers' cache-key material — but a new kind may slot anywhere in the ladder, since no existing query contains it and its insertion reshuffles no existing output (`max-width` took the slot beside `min-width` rather than the end).
 - **FontFaceRule unicode-range**: sorted by `(start, end)`, single codepoints before their degenerate ranges, exact duplicates dropped — the descriptor is a set union, so order carries no meaning.
 - **Calc trees are NOT canonicalized**: float arithmetic is not associative-commutative under solve, and serialized math should mirror authored math. `add(a, b)` and `add(b, a)` are different values.
 - **Declarations, rule-set members, stylesheet nodes are never sorted**: member order is cascade behavior; the library preserves it (capability, not policy).
@@ -130,11 +130,17 @@ Consumer-1 shapes: `:root` = `Selector.root`; `:root[data-scheme='dark']` = `Sel
 A canonically ordered, deduplicated and-set of features. `or`/`not` become new node kinds when a consumer arrives.
 
 ```ts
-MediaQuery.minWidth(px), MediaQuery.prefersColorScheme('dark' | 'light')
-MediaQuery.and(a, b)      // dual; union + canonical order + dedup
+MediaQuery.minWidth(px), MediaQuery.maxWidth(px), MediaQuery.prefersColorScheme('dark' | 'light')
+MediaQuery.and(a, b)             // dual; union + canonical order + dedup; known-feature brands intersect
+MediaQuery.getMinWidth(query)    // number on MediaQuery<MinWidth>, number | undefined otherwise; same shape for
+MediaQuery.getMaxWidth(query)    //   MaxWidth and PrefersColorScheme ('dark' | 'light')
+MediaQuery.getPrefersColorScheme(query)
+MediaQuery.hasMinWidth(query)    // guards: query is MediaQuery<MinWidth>; same for the other two brands
 MediaQuery.render(query, options?): string
 MediaQuery.equals
 ```
+
+Statically known features are type-level brands (the curvy trait pattern, exactly as `ColorSpace` carries polar-ness): `MediaQuery<Features = unknown>` accumulates them, each constructor brands its result (`minWidth` returns `MediaQuery<MinWidth>`), `and` intersects both sides' brands, the `has*` guards recover a brand from a plain query at runtime, and the `get*` accessors key their return type on it — a bare value where the type proves the feature, `| undefined` where it doesn't. With stacked thresholds the accessor reports the conjunction's effective bound: the largest `min-width`, the smallest `max-width`. The accessors are single generic signatures with conditional returns, not overload pairs: an overloaded function contributes only its last signature to higher-order inference, so a pipe-tail accessor would lose the guarantee. Brands erase at runtime; the impl omits the optional phantom key, so the erased internals assign to every instantiation, with `MediaQuery<never>` as the internal bottom (the `Color<never>` move).
 
 The model is semantic (a width lower bound); the rendered syntax is a **render option** (user decision): `mediaSyntax: 'prefix' | 'range'`, default `'prefix'` (`(min-width: 768px)`) so consumer 1's migration diffs cleanly; `'range'` renders `(width >= 768px)`. The option is named `mediaSyntax` on `MediaQuery.render` itself, matching every container's render options (the shared-vocabulary rule, section 7), and changes text only, never meaning.
 
