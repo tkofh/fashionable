@@ -1,3 +1,4 @@
+import type { ApplyBindings, Bindings, Input } from '#calc/calc'
 import {
   bind as bindCalc,
   isCalc,
@@ -5,7 +6,6 @@ import {
   serialize as serializeCalc,
   toCalc,
 } from '#calc/calc.internal'
-import type { ApplyBindings, Bindings, Input } from '#calc/calc'
 import type { Precision } from '#calc/precision'
 import {
   bind as bindColor,

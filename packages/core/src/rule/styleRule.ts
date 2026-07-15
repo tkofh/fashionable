@@ -83,7 +83,7 @@ export type RenderOptions = RuleSetRenderOptions
  * empty renders as the empty string.
  *
  * A fragment renderer: whole sheets render via `Stylesheet.render`,
- * which also offers the flat, un-nested projection.
+ * which emits each rule in this same nested shape.
  *
  * @param rule - The rule to render.
  * @param options - Optional indentation unit, precision context, and media syntax.

@@ -220,9 +220,8 @@ describe('consumers', () => {
           ':root {\n  --stroke-card: light-dark(#d0d0d0, #3a3a3a);\n}',
           "@font-face {\n  font-family: 'Inter';\n  font-weight: 1 1000;\n  font-style: normal;\n  font-display: swap;\n  src: url('/fonts/inter.woff2') format('woff2');\n}",
           "@font-face {\n  font-family: 'Inter Fallback';\n  src: local('Arial');\n  ascent-override: 95%;\n  descent-override: 25%;\n  line-gap-override: 5%;\n  size-adjust: 112.1577%;\n}",
-          ":root {\n  --fonts-body: 'Inter', 'Inter Fallback', sans-serif;\n  --type-body-size: 1.5rem;\n  --type-body-size--t: cos(acos(clamp(-1, var(--type-fluid-u), 1)) / 3 - 2.0944rad);\n  --type-body-weight: 400;\n}",
-          '@media (min-width: 1280px) {\n  :root {\n    --type-body-size: 3rem;\n  }\n}',
-          "@media (prefers-color-scheme: dark) {\n  :root:not([data-scheme='light']) {\n    --type-body-weight: 375;\n  }\n}",
+          ":root {\n  --fonts-body: 'Inter', 'Inter Fallback', sans-serif;\n  --type-body-size: 1.5rem;\n  --type-body-size--t: cos(acos(clamp(-1, var(--type-fluid-u), 1)) / 3 - 2.0944rad);\n  --type-body-weight: 400;\n  @media (min-width: 1280px) {\n    --type-body-size: 3rem;\n  }\n}",
+          ":root:not([data-scheme='light']) {\n  @media (prefers-color-scheme: dark) {\n    --type-body-weight: 375;\n  }\n}",
           ":root[data-scheme='dark'] {\n  --type-body-weight: 375;\n}",
         ].join('\n\n'),
       )
@@ -237,13 +236,12 @@ describe('consumers', () => {
       expect(coalesced.nodes).toHaveLength(6)
       expect(Stylesheet.render(coalesced, { indent: '  ' })).toBe(
         [
-          ":root {\n  color-scheme: light dark;\n  --surface: light-dark(color(srgb 1 1 1), color(srgb 0 0 0));\n  --stroke-card: light-dark(#d0d0d0, #3a3a3a);\n  --fonts-body: 'Inter', 'Inter Fallback', sans-serif;\n  --type-body-size: 1.5rem;\n  --type-body-size--t: cos(acos(clamp(-1, var(--type-fluid-u), 1)) / 3 - 2.0944rad);\n  --type-body-weight: 400;\n}",
-          '@media (min-width: 1280px) {\n  :root {\n    --type-body-size: 3rem;\n  }\n}',
+          ":root {\n  color-scheme: light dark;\n  --surface: light-dark(color(srgb 1 1 1), color(srgb 0 0 0));\n  --stroke-card: light-dark(#d0d0d0, #3a3a3a);\n  --fonts-body: 'Inter', 'Inter Fallback', sans-serif;\n  --type-body-size: 1.5rem;\n  --type-body-size--t: cos(acos(clamp(-1, var(--type-fluid-u), 1)) / 3 - 2.0944rad);\n  --type-body-weight: 400;\n  @media (min-width: 1280px) {\n    --type-body-size: 3rem;\n  }\n}",
           ":root[data-scheme='light'] {\n  color-scheme: light;\n}",
           ":root[data-scheme='dark'] {\n  color-scheme: dark;\n  --type-body-weight: 375;\n}",
           "@font-face {\n  font-family: 'Inter';\n  font-weight: 1 1000;\n  font-style: normal;\n  font-display: swap;\n  src: url('/fonts/inter.woff2') format('woff2');\n}",
           "@font-face {\n  font-family: 'Inter Fallback';\n  src: local('Arial');\n  ascent-override: 95%;\n  descent-override: 25%;\n  line-gap-override: 5%;\n  size-adjust: 112.1577%;\n}",
-          "@media (prefers-color-scheme: dark) {\n  :root:not([data-scheme='light']) {\n    --type-body-weight: 375;\n  }\n}",
+          ":root:not([data-scheme='light']) {\n  @media (prefers-color-scheme: dark) {\n    --type-body-weight: 375;\n  }\n}",
         ].join('\n\n'),
       )
     })

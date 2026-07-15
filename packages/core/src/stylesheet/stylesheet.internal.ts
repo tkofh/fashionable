@@ -1,26 +1,18 @@
-import {
-  isDeclaration,
-  renderWith as renderDeclaration,
-} from '#declaration/declaration.internal'
 import { isFontFaceRule, render as renderFontFace } from '#fontFace/fontFaceRule.internal'
 import * as Equal from '#internal/equal'
 import { EMPTY_REFS, unionRefs } from '#internal/refs'
-import { isPropertyRule, render as renderPropertyRule } from '#property/propertyRule.internal'
 import type { RenderOptions as PropertyRenderOptions } from '#property/propertyRule'
-import { and as andQuery, render as renderQuery } from '#query/mediaQuery.internal'
-import type { MediaQuery } from '#query/mediaQuery'
+import { isPropertyRule, render as renderPropertyRule } from '#property/propertyRule.internal'
 import {
   refSetOf,
   type RenderContext,
   renderStyleRuleBlock,
-  requireMediaRule,
   resolveRenderOptions,
 } from '#rule/rule.internal'
-import { concat as concatBlocks } from '#rule/ruleSet.internal'
 import type { RuleSet } from '#rule/ruleSet'
-import { isStyleRule, make as makeStyleRule } from '#rule/styleRule.internal'
+import { concat as concatBlocks } from '#rule/ruleSet.internal'
 import type { StyleRule } from '#rule/styleRule'
-import { render as renderSelector } from '#selector/selector.internal'
+import { isStyleRule, make as makeStyleRule } from '#rule/styleRule.internal'
 import type { Selector } from '#selector/selector'
 import { dual, Pipeable } from '#util'
 import type { Node, NodeRefs, RenderOptions, Stylesheet } from './stylesheet.ts'
@@ -229,65 +221,15 @@ const propertyRenderOptions = (context: RenderContext): PropertyRenderOptions =>
     ? { indent: context.indent }
     : { indent: context.indent, precision: context.precision }
 
-const flatBlock = (
-  selector: string,
-  query: MediaQuery | undefined,
-  lines: ReadonlyArray<string>,
-  context: RenderContext,
-): string => {
-  if (query === undefined) {
-    const inner = lines.map((line) => `${context.indent}${line}`).join('\n')
-    return `${selector} {\n${inner}\n}`
-  }
-  const inner = lines.map((line) => `${context.indent}${context.indent}${line}`).join('\n')
-  const prelude = renderQuery(query, { mediaSyntax: context.mediaSyntax })
-  return `@media ${prelude} {\n${context.indent}${selector} {\n${inner}\n${context.indent}}\n}`
-}
-
-const flatStyleRule = (
-  selector: string,
-  query: MediaQuery | undefined,
-  block: RuleSet<string>,
-  context: RenderContext,
-  sections: Array<string>,
-): void => {
-  let run: Array<string> = []
-  const flush = (): void => {
-    if (run.length > 0) {
-      sections.push(flatBlock(selector, query, run, context))
-      run = []
-    }
-  }
-  for (const member of block.members) {
-    if (isDeclaration(member)) {
-      run.push(renderDeclaration(member, context.precision))
-      continue
-    }
-    const media = requireMediaRule(member)
-    flush()
-    flatStyleRule(
-      selector,
-      query === undefined ? media.query : andQuery(query, media.query),
-      media.block,
-      context,
-      sections,
-    )
-  }
-  flush()
-}
-
 /** @internal */
 export const render = (sheet: Stylesheet<string>, options?: RenderOptions): string => {
   const context = resolveRenderOptions(options)
-  const format = options?.format ?? 'flat'
   const sections: Array<string> = []
   for (const node of sheet.nodes) {
     if (isFontFaceRule(node)) {
       sections.push(renderFontFace(node, { indent: context.indent }))
     } else if (isPropertyRule(node)) {
       sections.push(renderPropertyRule(node, propertyRenderOptions(context)))
-    } else if (format === 'flat') {
-      flatStyleRule(renderSelector(node.selector), undefined, node.block, context, sections)
     } else {
       const section = renderStyleRuleBlock(node.selector, node.block, context)
       if (section !== '') {

@@ -1,3 +1,4 @@
+import type { ApplyBindings, Bindings, Input, SerializeOptions } from '#calc/calc'
 import {
   type CalcNode,
   collectBindings,
@@ -10,7 +11,6 @@ import {
   substituteNode,
   toCalc,
 } from '#calc/calc.internal'
-import type { ApplyBindings, Bindings, Input, SerializeOptions } from '#calc/calc'
 import { toSpec } from '#calc/precision.internal'
 import * as Equal from '#internal/equal'
 import { DEFAULT_FORMAT, type FormatSpec } from '#internal/format'

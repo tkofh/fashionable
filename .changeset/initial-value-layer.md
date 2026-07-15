@@ -1,5 +1,5 @@
 ---
-"fashionable": minor
+'fashionable': minor
 ---
 
 Initial value layer.

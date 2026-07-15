@@ -1,6 +1,6 @@
 import * as Equal from '#internal/equal'
-import { render as renderSelector } from '#selector/selector.internal'
 import type { Selector } from '#selector/selector'
+import { render as renderSelector } from '#selector/selector.internal'
 import { dual, Pipeable } from '#util'
 import { refSetOf, renderStyleRuleBlock, resolveRenderOptions } from './rule.internal.ts'
 import type { RuleSet } from './ruleSet.ts'

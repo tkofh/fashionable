@@ -41,9 +41,8 @@ export interface Stylesheet<out Refs extends string = string> extends Pipeable {
  *
  * Deliberately absent are `Declaration` — CSS has no top-level
  * declarations — and `MediaRule`: media enters the model nested inside a
- * style rule's block, and the flat renderer distributes the prelude back
- * out to the traditional top-level `@media` form. The full
- * unrepresentability scheme lives in `docs/design.md`.
+ * style rule's block, and renders there. The full unrepresentability
+ * scheme lives in `docs/design.md`.
  *
  * @since 0.1.0
  */
@@ -246,46 +245,29 @@ export const refs: <Refs extends string>(sheet: Stylesheet<Refs>) => ReadonlySet
   internal.refs
 
 /**
- * Options for `render` — the top of the render-options family: it
- * extends `RuleSet.RenderOptions` (and through it the family base,
- * `MediaQuery.RenderOptions`) with the sheet-level `format` choice, so
- * it is a superset of every other module's render options and one
- * options object composes across the library's `render` functions.
+ * Options for `render`: the indentation unit, precision context, and
+ * media syntax, shared with the rule renderers. One options value
+ * composes across every `render` in the library — the renderers that
+ * take fewer keys accept it and ignore the rest.
  *
- * Options change text, never meaning: any combination renders the same
- * cascade from the same sheet.
+ * Options change text, never meaning: the same sheet renders the same
+ * cascade under any of them.
  *
  * @since 0.1.0
  */
-export interface RenderOptions extends RuleSetRenderOptions {
-  /**
-   * The output shape. `'flat'` (the default) un-nests `@media` by
-   * prelude distribution; `'nested'` emits the model's own nested form.
-   * Both cascade identically.
-   */
-  readonly format?: 'flat' | 'nested'
-}
+export type RenderOptions = RuleSetRenderOptions
 
 /**
  * Renders the whole sheet as CSS text: at-rule nodes as their own
- * blocks, style rules per the `format` option.
- *
- * The default `'flat'` format un-nests by prelude distribution: walking
- * a style rule carries the selector and the and-composition of the media
- * queries passed through (deduplicated and canonically ordered, so
- * composition order cannot change the text), and each maximal run of
- * consecutive declarations emits one `selector { ... }` block — wrapped
- * in `@media` when queries apply — at the position its first declaration
- * held. The `'nested'` format instead emits each style rule as
- * `StyleRule.render` does, `@media` blocks kept inside. Both formats
- * cascade identically because member order is preserved either way.
+ * blocks, style rules in nested form with their `@media` blocks kept
+ * inside, in member order.
  *
  * Empty blocks emit nothing. Top-level sections join with one blank
  * line, without a trailing newline. Unbound references render as
  * `var(--name)`.
  *
  * @param sheet - The stylesheet to render.
- * @param options - Optional format, indentation unit, precision context, and media syntax.
+ * @param options - Optional indentation unit, precision context, and media syntax.
  * @returns Deterministic CSS text.
  * @throws `Error` when a style rule nests inside another rule's block — selector composition (`&`) is a later extension, not part of v1 rendering.
  * @example
@@ -299,8 +281,6 @@ export interface RenderOptions extends RuleSetRenderOptions {
  *   ),
  * )
  * Stylesheet.render(sheet)
- * // ":root {\n\t--gutter: 16;\n}\n\n@media (min-width: 768px) {\n\t:root {\n\t\t--gutter: 24;\n\t}\n}"
- * Stylesheet.render(sheet, { format: 'nested' })
  * // ":root {\n\t--gutter: 16;\n\t@media (min-width: 768px) {\n\t\t--gutter: 24;\n\t}\n}"
  * ```
  * @since 0.1.0

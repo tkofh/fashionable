@@ -1,10 +1,10 @@
+import type { Calc } from '#calc/calc'
 import {
   isCalc,
   refsOf as calcRefsOf,
   serialize as serializeCalc,
   toCalc,
 } from '#calc/calc.internal'
-import type { Calc } from '#calc/calc'
 import { refsOf as colorRefsOf, serialize as serializeColor } from '#color/color.internal'
 import * as Equal from '#internal/equal'
 import { DEFAULT_INDENT, quote, renderBlock } from '#internal/render'

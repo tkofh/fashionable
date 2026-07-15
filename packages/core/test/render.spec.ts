@@ -9,12 +9,6 @@ import { MediaRule, RuleSet, StyleRule } from '#rule'
 import { Selector } from '#selector'
 import { Stylesheet } from '#stylesheet'
 
-const declarationsOf = (css: string): Array<string> =>
-  css.split('\n').flatMap((line) => {
-    const trimmed = line.trim()
-    return trimmed.endsWith(';') ? [trimmed] : []
-  })
-
 describe('render', () => {
   describe('fragments', () => {
     test('a declaration renders as name: value;', () => {
@@ -72,7 +66,7 @@ describe('render', () => {
     })
   })
 
-  describe('flat format (default)', () => {
+  describe('stylesheet', () => {
     test('renders a bare style rule', () => {
       const sheet = Stylesheet.make(
         StyleRule.make(
@@ -83,7 +77,7 @@ describe('render', () => {
       expect(Stylesheet.render(sheet)).toBe(':root {\n\t--gutter: 16;\n\tcolor: red;\n}')
     })
 
-    test('distributes a nested media prelude to a top-level block', () => {
+    test('keeps a nested media block inside its rule', () => {
       const sheet = Stylesheet.make(
         StyleRule.make(
           Selector.root,
@@ -93,7 +87,7 @@ describe('render', () => {
         ),
       )
       expect(Stylesheet.render(sheet)).toBe(
-        '@media (min-width: 768px) {\n\t:root {\n\t\t--gap: 24;\n\t}\n}',
+        ':root {\n\t@media (min-width: 768px) {\n\t\t--gap: 24;\n\t}\n}',
       )
     })
 
@@ -109,27 +103,29 @@ describe('render', () => {
         ),
       )
       expect(Stylesheet.render(sheet)).toBe(
-        [
-          ':root {\n\t--a: 1;\n}',
-          '@media (min-width: 768px) {\n\t:root {\n\t\t--a: 2;\n\t}\n}',
-          ':root {\n\t--b: 3;\n}',
-        ].join('\n\n'),
+        ':root {\n\t--a: 1;\n\t@media (min-width: 768px) {\n\t\t--a: 2;\n\t}\n\t--b: 3;\n}',
       )
     })
 
-    test('and-composes media through nesting, canonically ordered', () => {
-      const inner = MediaRule.make(
-        MediaQuery.minWidth(768),
-        RuleSet.make(Declaration.make('--x', 1)),
-      )
+    test('nests media within media', () => {
       const sheet = Stylesheet.make(
         StyleRule.make(
           Selector.root,
-          RuleSet.make(MediaRule.make(MediaQuery.prefersColorScheme('dark'), RuleSet.make(inner))),
+          RuleSet.make(
+            MediaRule.make(
+              MediaQuery.minWidth(768),
+              RuleSet.make(
+                MediaRule.make(
+                  MediaQuery.prefersColorScheme('dark'),
+                  RuleSet.make(Declaration.make('--x', 1)),
+                ),
+              ),
+            ),
+          ),
         ),
       )
       expect(Stylesheet.render(sheet)).toBe(
-        '@media (min-width: 768px) and (prefers-color-scheme: dark) {\n\t:root {\n\t\t--x: 1;\n\t}\n}',
+        ':root {\n\t@media (min-width: 768px) {\n\t\t@media (prefers-color-scheme: dark) {\n\t\t\t--x: 1;\n\t\t}\n\t}\n}',
       )
     })
 
@@ -159,7 +155,7 @@ describe('render', () => {
         ),
       )
       expect(Stylesheet.render(sheet, { mediaSyntax: 'range' })).toBe(
-        '@media (width >= 768px) {\n\t:root {\n\t\t--gap: 24;\n\t}\n}',
+        ':root {\n\t@media (width >= 768px) {\n\t\t--gap: 24;\n\t}\n}',
       )
     })
 
@@ -188,69 +184,6 @@ describe('render', () => {
         ),
       )
       expect(() => Stylesheet.render(sheet)).toThrow('nested style rule')
-    })
-  })
-
-  describe('nested format', () => {
-    test('keeps media inside its style rule, declarations direct', () => {
-      const sheet = Stylesheet.make(
-        StyleRule.make(
-          Selector.root,
-          RuleSet.make(
-            Declaration.make('--a', 1),
-            MediaRule.make(MediaQuery.minWidth(768), RuleSet.make(Declaration.make('--a', 2))),
-            Declaration.make('--b', 3),
-          ),
-        ),
-      )
-      expect(Stylesheet.render(sheet, { format: 'nested' })).toBe(
-        ':root {\n\t--a: 1;\n\t@media (min-width: 768px) {\n\t\t--a: 2;\n\t}\n\t--b: 3;\n}',
-      )
-    })
-
-    test('nests media within media', () => {
-      const sheet = Stylesheet.make(
-        StyleRule.make(
-          Selector.root,
-          RuleSet.make(
-            MediaRule.make(
-              MediaQuery.minWidth(768),
-              RuleSet.make(
-                MediaRule.make(
-                  MediaQuery.prefersColorScheme('dark'),
-                  RuleSet.make(Declaration.make('--x', 1)),
-                ),
-              ),
-            ),
-          ),
-        ),
-      )
-      expect(Stylesheet.render(sheet, { format: 'nested' })).toBe(
-        ':root {\n\t@media (min-width: 768px) {\n\t\t@media (prefers-color-scheme: dark) {\n\t\t\t--x: 1;\n\t\t}\n\t}\n}',
-      )
-    })
-
-    test('skips empty rules and empty nested media', () => {
-      const sheet = Stylesheet.make(
-        StyleRule.make(Selector.root, RuleSet.empty),
-        StyleRule.make(
-          Selector.class('btn'),
-          RuleSet.make(MediaRule.make(MediaQuery.minWidth(768), RuleSet.empty)),
-        ),
-      )
-      expect(Stylesheet.render(sheet, { format: 'nested' })).toBe('')
-    })
-
-    test('throws on a nested style rule', () => {
-      const sheet = Stylesheet.make(
-        StyleRule.make(
-          Selector.root,
-          RuleSet.make(
-            StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('color', 'red'))),
-          ),
-        ),
-      )
-      expect(() => Stylesheet.render(sheet, { format: 'nested' })).toThrow('nested style rule')
     })
   })
 
@@ -286,22 +219,8 @@ describe('render', () => {
       ),
     )
 
-    test('flat', () => {
+    test('renders the consumer-1 shape in nested form', () => {
       expect(Stylesheet.render(sheet, { indent: '  ' })).toBe(
-        [
-          "@property --depth {\n  syntax: '<number>';\n  inherits: false;\n  initial-value: 0;\n}",
-          "@font-face {\n  font-family: 'Inter';\n  font-display: swap;\n  src: url('/fonts/inter.woff2') format('woff2');\n}",
-          ':root {\n  --gutter: 16;\n}',
-          '@media (min-width: 768px) {\n  :root {\n    --gutter: 24;\n  }\n}',
-          '@media (min-width: 1280px) {\n  :root {\n    --gutter: 48;\n  }\n}',
-          ":root[data-scheme='dark'] {\n  --scheme: dark;\n}",
-          "@media (prefers-color-scheme: dark) {\n  :root:not([data-scheme='light']) {\n    --scheme: dark;\n  }\n}",
-        ].join('\n\n'),
-      )
-    })
-
-    test('nested', () => {
-      expect(Stylesheet.render(sheet, { format: 'nested', indent: '  ' })).toBe(
         [
           "@property --depth {\n  syntax: '<number>';\n  inherits: false;\n  initial-value: 0;\n}",
           "@font-face {\n  font-family: 'Inter';\n  font-display: swap;\n  src: url('/fonts/inter.woff2') format('woff2');\n}",
@@ -309,12 +228,6 @@ describe('render', () => {
           ":root[data-scheme='dark'] {\n  --scheme: dark;\n}",
           ":root:not([data-scheme='light']) {\n  @media (prefers-color-scheme: dark) {\n    --scheme: dark;\n  }\n}",
         ].join('\n\n'),
-      )
-    })
-
-    test('flat and nested emit the same declarations in the same cascade order', () => {
-      expect(declarationsOf(Stylesheet.render(sheet))).toEqual(
-        declarationsOf(Stylesheet.render(sheet, { format: 'nested' })),
       )
     })
   })

@@ -1,6 +1,6 @@
 import * as Equal from '#internal/equal'
-import { render as renderQuery } from '#query/mediaQuery.internal'
 import type { MediaQuery } from '#query/mediaQuery'
+import { render as renderQuery } from '#query/mediaQuery.internal'
 import { dual, Pipeable } from '#util'
 import type { MediaRule, RenderOptions } from './mediaRule.ts'
 import { refSetOf, renderMediaRuleBlock, resolveRenderOptions } from './rule.internal.ts'

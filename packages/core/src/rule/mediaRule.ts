@@ -10,8 +10,7 @@ import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.t
  * This is the nested form — a member of an enclosing style rule's block,
  * per the CSSNestedDeclarations grammar — not a top-level `@media`
  * statement. Media enters the model inside a style rule
- * (`:root { @media ... { ... } }`); a flat renderer distributes the
- * enclosing selector to emit traditional top-level blocks. The `Refs`
+ * (`:root { @media ... { ... } }`) and renders there, nested. The `Refs`
  * parameter is the block's.
  *
  * Construct via `make`.
@@ -88,8 +87,7 @@ export type RenderOptions = RuleSetRenderOptions
  * renders as the empty string.
  *
  * A fragment renderer: whole sheets render via `Stylesheet.render`,
- * whose flat projection instead distributes the query out to top-level
- * `@media selector { ... }` blocks.
+ * which emits each rule's media in this same nested shape.
  *
  * @param rule - The rule to render.
  * @param options - Optional indentation unit, precision context, and media syntax.

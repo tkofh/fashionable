@@ -18,10 +18,10 @@ import {
   renderWith as renderDeclaration,
 } from '#declaration/declaration.internal'
 import { DEFAULT_INDENT } from '#internal/render'
-import { render as renderQuery } from '#query/mediaQuery.internal'
 import type { MediaQuery } from '#query/mediaQuery'
-import { render as renderSelector } from '#selector/selector.internal'
+import { render as renderQuery } from '#query/mediaQuery.internal'
 import type { Selector } from '#selector/selector'
+import { render as renderSelector } from '#selector/selector.internal'
 import { invariant } from '#util'
 import type { MediaRule } from './mediaRule.ts'
 import type { Member, RuleSet } from './ruleSet.ts'

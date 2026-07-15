@@ -17,6 +17,28 @@
   ],
   "type": "module",
   "sideEffects": false,
+  "imports": {
+    "#util": "./src/utils.ts",
+    "#calc": "./src/calc/index.ts",
+    "#calc/*": "./src/calc/*.ts",
+    "#color": "./src/color/index.ts",
+    "#color/*": "./src/color/*.ts",
+    "#declaration": "./src/declaration/index.ts",
+    "#declaration/*": "./src/declaration/*.ts",
+    "#fontFace": "./src/fontFace/index.ts",
+    "#fontFace/*": "./src/fontFace/*.ts",
+    "#internal/*": "./src/internal/*.ts",
+    "#property": "./src/property/index.ts",
+    "#property/*": "./src/property/*.ts",
+    "#query": "./src/query/index.ts",
+    "#query/*": "./src/query/*.ts",
+    "#rule": "./src/rule/index.ts",
+    "#rule/*": "./src/rule/*.ts",
+    "#selector": "./src/selector/index.ts",
+    "#selector/*": "./src/selector/*.ts",
+    "#stylesheet": "./src/stylesheet/index.ts",
+    "#stylesheet/*": "./src/stylesheet/*.ts"
+  },
   "exports": {
     "./calc": {
       "types": "./dist/calc/index.d.ts",
@@ -58,28 +80,6 @@
       "types": "./dist/utils.d.ts",
       "import": "./dist/utils.mjs"
     }
-  },
-  "imports": {
-    "#util": "./src/utils.ts",
-    "#calc": "./src/calc/index.ts",
-    "#calc/*": "./src/calc/*.ts",
-    "#color": "./src/color/index.ts",
-    "#color/*": "./src/color/*.ts",
-    "#declaration": "./src/declaration/index.ts",
-    "#declaration/*": "./src/declaration/*.ts",
-    "#fontFace": "./src/fontFace/index.ts",
-    "#fontFace/*": "./src/fontFace/*.ts",
-    "#internal/*": "./src/internal/*.ts",
-    "#property": "./src/property/index.ts",
-    "#property/*": "./src/property/*.ts",
-    "#query": "./src/query/index.ts",
-    "#query/*": "./src/query/*.ts",
-    "#rule": "./src/rule/index.ts",
-    "#rule/*": "./src/rule/*.ts",
-    "#selector": "./src/selector/index.ts",
-    "#selector/*": "./src/selector/*.ts",
-    "#stylesheet": "./src/stylesheet/index.ts",
-    "#stylesheet/*": "./src/stylesheet/*.ts"
   },
   "publishConfig": {
     "access": "public"

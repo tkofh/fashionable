@@ -20,7 +20,7 @@ Calc.of(0.8377580409572781, Precision.significant(10)) // per-constant precision
 
 ## Stylesheets
 
-Build a stylesheet from typed parts — selectors, declarations, rules, nested media — then render it flat or nested from the one model.
+Build a stylesheet from typed parts — selectors, declarations, rules, nested media — then render it to CSS.
 
 ```ts
 import { Calc } from 'fashionable/calc'
@@ -44,26 +44,10 @@ const card = StyleRule.make(
 
 const sheet = Stylesheet.make(card) // Stylesheet<'space'>
 
-Stylesheet.render(sheet, { format: 'flat', indent: '  ' }) // media hoisted to top-level blocks
-Stylesheet.render(sheet, { format: 'nested', indent: '  ' }) // @media nested in the rule
+Stylesheet.render(sheet, { indent: '  ' })
 ```
 
-Both formats describe the same cascade. Flat hoists the `@media` to its own top-level block:
-
-```css
-.card {
-  padding: 1rem;
-  gap: calc(var(--space) * 2);
-}
-
-@media (min-width: 768px) {
-  .card {
-    gap: calc(var(--space) * 3);
-  }
-}
-```
-
-Nested keeps it inside the rule:
+Nesting is preserved as authored — `@media` stays inside its rule:
 
 ```css
 .card {
@@ -83,18 +67,18 @@ The parameter threads up through the model, so `Declaration<Refs>`, `RuleSet<Ref
 
 ## Modules
 
-| Subpath                   | Contents                                                                                                                                                                                                          |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fashionable/calc`        | `Calc<Refs>` number expressions — `of`, `ref`, arithmetic, `pow`/`signedPow`, `min`/`max`/`clamp`, `lerp`, trig (`sin`/`cos`/`acos`), `bind`/`solve`/`serialize`, `Precision`                                     |
-| `fashionable/color`       | `Color<Refs>` — `oklch()` over calc expressions                                                                                                                                                                   |
-| `fashionable/selector`    | `Selector` compound selectors — typed parts incl. `attribute` and `not`, canonical ordering, computed `Specificity`                                                                                               |
-| `fashionable/query`       | `MediaQuery` — canonical and-sets of `minWidth` / `prefersColorScheme`, prefix or range rendering; the future home of container and supports queries                                                              |
-| `fashionable/declaration` | `Declaration<Refs>` — a property name and a value (literal text, `Calc`, or `Color`), `bind`, refs threading                                                                                                      |
-| `fashionable/rule`        | `RuleSet<Refs>` ordered blocks, `StyleRule<Refs>`, nested `MediaRule<Refs>` — order preserved, never sorted                                                                                                       |
-| `fashionable/font-face`   | `FontFaceRule` — multi-src, weight ranges, metric overrides                                                                                                                                                       |
-| `fashionable/property`    | `PropertyRule` with `PropertySyntax` — a modeled syntax descriptor that types the initial value                                                                                                                   |
-| `fashionable/stylesheet`  | `Stylesheet<Refs>` top level — `merge` (a lawful monoid: order-preserving, structurally deduped), `mergeAll`, opt-in `coalesce`, refs aggregation, and `render` (flat or nested format — same cascade either way) |
-| `fashionable/utils`       | `pipe`, `flow`, `dual`, `Pipeable`, `invariant`                                                                                                                                                                   |
+| Subpath                   | Contents                                                                                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fashionable/calc`        | `Calc<Refs>` number expressions — `of`, `ref`, arithmetic, `pow`/`signedPow`, `min`/`max`/`clamp`, `lerp`, trig (`sin`/`cos`/`acos`), `bind`/`solve`/`serialize`, `Precision` |
+| `fashionable/color`       | `Color<Refs>` — `oklch()` over calc expressions                                                                                                                               |
+| `fashionable/selector`    | `Selector` compound selectors — typed parts incl. `attribute` and `not`, canonical ordering, computed `Specificity`                                                           |
+| `fashionable/query`       | `MediaQuery` — canonical and-sets of `minWidth` / `prefersColorScheme`, prefix or range rendering; the future home of container and supports queries                          |
+| `fashionable/declaration` | `Declaration<Refs>` — a property name and a value (literal text, `Calc`, or `Color`), `bind`, refs threading                                                                  |
+| `fashionable/rule`        | `RuleSet<Refs>` ordered blocks, `StyleRule<Refs>`, nested `MediaRule<Refs>` — order preserved, never sorted                                                                   |
+| `fashionable/font-face`   | `FontFaceRule` — multi-src, weight ranges, metric overrides                                                                                                                   |
+| `fashionable/property`    | `PropertyRule` with `PropertySyntax` — a modeled syntax descriptor that types the initial value                                                                               |
+| `fashionable/stylesheet`  | `Stylesheet<Refs>` top level — `merge` (a lawful monoid: order-preserving, structurally deduped), `mergeAll`, opt-in `coalesce`, refs aggregation, and `render` to nested CSS |
+| `fashionable/utils`       | `pipe`, `flow`, `dual`, `Pipeable`, `invariant`                                                                                                                               |
 
 ## License
 

@@ -1,5 +1,5 @@
 ---
-"fashionable": minor
+'fashionable': minor
 ---
 
 Initial rule model, the structural CSS layer.
