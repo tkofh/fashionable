@@ -63,6 +63,9 @@ export const isRuleSet = (u: unknown): u is RuleSet<string> =>
 export const empty: RuleSet<never> = new RuleSetImpl([]) as unknown as RuleSet<never>
 
 /** @internal */
+export const isEmpty = (set: RuleSet<string>): boolean => set.members.length === 0
+
+/** @internal */
 export function make<Members extends ReadonlyArray<Member<string>>>(
   ...members: Members
 ): RuleSet<MemberRefs<Members[number]>> {

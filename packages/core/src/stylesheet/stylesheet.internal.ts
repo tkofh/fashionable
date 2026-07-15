@@ -14,8 +14,10 @@ import { concat as concatBlocks } from '#rule/ruleSet.internal'
 import type { StyleRule } from '#rule/styleRule'
 import { isStyleRule, make as makeStyleRule } from '#rule/styleRule.internal'
 import type { Selector } from '#selector/selector'
-import { dual, Pipeable } from '#util'
-import type { Node, NodeRefs, RenderOptions, Stylesheet } from './stylesheet.ts'
+import { render as renderSelector, specificity } from '#selector/selector.internal'
+import { compare as compareSpecificity } from '#selector/specificity.internal'
+import { dual, invariant, Pipeable } from '#util'
+import type { CoalesceOptions, Node, NodeRefs, RenderOptions, Stylesheet } from './stylesheet.ts'
 
 export const StylesheetTypeId = Symbol.for('fashionable/stylesheet')
 export type StylesheetTypeId = typeof StylesheetTypeId
@@ -100,6 +102,9 @@ const distinct = (nodes: ReadonlyArray<Node<string>>): Array<Node<string>> => {
 export const empty: Stylesheet<never> = new StylesheetImpl([]) as unknown as Stylesheet<never>
 
 /** @internal */
+export const isEmpty = (sheet: Stylesheet<string>): boolean => sheet.nodes.length === 0
+
+/** @internal */
 export function make<Nodes extends ReadonlyArray<Node<string>>>(
   ...nodes: Nodes
 ): Stylesheet<NodeRefs<Nodes[number]>> {
@@ -181,8 +186,36 @@ export function mergeAll<Refs extends string>(
   return merged as Stylesheet<Refs>
 }
 
+/**
+ * The strict-mode check: a pull is unsafe when any style rule between
+ * the anchor and the sheet's tail ties the pulled selector on
+ * specificity without being the same selector. Conservative — without
+ * matching semantics there is no telling whether tying selectors can
+ * reach the same element, so a tie always refuses.
+ */
+const requireSafePull = (
+  kept: ReadonlyArray<Node<string>>,
+  anchor: number,
+  selector: Selector,
+): void => {
+  const pulled = specificity(selector)
+  for (let index = anchor + 1; index < kept.length; index++) {
+    const node = kept[index] as Node<string>
+    if (!isStyleRule(node) || Equal.equals(node.selector, selector)) {
+      continue
+    }
+    invariant(
+      compareSpecificity(specificity(node.selector), pulled) !== 0,
+      `Coalescing '${renderSelector(selector)}' would pull its block across '${renderSelector(node.selector)}', which ties on specificity — the pull can change the cascade`,
+    )
+  }
+}
+
 /** @internal */
-export function coalesce<Refs extends string>(sheet: Stylesheet<Refs>): Stylesheet<Refs> {
+export function coalesce<Refs extends string>(
+  sheet: Stylesheet<Refs>,
+  options?: CoalesceOptions,
+): Stylesheet<Refs> {
   const nodes: Array<Node<string>> = []
   const seen = new Map<number, Array<{ readonly selector: Selector; readonly index: number }>>()
   let changed = false
@@ -203,6 +236,9 @@ export function coalesce<Refs extends string>(sheet: Stylesheet<Refs>): Styleshe
       }
       nodes.push(node)
       continue
+    }
+    if (options?.strict === true) {
+      requireSafePull(nodes, first.index, node.selector)
     }
     const target = nodes[first.index] as StyleRule<string>
     nodes[first.index] = makeStyleRule(target.selector, concatBlocks(target.block, node.block))

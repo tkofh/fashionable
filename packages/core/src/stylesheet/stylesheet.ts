@@ -79,6 +79,19 @@ export const isStylesheet: (u: unknown) => u is Stylesheet<string> = internal.is
 export const empty: Stylesheet<never> = internal.empty
 
 /**
+ * Checks if the sheet has no nodes.
+ *
+ * Structural emptiness only: a non-empty sheet can still *render* as the
+ * empty string, when every node is a style rule whose block renders
+ * empty — `render` guarantees the empty string in both cases.
+ *
+ * @param sheet - The sheet to inspect.
+ * @returns `true` if the sheet has no nodes.
+ * @since 0.2.0
+ */
+export const isEmpty: (sheet: Stylesheet<string>) => boolean = internal.isEmpty
+
+/**
  * Creates a stylesheet holding the given nodes, in the given order, with
  * structural duplicates dropped — the first occurrence wins.
  *
@@ -215,6 +228,23 @@ export const mergeAll: <Refs extends string>(
 ) => Stylesheet<Refs> = internal.mergeAll
 
 /**
+ * Options for `coalesce`.
+ *
+ * @since 0.2.0
+ */
+export interface CoalesceOptions {
+  /**
+   * When `true`, unsafe pulls throw instead of rewriting the cascade: a
+   * pull is unsafe when the coalesced rule's block would move backward
+   * across an intervening style rule whose selector ties the coalesced
+   * selector on specificity. The check is conservative — it cannot know
+   * whether tying selectors can match the same element, so any tie
+   * refuses. Defaults to `false`.
+   */
+  readonly strict?: boolean
+}
+
+/**
  * Coalesces style rules that share a selector: each later rule's block
  * is concatenated onto the first rule with a structurally equal selector
  * (in sheet order, as `RuleSet.concat` would), and the later rule is
@@ -223,14 +253,20 @@ export const mergeAll: <Refs extends string>(
  * Deliberately separate from `merge`, and order-sensitive: pulling a
  * block backward past an intervening rule can change the cascade when
  * the intervening selector ties on specificity, so coalescing is an
- * explicit opt-in normalization.
+ * explicit opt-in normalization. `strict` turns that caution into a
+ * checked invariant — a build gate that proves the sheet's coalesce is
+ * cascade-preserving.
  *
  * @param sheet - The sheet to normalize.
+ * @param options - Optional strictness.
  * @returns The coalesced sheet; the same instance when no selector repeats, so coalesce is idempotent.
+ * @throws `Error` in strict mode, when a pull crosses an intervening rule that ties on specificity.
  * @since 0.1.0
  */
-export const coalesce: <Refs extends string>(sheet: Stylesheet<Refs>) => Stylesheet<Refs> =
-  internal.coalesce
+export const coalesce: <Refs extends string>(
+  sheet: Stylesheet<Refs>,
+  options?: CoalesceOptions,
+) => Stylesheet<Refs> = internal.coalesce
 
 /**
  * The sheet's unbound reference names, unioned across nodes — the custom
@@ -262,9 +298,11 @@ export type RenderOptions = RuleSetRenderOptions
  * blocks, style rules in nested form with their `@media` blocks kept
  * inside, in member order.
  *
- * Empty blocks emit nothing. Top-level sections join with one blank
- * line, without a trailing newline. Unbound references render as
- * `var(--name)`.
+ * Empty blocks emit nothing, so a sheet whose every node renders empty —
+ * `empty` itself, or style rules with empty blocks — renders the empty
+ * string; composing renders into a larger file never needs to reach into
+ * `nodes`. Top-level sections join with one blank line, without a
+ * trailing newline. Unbound references render as `var(--name)`.
  *
  * @param sheet - The stylesheet to render.
  * @param options - Optional indentation unit, precision context, and media syntax.

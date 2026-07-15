@@ -10,9 +10,11 @@ import * as internal from './mediaQuery.internal.ts'
  * one-feature queries; `and` merges. Conjunction is commutative and
  * idempotent, so construction sorts features canonically and drops exact
  * duplicates — structurally equal queries compare equal however they
- * were built. Distinct features always all render, even when one
- * subsumes another (`minWidth(768)` and `minWidth(1024)`): simplification
- * changes no meaning but is not this type's job.
+ * were built. The canonical order is stable public API: `min-width`
+ * features first (ascending by threshold), then `prefers-color-scheme`
+ * (schemes alphabetically). Distinct features always all render, even
+ * when one subsumes another (`minWidth(768)` and `minWidth(1024)`):
+ * simplification changes no meaning but is not this type's job.
  *
  * `or` and `not` become new node kinds when a consumer needs them.
  *
@@ -110,9 +112,10 @@ export const and: {
 } = internal.and
 
 /**
- * Renders the query as CSS text: features in canonical order, joined
- * with ` and `. The `mediaSyntax` option picks the width-feature
- * spelling (default `'prefix'`).
+ * Renders the query as CSS text: features in canonical order —
+ * `min-width` ascending, then `prefers-color-scheme` — joined with
+ * ` and `. The `mediaSyntax` option picks the width-feature spelling
+ * (default `'prefix'`).
  *
  * @param query - The query to render.
  * @param options - Optional syntax selection.

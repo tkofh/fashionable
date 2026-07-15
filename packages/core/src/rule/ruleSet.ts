@@ -85,6 +85,19 @@ export const isRuleSet: (u: unknown) => u is RuleSet<string> = internal.isRuleSe
 export const empty: RuleSet<never> = internal.empty
 
 /**
+ * Checks if the block has no members.
+ *
+ * Structural emptiness only: a non-empty block can still *render* as the
+ * empty string, when every member is a nested rule whose block renders
+ * empty.
+ *
+ * @param set - The block to inspect.
+ * @returns `true` if the block has no members.
+ * @since 0.2.0
+ */
+export const isEmpty: (set: RuleSet<string>) => boolean = internal.isEmpty
+
+/**
  * Creates a rule set holding the given members, in the given order.
  *
  * @param members - Declarations and nested rules, in authored order.

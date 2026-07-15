@@ -51,6 +51,27 @@ describe('query', () => {
       expect(MediaQuery.render(query)).toBe('(min-width: 768px) and (min-width: 1024px)')
     })
 
+    // The concrete canonical order is stable public API: rendered text is
+    // consumers' cache-key and test-pin material, so a reordering is a
+    // breaking change (design.md principle 2).
+    test('the kind ladder is pinned: min-width before prefers-color-scheme', () => {
+      const query = MediaQuery.and(
+        MediaQuery.prefersColorScheme('dark'),
+        MediaQuery.minWidth(768),
+      )
+      expect(MediaQuery.render(query)).toBe('(min-width: 768px) and (prefers-color-scheme: dark)')
+    })
+
+    test('scheme values order alphabetically within their kind', () => {
+      const query = MediaQuery.and(
+        MediaQuery.prefersColorScheme('light'),
+        MediaQuery.prefersColorScheme('dark'),
+      )
+      expect(MediaQuery.render(query)).toBe(
+        '(prefers-color-scheme: dark) and (prefers-color-scheme: light)',
+      )
+    })
+
     test('and is idempotent: identical features dedup', () => {
       const query = MediaQuery.and(MediaQuery.minWidth(768), MediaQuery.minWidth(768))
       expect(MediaQuery.equals(query, MediaQuery.minWidth(768))).toBe(true)

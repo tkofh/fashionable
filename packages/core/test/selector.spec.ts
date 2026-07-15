@@ -81,6 +81,26 @@ describe('selector', () => {
       const selector = Selector.and(Selector.class('a'), Selector.class('a'))
       expect(Selector.render(selector)).toBe('.a.a')
     })
+
+    // The full kind ladder — type, id, class, pseudo-class, attribute,
+    // negation, pseudo-element — is stable public API: rendered text is
+    // consumers' cache-key and test-pin material, so a reordering is a
+    // breaking change (design.md principle 2).
+    test('the kind ladder is pinned end to end', () => {
+      const parts = [
+        Selector.pseudoElement('before'),
+        Selector.not(Selector.class('off')),
+        Selector.attribute('data-scheme', 'dark'),
+        Selector.pseudoClass('hover'),
+        Selector.class('btn'),
+        Selector.id('app'),
+        Selector.type('a'),
+      ]
+      const selector = parts.reduce((merged, part) => Selector.and(merged, part))
+      expect(Selector.render(selector)).toBe(
+        "a#app.btn:hover[data-scheme='dark']:not(.off)::before",
+      )
+    })
   })
 
   describe('grammar constraints', () => {

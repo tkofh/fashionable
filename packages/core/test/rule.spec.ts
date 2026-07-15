@@ -10,6 +10,12 @@ describe('rule', () => {
   const depth = Declaration.make('--depth', Calc.ref('depth'))
 
   describe('RuleSet', () => {
+    test('isEmpty is structural member absence', () => {
+      expect(RuleSet.isEmpty(RuleSet.empty)).toBe(true)
+      expect(RuleSet.isEmpty(RuleSet.make())).toBe(true)
+      expect(RuleSet.isEmpty(RuleSet.make(color))).toBe(false)
+    })
+
     test('preserves member order', () => {
       const set = RuleSet.make(color, depth)
       expect(set.members[0]).toBe(color)

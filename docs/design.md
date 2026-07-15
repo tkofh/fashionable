@@ -12,7 +12,7 @@ Two consumers drive v1 scope:
 ## 1. Principles
 
 1. **Grammar fidelity over coverage.** Model only what a real consumer needs, but model each construct as the specification defines it. Illegal states are unrepresentable in the types: conditional group rules (`@media`) may nest inside style rules; declaration-block at-rules (`@font-face`, `@property`) are top-level only.
-2. **Structural everything.** Nodes are immutable data with structural equality (internal Equal/Hash port, no runtime dependency). Commutative constructs carry a canonical ordering enforced at construction, so equality holds regardless of construction order.
+2. **Structural everything.** Nodes are immutable data with structural equality (internal Equal/Hash port, no runtime dependency). Commutative constructs carry a canonical ordering enforced at construction, so equality holds regardless of construction order. Canonical orders are stable within a major version: rendering is deterministic, so rendered text is consumers' cache-key and test-pin material, and reordering it is a breaking change.
 3. **One model, many projections.** Serialize a stylesheet to CSS; solve value expressions against bindings; compute selector specificity; merge stylesheets. The thing you verified is the thing you shipped.
 4. **Capability, not policy.** The library computes, canonicalizes, and merges; it does not decide which rule wins. Cascade-ordering policy belongs to consumers, armed with computed specificity, stable deterministic ordering, and order-preserving containers.
 5. **Effect-style API, effect-free implementation.** Namespace modules (`Calc.solve`, `Selector.specificity`), pipeable/dual combinators, branded interfaces — with `pipe`/`dual`/`flow` ported internally (the curvy precedent). Structural brands mean consumers must hold a single copy of the library.
@@ -89,11 +89,12 @@ The protocol stays internal; each namespace exports a typed dual `equals`. Merge
 ### 4.2 Canonical ordering
 
 - **Compound selector parts**: stable sort by `(kind rank, rendered text)` — type/universal, id, class, pseudo-class, attribute, `:not()`, pseudo-element — enforced in constructors. Any fixed order renders a semantically identical compound; simple pseudo-classes deliberately precede attribute qualifiers and negations so the root-scoped house shapes render in consumer 1's exact current spelling (`:root[data-scheme='dark']`, `:root:not([data-scheme='light'])`), keeping the migration byte-diffable. Duplicates are kept (`.a.a` legally has specificity (0,2,0)); the grammar's own constraints are enforced (at most one type/universal part, at most one pseudo-element).
-- **MediaQuery and-sets**: sort by `(feature-kind rank, within-kind key)`; identical features dedup (idempotent conjunction).
+- **MediaQuery and-sets**: sort by `(feature-kind rank, within-kind key)` — `min-width` before `prefers-color-scheme`; min-widths ascending by threshold, scheme values alphabetically; identical features dedup (idempotent conjunction). New feature kinds append to the rank ladder rather than reshuffling it.
+- **FontFaceRule unicode-range**: sorted by `(start, end)`, single codepoints before their degenerate ranges, exact duplicates dropped — the descriptor is a set union, so order carries no meaning.
 - **Calc trees are NOT canonicalized**: float arithmetic is not associative-commutative under solve, and serialized math should mirror authored math. `add(a, b)` and `add(b, a)` are different values.
 - **Declarations, rule-set members, stylesheet nodes are never sorted**: member order is cascade behavior; the library preserves it (capability, not policy).
 
-Constructor-time ordering makes equality/hashing plain component-wise walks and rendering deterministic for free.
+Constructor-time ordering makes equality/hashing plain component-wise walks and rendering deterministic for free. The concrete orders above are stable public API (principle 2): consumers pin rendered text in tests and cache keys, so reordering any of them is a breaking change.
 
 ### 4.3 Refs threading
 
@@ -184,6 +185,7 @@ Each type keeps the usual public/internal file pair; the mutual recursion is bro
 ```ts
 FontFaceRule.make({ family, src: [FontFaceRule.url(href, format?) | FontFaceRule.local(name)],
   weight?: number | [number, number], style?, display?,
+  unicodeRange?: [codepoint | [start, end], ...],                       // set union: canonical order, exact dups drop
   ascentOverride?, descentOverride?, lineGapOverride?, sizeAdjust? })   // percentages as numbers (90 -> '90%')
 
 PropertySyntax.number, .color, .lengthPercentage, ...   // the fifteen registrable data types
@@ -195,7 +197,7 @@ PropertySyntax.listOf(x), PropertySyntax.commaListOf(x) // '+' / '#' multipliers
 PropertyRule.make(name, syntax?, initialValue?)         // syntax defaults to universal; any other syntax
                                                         // requires the initial value, typed by the syntax's V
 PropertyRule.inheritable(rule)                          // rules register inherits: false; this opts in
-FontFaceRule.render(rule, { indent? }), PropertyRule.render(rule, { indent?, precision? }), PropertySyntax.render(syntax)
+FontFaceRule.render(rule, { indent?, precision? }), PropertyRule.render(rule, { indent?, precision? }), PropertySyntax.render(syntax)
 // plus equals/is* throughout; the rules self-render complete blocks — they are leaf rules with
 // no nesting context, so Stylesheet.render delegates to these shapes for its at-rule nodes
 ```
@@ -204,7 +206,7 @@ The syntax descriptor is a modeled value, not a string. Grammar constraints are 
 
 `Calc<never>`/`Color<never>` is the phantom channel doing spec enforcement: `@property` initial values must be computationally independent, so an expression with unbound refs is a type error (backed by a runtime refs check for untyped callers). Presence is enforced at both levels too: the universal-syntax overload (keyed on the branded `Universal` type, so a combination whose `V` happens to cover the full domain cannot slip through) is the only one with an optional initial value, and the runtime invariant backs it. Whether literal-text values parse under the declared syntax is not checked — the library does not parse CSS.
 
-Descriptor order is fixed: `@font-face` renders family, weight, style, display, src, then metric overrides (consumer 1's emission order, byte-exact including the one-source-inline / multi-source-multiline src split); `@property` renders syntax, inherits, initial-value — the spec's conventional order, a deliberate delta from the donor's inherits-first emission.
+Descriptor order is fixed: `@font-face` renders family, weight, style, display, src, unicode-range (uppercase hex, canonical order), then metric overrides (consumer 1's emission order, byte-exact including the one-source-inline / multi-source-multiline src split); `@property` renders syntax, inherits, initial-value — the spec's conventional order, a deliberate delta from the donor's inherits-first emission.
 
 `PropertyRule` supersedes calc-tree's `Properties` namespace (a mutable parent-child registry). The donor's `Properties.number(set, 'x', expr)` chain becomes explicit nodes: `Declaration.make('--x', expr)` + `PropertyRule.make({ name: '--x', ... })` + `Calc.ref('x')` for downstream reads. The donor's hardcoded conventions (underscore prefix implies `inherits: false`; initial values `'0'`/`'transparent'`) become explicit options at the consumer's call site.
 
@@ -214,13 +216,14 @@ Descriptor order is fixed: `@font-face` renders family, weight, style, display, 
 type Stylesheet.Node<Refs> = StyleRule<Refs> | FontFaceRule | PropertyRule
 type Stylesheet.NodeRefs<N>     // refs extraction, as RuleSet.MemberRefs
 Stylesheet.empty
+Stylesheet.isEmpty(sheet)       // structural: no nodes (RuleSet.isEmpty likewise: no members)
 Stylesheet.make(...nodes)       // variadic; NodeRefs<Nodes[number]> threading
 Stylesheet.append(sheet, node)  // dual; same sheet back when the node is already present
 Stylesheet.append(sheet, selector, block)  // pair form: appends StyleRule.make(selector, block)
 Stylesheet.render(sheet, options?)         // whole-sheet projection; see section 7
 Stylesheet.merge(a, b)          // dual; order-preserving concat + structural dedup (first occurrence wins)
 Stylesheet.mergeAll(sheets)
-Stylesheet.coalesce(sheet)      // separate explicit op; merges same-selector StyleRules into first occurrence
+Stylesheet.coalesce(sheet, { strict? })    // separate explicit op; merges same-selector StyleRules into first occurrence
 Stylesheet.refs(sheet)
 Stylesheet.equals(a, b)         // dual; structural, order-sensitive
 Stylesheet.isStylesheet(u)
@@ -230,7 +233,7 @@ Stylesheet.isStylesheet(u)
 
 **Merge is a lawful monoid**: `merge(a, b) = a.nodes ++ (b.nodes not already present)` — associative, `empty` identity, idempotent. The identity and idempotence laws hold with instance identity, not just structurally (`merge(a, empty) === a`). That is exactly the multi-emitter requirement: three emitters each producing the scheme-contract rules fold to one copy.
 
-**Coalesce** is deliberately not part of merge: coalescing across an intervening same-specificity rule can change the cascade, so it is an opt-in normalization, documented order-sensitive. Each later rule's block concatenates onto the first rule with a structurally equal selector (blocks in sheet order); at-rule nodes pass through in position; a sheet with no repeated selector comes back as the same instance, so coalesce is idempotent. A later refinement can refuse when an intervening rule ties on specificity (specificity is computed, so this needs no model change).
+**Coalesce** is deliberately not part of merge: coalescing across an intervening same-specificity rule can change the cascade, so it is an opt-in normalization, documented order-sensitive. Each later rule's block concatenates onto the first rule with a structurally equal selector (blocks in sheet order); at-rule nodes pass through in position; a sheet with no repeated selector comes back as the same instance, so coalesce is idempotent. `{ strict: true }` turns the caution into a checked invariant: a pull throws when an intervening style rule ties the coalesced selector on specificity (conservative — tying-but-disjoint selectors also refuse, since matching semantics are out of scope). Computed specificity is what makes the check possible without any model change.
 
 There is deliberately no `Stylesheet.bind` in v1 — binding happens value-side before declarations are built.
 

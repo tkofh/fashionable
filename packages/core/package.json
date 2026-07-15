@@ -23,6 +23,8 @@
     "#calc/*": "./src/calc/*.ts",
     "#color": "./src/color/index.ts",
     "#color/*": "./src/color/*.ts",
+    "#data": "./src/data/index.ts",
+    "#data/*": "./src/data/*.ts",
     "#declaration": "./src/declaration/index.ts",
     "#declaration/*": "./src/declaration/*.ts",
     "#fontFace": "./src/fontFace/index.ts",
@@ -47,6 +49,10 @@
     "./color": {
       "types": "./dist/color/index.d.mts",
       "import": "./dist/color/index.mjs"
+    },
+    "./data": {
+      "types": "./dist/data/index.d.mts",
+      "import": "./dist/data/index.mjs"
     },
     "./declaration": {
       "types": "./dist/declaration/index.d.mts",

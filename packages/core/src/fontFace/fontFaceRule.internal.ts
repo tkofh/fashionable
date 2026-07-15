@@ -1,5 +1,6 @@
+import { toSpec } from '#calc/precision.internal'
 import * as Equal from '#internal/equal'
-import { DEFAULT_FORMAT, formatWith } from '#internal/format'
+import { DEFAULT_FORMAT, type FormatSpec, formatWith } from '#internal/format'
 import { DEFAULT_INDENT, quote, renderBlock } from '#internal/render'
 import { dual, invariant, Pipeable } from '#util'
 import type {
@@ -9,6 +10,7 @@ import type {
   RenderOptions,
   Source,
   Style,
+  UnicodeRange,
   Weight,
 } from './fontFaceRule.ts'
 
@@ -128,12 +130,62 @@ const weightEquals = (a: Weight | undefined, b: Weight | undefined): boolean => 
   return a[0] === b[0] && a[1] === b[1]
 }
 
-const formatNumber = (value: number): string => formatWith(value, DEFAULT_FORMAT)
-
-const renderWeight = (weight: Weight): string =>
+const renderWeight = (weight: Weight, format: FormatSpec): string =>
   typeof weight === 'number'
-    ? formatNumber(weight)
-    : `${formatNumber(weight[0])} ${formatNumber(weight[1])}`
+    ? formatWith(weight, format)
+    : `${formatWith(weight[0], format)} ${formatWith(weight[1], format)}`
+
+// ---------------------------------------------------------------------------
+// unicode-range
+// ---------------------------------------------------------------------------
+
+const MAX_CODEPOINT = 0x10ffff
+
+const requireCodepoint = (value: number): void => {
+  invariant(
+    Number.isInteger(value) && value >= 0 && value <= MAX_CODEPOINT,
+    `unicode-range codepoint must be an integer in [0x0, 0x10FFFF], got ${value}`,
+  )
+}
+
+const rangeStart = (range: UnicodeRange): number => (typeof range === 'number' ? range : range[0])
+
+const rangeEnd = (range: UnicodeRange): number => (typeof range === 'number' ? range : range[1])
+
+const rangeEquals = (a: UnicodeRange, b: UnicodeRange): boolean => {
+  if (typeof a === 'number' || typeof b === 'number') {
+    return a === b
+  }
+  return a[0] === b[0] && a[1] === b[1]
+}
+
+/**
+ * The descriptor is a set union, so member order carries no meaning:
+ * sort by start, then end, singles before their degenerate ranges, and
+ * drop exact duplicates — structurally equal descriptors compare equal
+ * however they were built.
+ */
+const canonicalRanges = (ranges: ReadonlyArray<UnicodeRange>): ReadonlyArray<UnicodeRange> => {
+  const sorted = ranges.toSorted(
+    (a, b) =>
+      rangeStart(a) - rangeStart(b) ||
+      rangeEnd(a) - rangeEnd(b) ||
+      (typeof a === 'number' ? 0 : 1) - (typeof b === 'number' ? 0 : 1),
+  )
+  const kept: Array<UnicodeRange> = []
+  for (const range of sorted) {
+    const previous = kept[kept.length - 1]
+    if (previous === undefined || !rangeEquals(previous, range)) {
+      kept.push(range)
+    }
+  }
+  return kept
+}
+
+const hex = (value: number): string => value.toString(16).toUpperCase()
+
+const renderRange = (range: UnicodeRange): string =>
+  typeof range === 'number' ? `U+${hex(range)}` : `U+${hex(range[0])}-${hex(range[1])}`
 
 class FontFaceRuleImpl extends Pipeable implements FontFaceRule, Equal.Equal {
   readonly [FontFaceRuleTypeId]: FontFaceRuleTypeId = FontFaceRuleTypeId
@@ -143,6 +195,7 @@ class FontFaceRuleImpl extends Pipeable implements FontFaceRule, Equal.Equal {
   readonly weight: Weight | undefined
   readonly style: Style | undefined
   readonly display: Display | undefined
+  readonly unicodeRange: ReadonlyArray<UnicodeRange> | undefined
   readonly ascentOverride: number | undefined
   readonly descentOverride: number | undefined
   readonly lineGapOverride: number | undefined
@@ -156,6 +209,8 @@ class FontFaceRuleImpl extends Pipeable implements FontFaceRule, Equal.Equal {
     this.weight = descriptors.weight
     this.style = descriptors.style
     this.display = descriptors.display
+    this.unicodeRange =
+      descriptors.unicodeRange === undefined ? undefined : canonicalRanges(descriptors.unicodeRange)
     this.ascentOverride = descriptors.ascentOverride
     this.descentOverride = descriptors.descentOverride
     this.lineGapOverride = descriptors.lineGapOverride
@@ -169,6 +224,12 @@ class FontFaceRuleImpl extends Pipeable implements FontFaceRule, Equal.Equal {
       weightEquals(this.weight, that.weight) &&
       this.style === that.style &&
       this.display === that.display &&
+      (this.unicodeRange === undefined || that.unicodeRange === undefined
+        ? this.unicodeRange === that.unicodeRange
+        : this.unicodeRange.length === that.unicodeRange.length &&
+          this.unicodeRange.every((range, index) =>
+            rangeEquals(range, (that.unicodeRange as ReadonlyArray<UnicodeRange>)[index] as UnicodeRange),
+          )) &&
       this.ascentOverride === that.ascentOverride &&
       this.descentOverride === that.descentOverride &&
       this.lineGapOverride === that.lineGapOverride &&
@@ -194,6 +255,14 @@ class FontFaceRuleImpl extends Pipeable implements FontFaceRule, Equal.Equal {
       )
       h = Equal.combine(h, Equal.hashString(this.style ?? ''))
       h = Equal.combine(h, Equal.hashString(this.display ?? ''))
+      for (const range of this.unicodeRange ?? []) {
+        h = Equal.combine(
+          h,
+          typeof range === 'number'
+            ? Equal.hashNumber(range)
+            : Equal.combine(Equal.hashNumber(range[0]), Equal.hashNumber(range[1])),
+        )
+      }
       for (const metric of [
         this.ascentOverride,
         this.descentOverride,
@@ -237,6 +306,21 @@ export const make = (descriptors: Descriptors): FontFaceRule => {
       'Font weight range must be ordered min then max',
     )
   }
+  if (descriptors.unicodeRange !== undefined) {
+    invariant(
+      descriptors.unicodeRange.length > 0,
+      'unicode-range must contain at least one range when given',
+    )
+    for (const range of descriptors.unicodeRange) {
+      if (typeof range === 'number') {
+        requireCodepoint(range)
+      } else {
+        requireCodepoint(range[0])
+        requireCodepoint(range[1])
+        invariant(range[0] <= range[1], 'unicode-range must be ordered start then end')
+      }
+    }
+  }
   requirePercentage(descriptors.ascentOverride, 'ascent-override')
   requirePercentage(descriptors.descentOverride, 'descent-override')
   requirePercentage(descriptors.lineGapOverride, 'line-gap-override')
@@ -257,9 +341,10 @@ const renderSrc = (src: ReadonlyArray<Source>, indent: string): string => {
 /** @internal */
 export const render = (rule: FontFaceRule, options?: RenderOptions): string => {
   const indent = options?.indent ?? DEFAULT_INDENT
+  const format = options?.precision === undefined ? DEFAULT_FORMAT : toSpec(options.precision)
   const declarations: Array<string> = [`font-family: ${quote(rule.family)}`]
   if (rule.weight !== undefined) {
-    declarations.push(`font-weight: ${renderWeight(rule.weight)}`)
+    declarations.push(`font-weight: ${renderWeight(rule.weight, format)}`)
   }
   if (rule.style !== undefined) {
     declarations.push(`font-style: ${rule.style}`)
@@ -268,17 +353,20 @@ export const render = (rule: FontFaceRule, options?: RenderOptions): string => {
     declarations.push(`font-display: ${rule.display}`)
   }
   declarations.push(renderSrc(rule.src, indent))
+  if (rule.unicodeRange !== undefined) {
+    declarations.push(`unicode-range: ${rule.unicodeRange.map(renderRange).join(', ')}`)
+  }
   if (rule.ascentOverride !== undefined) {
-    declarations.push(`ascent-override: ${formatNumber(rule.ascentOverride)}%`)
+    declarations.push(`ascent-override: ${formatWith(rule.ascentOverride, format)}%`)
   }
   if (rule.descentOverride !== undefined) {
-    declarations.push(`descent-override: ${formatNumber(rule.descentOverride)}%`)
+    declarations.push(`descent-override: ${formatWith(rule.descentOverride, format)}%`)
   }
   if (rule.lineGapOverride !== undefined) {
-    declarations.push(`line-gap-override: ${formatNumber(rule.lineGapOverride)}%`)
+    declarations.push(`line-gap-override: ${formatWith(rule.lineGapOverride, format)}%`)
   }
   if (rule.sizeAdjust !== undefined) {
-    declarations.push(`size-adjust: ${formatNumber(rule.sizeAdjust)}%`)
+    declarations.push(`size-adjust: ${formatWith(rule.sizeAdjust, format)}%`)
   }
   return renderBlock('@font-face', declarations, indent)
 }

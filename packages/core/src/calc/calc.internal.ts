@@ -8,7 +8,7 @@ import {
 } from '#internal/format'
 import { EMPTY_REFS } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
-import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from './calc.ts'
+import type { ApplyBindings, Bindings, Calc, Input, Kind, SerializeOptions } from './calc.ts'
 import { toSpec } from './precision.internal.ts'
 import type { Precision } from './precision.ts'
 
@@ -24,6 +24,10 @@ export interface ConstantNode {
   readonly _tag: 'Constant'
   readonly value: number
   readonly precision: FormatSpec | undefined
+  /** The CSS unit token (`'px'`, `'rad'`), or `undefined` for a plain number. */
+  readonly unit: string | undefined
+  /** The CSS dimension, supplied by the constructing data module. */
+  readonly kind: Kind
 }
 
 /** @internal */
@@ -62,9 +66,33 @@ const isConstant = (node: CalcNode): node is ConstantNode => node._tag === 'Cons
 // smart node constructors: eager constant folding + precision propagation
 // ---------------------------------------------------------------------------
 
-const constantNode = (value: number, precision: FormatSpec | undefined): ConstantNode => {
+const constantNode = (
+  value: number,
+  precision: FormatSpec | undefined,
+  unit: string | undefined = undefined,
+  kind: Kind = 'number',
+): ConstantNode => {
   invariant(Number.isFinite(value), `Constant value must be a finite number, got ${value}`)
-  return { _tag: 'Constant', value, precision }
+  return { _tag: 'Constant', value, precision, unit, kind }
+}
+
+/**
+ * The shared (unit, kind) of a run of constants, or `undefined` when they mix
+ * units and so cannot fold to a single constant (`10px + 5vw` stays symbolic).
+ */
+const commonDimension = (
+  nodes: ReadonlyArray<ConstantNode>,
+): { readonly unit: string | undefined; readonly kind: Kind } | undefined => {
+  const first = nodes[0]
+  if (first === undefined) {
+    return { unit: undefined, kind: 'number' }
+  }
+  for (const node of nodes) {
+    if (node.unit !== first.unit) {
+      return undefined
+    }
+  }
+  return { unit: first.unit, kind: first.kind }
 }
 
 const bestPrecision = (nodes: ReadonlyArray<ConstantNode>): FormatSpec | undefined => {
@@ -79,26 +107,74 @@ const bestPrecision = (nodes: ReadonlyArray<ConstantNode>): FormatSpec | undefin
 
 const addNode = (terms: ReadonlyArray<CalcNode>): CalcNode => {
   if (terms.every(isConstant)) {
-    return constantNode(
-      terms.reduce((total, term) => total + term.value, 0),
-      bestPrecision(terms),
-    )
+    const dim = commonDimension(terms)
+    if (dim !== undefined) {
+      return constantNode(
+        terms.reduce((total, term) => total + term.value, 0),
+        bestPrecision(terms),
+        dim.unit,
+        dim.kind,
+      )
+    }
   }
   return { _tag: 'Add', terms }
 }
 
-const binaryNode =
-  (tag: 'Subtract' | 'Multiply' | 'Divide', compute: (a: number, b: number) => number) =>
-  (left: CalcNode, right: CalcNode): CalcNode => {
-    if (isConstant(left) && isConstant(right)) {
-      return constantNode(compute(left.value, right.value), bestPrecision([left, right]))
-    }
-    return { _tag: tag, left, right }
+const subtractNode = (left: CalcNode, right: CalcNode): CalcNode => {
+  if (isConstant(left) && isConstant(right) && left.unit === right.unit) {
+    return constantNode(
+      left.value - right.value,
+      bestPrecision([left, right]),
+      left.unit,
+      left.kind,
+    )
   }
+  return { _tag: 'Subtract', left, right }
+}
 
-const subtractNode = binaryNode('Subtract', (a, b) => a - b)
-const multiplyNode = binaryNode('Multiply', (a, b) => a * b)
-const divideNode = binaryNode('Divide', (a, b) => a / b)
+const multiplyNode = (left: CalcNode, right: CalcNode): CalcNode => {
+  if (isConstant(left) && isConstant(right)) {
+    // A dimensioned factor rides through a number factor; two dimensioned
+    // factors are invalid CSS (rejected at the type level) and stay symbolic.
+    if (left.unit === undefined) {
+      return constantNode(
+        left.value * right.value,
+        bestPrecision([left, right]),
+        right.unit,
+        right.kind,
+      )
+    }
+    if (right.unit === undefined) {
+      return constantNode(
+        left.value * right.value,
+        bestPrecision([left, right]),
+        left.unit,
+        left.kind,
+      )
+    }
+  }
+  return { _tag: 'Multiply', left, right }
+}
+
+const divideNode = (left: CalcNode, right: CalcNode): CalcNode => {
+  if (isConstant(left) && isConstant(right)) {
+    if (left.unit === right.unit) {
+      // same unit (or both unit-free) -> the ratio is a unit-free number
+      return constantNode(left.value / right.value, bestPrecision([left, right]))
+    }
+    if (right.unit === undefined) {
+      return constantNode(
+        left.value / right.value,
+        bestPrecision([left, right]),
+        left.unit,
+        left.kind,
+      )
+    }
+    // number / dimensioned, or two differing dimensioned units: no context-free
+    // value, so stay symbolic (the browser resolves the units)
+  }
+  return { _tag: 'Divide', left, right }
+}
 
 const powNode = (base: CalcNode, exponent: CalcNode): CalcNode => {
   if (isConstant(base) && isConstant(exponent)) {
@@ -121,7 +197,15 @@ const naryNode =
   (tag: 'Min' | 'Max', compute: (values: ReadonlyArray<number>) => number) =>
   (args: ReadonlyArray<CalcNode>): CalcNode => {
     if (args.every(isConstant)) {
-      return constantNode(compute(args.map((arg) => arg.value)), bestPrecision(args))
+      const dim = commonDimension(args)
+      if (dim !== undefined) {
+        return constantNode(
+          compute(args.map((arg) => arg.value)),
+          bestPrecision(args),
+          dim.unit,
+          dim.kind,
+        )
+      }
     }
     return { _tag: tag, args }
   }
@@ -131,16 +215,21 @@ const maxNode = naryNode('Max', (values) => Math.max(...values))
 
 const clampNode = (minimum: CalcNode, value: CalcNode, maximum: CalcNode): CalcNode => {
   if (isConstant(minimum) && isConstant(value) && isConstant(maximum)) {
-    return constantNode(
-      Math.max(minimum.value, Math.min(value.value, maximum.value)),
-      bestPrecision([minimum, value, maximum]),
-    )
+    const dim = commonDimension([minimum, value, maximum])
+    if (dim !== undefined) {
+      return constantNode(
+        Math.max(minimum.value, Math.min(value.value, maximum.value)),
+        bestPrecision([minimum, value, maximum]),
+        dim.unit,
+        dim.kind,
+      )
+    }
   }
   return { _tag: 'Clamp', minimum, value, maximum }
 }
 
 const unaryNode =
-  (tag: 'Abs' | 'Sign' | 'Sin' | 'Cos' | 'Acos', compute: (x: number) => number) =>
+  (tag: 'Sign' | 'Sin' | 'Cos' | 'Acos', compute: (x: number) => number) =>
   (argument: CalcNode): CalcNode => {
     if (isConstant(argument)) {
       return constantNode(compute(argument.value), argument.precision)
@@ -148,7 +237,13 @@ const unaryNode =
     return { _tag: tag, argument }
   }
 
-const absNode = unaryNode('Abs', Math.abs)
+// abs preserves the operand's dimension; sign/sin/cos/acos produce a number
+const absNode = (argument: CalcNode): CalcNode => {
+  if (isConstant(argument)) {
+    return constantNode(Math.abs(argument.value), argument.precision, argument.unit, argument.kind)
+  }
+  return { _tag: 'Abs', argument }
+}
 const signNode = unaryNode('Sign', Math.sign)
 const sinNode = unaryNode('Sin', Math.sin)
 const cosNode = unaryNode('Cos', Math.cos)
@@ -207,6 +302,10 @@ export const substituteNode = (node: CalcNode, bindings: Record<string, CalcNode
 export const evaluateNode = (node: CalcNode): number => {
   switch (node._tag) {
     case 'Constant':
+      invariant(
+        node.kind !== 'length',
+        `Cannot evaluate a <length> (${node.value}${node.unit ?? ''}) without a unit context`,
+      )
       return node.value
     case 'Ref':
       throw new Error(`Cannot evaluate non-constant reference: ${node.name}`)
@@ -306,10 +405,18 @@ const formatConstant = (
   asAngle: boolean,
   context: SerializeContext,
 ): string => {
-  if (insideMath && !asAngle && Math.abs(node.value - Math.PI) < PI_TOLERANCE) {
+  if (
+    node.unit === undefined &&
+    insideMath &&
+    !asAngle &&
+    Math.abs(node.value - Math.PI) < PI_TOLERANCE
+  ) {
     return 'pi'
   }
   const text = formatWith(node.value, node.precision ?? context.precision)
+  if (node.unit !== undefined) {
+    return `${text}${node.unit}`
+  }
   return asAngle ? `${text}rad` : text
 }
 
@@ -358,15 +465,18 @@ const serializeNegated = (
   context: SerializeContext,
 ): string => {
   if (isConstant(node)) {
-    return formatConstant(constantNode(-node.value, node.precision), insideMath, asAngle, context)
+    return formatConstant(
+      constantNode(-node.value, node.precision, node.unit, node.kind),
+      insideMath,
+      asAngle,
+      context,
+    )
   }
   const binary = node as Extract<CalcNode, { _tag: 'Multiply' | 'Divide' }>
+  const left = binary.left as ConstantNode
   const negated: CalcNode = {
     _tag: binary._tag,
-    left: constantNode(
-      -(binary.left as ConstantNode).value,
-      (binary.left as ConstantNode).precision,
-    ),
+    left: constantNode(-left.value, left.precision, left.unit, left.kind),
     right: binary.right,
   }
   const serialized = serializeNode(negated, insideMath, context)
@@ -474,7 +584,9 @@ export const nodeEquals = (a: CalcNode, b: CalcNode): boolean => {
   switch (a._tag) {
     case 'Constant': {
       const other = b as ConstantNode
-      return a.value === other.value && specEquals(a.precision, other.precision)
+      return (
+        a.value === other.value && a.unit === other.unit && specEquals(a.precision, other.precision)
+      )
     }
     case 'Ref':
       return a.name === (b as RefNode).name
@@ -527,9 +639,10 @@ export const nodeHash = (node: CalcNode): number => {
         node.precision === undefined
           ? 0
           : Equal.combine(Equal.hashString(node.precision.mode), node.precision.digits | 0)
+      const unit = node.unit === undefined ? 0 : Equal.hashString(node.unit)
       return Equal.combine(
         Equal.hashString('Constant'),
-        Equal.combine(Equal.hashNumber(node.value), precision),
+        Equal.combine(Equal.combine(Equal.hashNumber(node.value), precision), unit),
       )
     }
     case 'Ref':
@@ -597,18 +710,36 @@ export const isCalc = (u: unknown): u is Calc<string> =>
   typeof u === 'object' && u !== null && CalcTypeId in u
 
 /** @internal */
-export const nodeOf = (expr: Calc<string>): CalcNode => (expr as CalcImpl).node
+export const nodeOf = (expr: Calc<string, Kind, unknown>): CalcNode => (expr as CalcImpl).node
 
 /** @internal */
-export const refsOf = <R extends string>(expr: Calc<R>): ReadonlySet<R> =>
+export const refsOf = <R extends string>(expr: Calc<R, Kind, unknown>): ReadonlySet<R> =>
   (expr as unknown as CalcImpl).refSet as ReadonlySet<R>
 
 const makeCalc = (node: CalcNode, refSet: ReadonlySet<string>): Calc<string> =>
   new CalcImpl(node, refSet)
 
+/**
+ * Any operand the runtime combinators accept: an expression of any kind, or a
+ * bare number. The precise per-combinator kind/leaf types live in `calc.ts`;
+ * the runtime works on the erased tree.
+ *
+ * @internal
+ */
+export type AnyInput = Calc<string, Kind, unknown> | number
+
+/**
+ * The bottom `Calc` — assignable to every precise combinator return in
+ * `calc.ts`. The loosely-typed runtime impls return this; the public signatures
+ * carry the real kind/leaf types.
+ *
+ * @internal
+ */
+export type Bottom = Calc<never, never, never>
+
 /** @internal */
-export const toCalc = (input: Input<string>): Calc<string> =>
-  typeof input === 'number' ? of(input) : input
+export const toCalc = (input: AnyInput): Calc<string> =>
+  typeof input === 'number' ? of(input) : (input as Calc<string>)
 
 const mergeRefs = (exprs: ReadonlyArray<Calc<string>>): ReadonlySet<string> => {
   const merged = new Set<string>()
@@ -630,6 +761,20 @@ export function of(value: number, precision?: Precision): Calc<never> {
     constantNode(value, precision === undefined ? undefined : toSpec(precision)),
     EMPTY_REFS,
   ) as Calc<never>
+}
+
+/**
+ * Builds a dimensioned constant. The `data` module's `Length`/`Angle`
+ * constructors call this and cast the result to the precise leaf-branded type;
+ * the calc core stays unit-agnostic, carrying `unit` and `kind` as given.
+ *
+ * @internal
+ */
+export function dimension(value: number, unit: string, kind: Kind, precision?: Precision): Bottom {
+  return makeCalc(
+    constantNode(value, precision === undefined ? undefined : toSpec(precision), unit, kind),
+    EMPTY_REFS,
+  ) as Bottom
 }
 
 const refCache = new Map<string, Calc<string>>()
@@ -744,7 +889,7 @@ export function max(...args: ReadonlyArray<Input<string>>): Calc<string> {
 
 const liftBinary =
   (construct: (left: CalcNode, right: CalcNode) => CalcNode) =>
-  (left: Input<string>, right: Input<string>): Calc<string> => {
+  (left: AnyInput, right: AnyInput): Calc<string> => {
     const l = toCalc(left)
     const r = toCalc(right)
     return makeCalc(construct(nodeOf(l), nodeOf(r)), mergeRefs([l, r]))
@@ -757,19 +902,13 @@ const powImpl = liftBinary(powNode)
 const signedPowImpl = liftBinary(signedPowNode)
 
 /** @internal */
-export function subtract<A extends string = never, B extends string = never>(
-  left: Input<A>,
-  right: Input<B>,
-): Calc<A | B> {
-  return subtractImpl(left, right) as Calc<A | B>
+export function subtract(left: AnyInput, right: AnyInput): Bottom {
+  return subtractImpl(left, right) as Bottom
 }
 
 /** @internal */
-export function multiply<A extends string = never, B extends string = never>(
-  left: Input<A>,
-  right: Input<B>,
-): Calc<A | B> {
-  return multiplyImpl(left, right) as Calc<A | B>
+export function multiply(left: AnyInput, right: AnyInput): Bottom {
+  return multiplyImpl(left, right) as Bottom
 }
 
 /** @internal */
@@ -798,7 +937,7 @@ export function signedPow<A extends string = never, B extends string = never>(
 
 const liftUnary =
   (construct: (argument: CalcNode) => CalcNode) =>
-  (argument: Input<string>): Calc<string> => {
+  (argument: AnyInput): Calc<string> => {
     const arg = toCalc(argument)
     return makeCalc(construct(nodeOf(arg)), refsOf(arg))
   }
@@ -810,8 +949,8 @@ const cosImpl = liftUnary(cosNode)
 const acosImpl = liftUnary(acosNode)
 
 /** @internal */
-export function abs<A extends string = never>(argument: Input<A>): Calc<A> {
-  return absImpl(argument) as Calc<A>
+export function abs(argument: AnyInput): Bottom {
+  return absImpl(argument) as Bottom
 }
 
 /** @internal */
@@ -835,26 +974,19 @@ export function acos<A extends string = never>(argument: Input<A>): Calc<A> {
 }
 
 /** @internal */
-export function clamp<A extends string = never, B extends string = never, C extends string = never>(
-  minimum: Input<A>,
-  value: Input<B>,
-  maximum: Input<C>,
-): Calc<A | B | C> {
+export function clamp(minimum: AnyInput, value: AnyInput, maximum: AnyInput): Bottom {
   const lo = toCalc(minimum)
   const mid = toCalc(value)
   const hi = toCalc(maximum)
-  return makeCalc(clampNode(nodeOf(lo), nodeOf(mid), nodeOf(hi)), mergeRefs([lo, mid, hi])) as Calc<
-    A | B | C
-  >
+  return makeCalc(
+    clampNode(nodeOf(lo), nodeOf(mid), nodeOf(hi)),
+    mergeRefs([lo, mid, hi]),
+  ) as Bottom
 }
 
 /** @internal */
-export function lerp<A extends string = never, B extends string = never, T extends string = never>(
-  a: Input<A>,
-  b: Input<B>,
-  t: Input<T>,
-): Calc<A | B | T> {
-  return add(multiply(subtract(1, t), a), multiply(t, b)) as Calc<A | B | T>
+export function lerp(a: AnyInput, b: AnyInput, t: AnyInput): Bottom {
+  return add(multiply(subtract(1, t), a), multiply(t, b)) as Bottom
 }
 
 // ---------------------------------------------------------------------------
@@ -918,7 +1050,7 @@ export function solve(expr: Calc<string>, bindings?: Record<string, Input<string
 
 /** @internal */
 export function serialize<Refs extends string>(
-  expr: Calc<Refs>,
+  expr: Calc<Refs, Kind, unknown>,
   options?: SerializeOptions<Refs>,
 ): string {
   let node = nodeOf(expr)
@@ -934,12 +1066,14 @@ export function serialize<Refs extends string>(
 }
 
 /** @internal */
-export function refs<Refs extends string>(expr: Calc<Refs>): ReadonlySet<Refs> {
+export function refs<Refs extends string>(expr: Calc<Refs, Kind, unknown>): ReadonlySet<Refs> {
   return refsOf(expr)
 }
 
 /** @internal */
 export const equals = dual<
-  (that: Calc<string>) => (self: Calc<string>) => boolean,
-  (self: Calc<string>, that: Calc<string>) => boolean
->(2, (self: Calc<string>, that: Calc<string>): boolean => Equal.equals(self, that))
+  (that: Calc<string, Kind, unknown>) => (self: Calc<string, Kind, unknown>) => boolean,
+  (self: Calc<string, Kind, unknown>, that: Calc<string, Kind, unknown>) => boolean
+>(2, (self: Calc<string, Kind, unknown>, that: Calc<string, Kind, unknown>): boolean =>
+  Equal.equals(self, that),
+)
