@@ -2,7 +2,8 @@ import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from '#ca
 import type { Pipeable } from '#util'
 import type { ColorTypeId } from './color.internal.ts'
 import * as internal from './color.internal.ts'
-import type { ColorSpace } from './colorSpace.ts'
+import type { ColorSpace, PolarSpace } from './colorSpace.ts'
+import type { HueInterpolation } from './hueInterpolation.ts'
 import type { None } from './keywords.ts'
 
 declare const ColorRefs: unique symbol
@@ -168,113 +169,73 @@ export const lightDark: <A extends string = never, B extends string = never>(
   dark: Color<B>,
 ) => Color<A | B> = internal.lightDark
 
-/**
- * A rectangular (Cartesian) interpolation colorspace: the two colors mix
- * coordinate by coordinate, with no hue channel, so no
- * `HueInterpolation` strategy applies to it.
- *
- * @since 0.2.0
- */
-export type RectangularColorspace =
-  | 'srgb'
-  | 'srgb-linear'
-  | 'display-p3'
-  | 'a98-rgb'
-  | 'prophoto-rgb'
-  | 'rec2020'
-  | 'lab'
-  | 'oklab'
-  | 'xyz'
-  | 'xyz-d50'
-  | 'xyz-d65'
+// A mix arm: a bare color, or a [color, weight] tuple. A bare number weight
+// reads as a percent; a `Percentage` expression carries an annotated or
+// computed one, and a plain number-kind `Calc` is rejected.
+type MixArm<C extends string, P extends string> =
+  | Color<C>
+  | readonly [Color<C>, number | Calc<P, 'percentage', unknown>]
 
 /**
- * A polar (cylindrical) interpolation colorspace: it carries a hue
- * channel, so a `HueInterpolation` strategy may accompany it.
+ * Creates a `color-mix(...)`: the browser mixes `color1` and `color2` in the
+ * interpolation `space`. Each arm is a bare `Color` or a `[color, percentage]`
+ * tuple giving its weight — a bare number reads as a percent (`20` is `20%`,
+ * the `<percentage>` convention), a `Percentage` expression an annotated or
+ * computed weight (`Percentage.of(20)`, `Calc.multiply(Percentage.of(50), ...)`);
+ * a plain number-kind `Calc` is rejected, a weight being a `<percentage>`.
  *
- * @since 0.2.0
- */
-export type PolarColorspace = 'hsl' | 'hwb' | 'lch' | 'oklch'
-
-/**
- * A `color-mix()` interpolation colorspace — the space whose coordinates
- * the two colors are mixed in, rectangular or polar.
- *
- * @since 0.2.0
- */
-export type Colorspace = RectangularColorspace | PolarColorspace
-
-/**
- * How a polar colorspace traverses the hue circle between the two colors:
- * the `shorter` or `longer` arc, or monotonically `increasing` /
- * `decreasing`. Serialized before the literal `hue` keyword, as CSS
- * spells it — `in oklch longer hue`.
- *
- * @since 0.2.0
- */
-export type HueInterpolation = 'shorter' | 'longer' | 'increasing' | 'decreasing'
-
-/**
- * The `<color-interpolation-method>` argument to `mix`: a bare colorspace
- * (`'oklch'`), or an object pairing a colorspace with its options. A hue
- * strategy is only grammatical after a polar space, so the object form
- * admits `hue` only when `colorspace` is a `PolarColorspace` — `{
- * colorspace: 'srgb', hue: 'longer' }` is a type error, mirroring the
- * grammar where `<hue-interpolation-method>` follows only a
- * `<polar-color-space>`.
- *
- * @since 0.2.0
- */
-export type InterpolationMethod =
-  | Colorspace
-  | { readonly colorspace: RectangularColorspace }
-  | { readonly colorspace: PolarColorspace; readonly hue?: HueInterpolation }
-
-/**
- * Creates a `color-mix(...)`: the browser mixes `color1` and `color2` in
- * the interpolation `method`'s colorspace. Each arm is a bare `Color` or
- * a `[color, percentage]` tuple giving that color's weight — a bare
- * number reads as a percent (`20` is `20%`, the `<percentage>`
- * convention), a `Percentage` expression carries an annotated or computed
- * weight (`Percentage.of(20)`, `Calc.multiply(Percentage.of(50), ...)`).
- * A plain number-kind `Calc` in the percentage slot is rejected: a weight
- * is a `<percentage>`, not a bare number.
+ * A polar `space` (`ColorSpace.oklch`, `ColorSpace.lch`, ...) may take a
+ * `HueInterpolation` strategy between the space and the colors — the second
+ * overload — for how the hue circle is traversed; omit it and the browser
+ * defaults to `shorter`. A rectangular space has no hue channel, so passing a
+ * strategy is a compile error, mirroring the grammar where
+ * `<hue-interpolation-method>` follows only a polar space.
  *
  * Percentages are optional and preserved verbatim — fashionable emits the
- * authored form and never runs the spec's mixing normalization (omitted
- * weights defaulting to `50%`, weights summing off `100%` rescaling with
- * an alpha multiplier), which is computed-value behavior the browser
- * owns. A hue-interpolation strategy attaches to a polar colorspace
- * through the object method form. Like every `Color`, a mix binds and
- * serializes but does not solve, and each arm and each percentage
+ * authored form and never runs the spec's mixing normalization (omitted weights
+ * defaulting to `50%`, weights off `100%` rescaling with an alpha multiplier),
+ * which is computed-value behavior the browser owns. Like every `Color`, a mix
+ * binds and serializes but does not solve, and each arm and each percentage
  * contributes its references to the result.
  *
- * @param method - The interpolation colorspace, optionally with a hue strategy.
+ * @param space - The interpolation `ColorSpace`; a polar one may be followed by a `HueInterpolation`.
  * @param color1 - The first color, or a `[color, percentage]` tuple weighting it.
  * @param color2 - The second color, or a `[color, percentage]` tuple weighting it.
  * @returns A `Color` unioning both arms' and both percentages' references.
  * @example
  * ```ts
- * Color.serialize(Color.mix('oklch', Color.named('red'), Color.named('blue')))
+ * Color.serialize(Color.mix(ColorSpace.oklch, Color.named('red'), Color.named('blue')))
  * // 'color-mix(in oklch, red, blue)'
- * Color.serialize(Color.mix('srgb', [Color.named('white'), 20], Color.named('black')))
+ * Color.serialize(Color.mix(ColorSpace.srgb, [Color.named('white'), 20], Color.named('black')))
  * // 'color-mix(in srgb, white 20%, black)'
- * const method = { colorspace: 'oklch', hue: 'longer' } as const
- * Color.serialize(Color.mix(method, Color.named('red'), Color.named('blue')))
+ * Color.serialize(Color.mix(ColorSpace.oklch, HueInterpolation.longer, Color.named('red'), Color.named('blue')))
  * // 'color-mix(in oklch longer hue, red, blue)'
  * ```
  * @since 0.2.0
  */
-export const mix: <
-  C1 extends string = never,
-  P1 extends string = never,
-  C2 extends string = never,
-  P2 extends string = never,
->(
-  method: InterpolationMethod,
-  color1: Color<C1> | readonly [Color<C1>, number | Calc<P1, 'percentage', unknown>],
-  color2: Color<C2> | readonly [Color<C2>, number | Calc<P2, 'percentage', unknown>],
-) => Color<C1 | P1 | C2 | P2> = internal.mix
+export const mix: {
+  <
+    C1 extends string = never,
+    P1 extends string = never,
+    C2 extends string = never,
+    P2 extends string = never,
+  >(
+    space: ColorSpace,
+    color1: MixArm<C1, P1>,
+    color2: MixArm<C2, P2>,
+  ): Color<C1 | P1 | C2 | P2>
+  <
+    C1 extends string = never,
+    P1 extends string = never,
+    C2 extends string = never,
+    P2 extends string = never,
+  >(
+    space: PolarSpace,
+    hue: HueInterpolation,
+    color1: MixArm<C1, P1>,
+    color2: MixArm<C2, P2>,
+  ): Color<C1 | P1 | C2 | P2>
+} = internal.mix
 
 /**
  * A channel slot of a relative color: a bare number, `Keyword.none`, or a

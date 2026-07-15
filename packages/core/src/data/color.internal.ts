@@ -17,9 +17,11 @@ import * as Equal from '#internal/equal'
 import { DEFAULT_FORMAT, type FormatSpec } from '#internal/format'
 import { EMPTY_REFS, unionRefs } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
-import type { Color, HueInterpolation, InterpolationMethod, RelativeChannel } from './color.ts'
+import type { Color, RelativeChannel } from './color.ts'
 import { dataOf as spaceDataOf, type Wrap } from './colorSpace.internal.ts'
 import type { ColorSpace } from './colorSpace.ts'
+import { strategyOf } from './hueInterpolation.internal.ts'
+import type { HueInterpolation } from './hueInterpolation.ts'
 import { isNone } from './keywords.internal.ts'
 import type { None } from './keywords.ts'
 import { of as percentageOf } from './percentage.internal.ts'
@@ -96,7 +98,7 @@ export interface LightDarkNode {
  */
 export interface MethodNode {
   readonly colorspace: string
-  readonly hue: HueInterpolation | undefined
+  readonly hue: string | undefined
 }
 
 /**
@@ -504,10 +506,11 @@ export function lightDark<A extends string = never, B extends string = never>(
   ) as Color<A | B>
 }
 
-const normalizeMethod = (method: InterpolationMethod): MethodNode =>
-  typeof method === 'string'
-    ? { colorspace: method, hue: undefined }
-    : { colorspace: method.colorspace, hue: 'hue' in method ? method.hue : undefined }
+// The erased mix arm: a whole color, or a [color, weight] tuple whose weight is
+// a percentage-kind expression (a bare number reads as a percent).
+type MixArmInput =
+  | Color<string>
+  | readonly [Color<string>, number | Calc<string, 'percentage', unknown>]
 
 interface ResolvedArm {
   readonly color: ColorNode
@@ -515,9 +518,7 @@ interface ResolvedArm {
   readonly refs: ReadonlySet<string>
 }
 
-const toArm = (
-  arm: Color<string> | readonly [Color<string>, number | Calc<string, 'percentage', unknown>],
-): ResolvedArm => {
+const toArm = (arm: MixArmInput): ResolvedArm => {
   if (isColor(arm)) {
     return { color: nodeOfColor(arm), percentage: undefined, refs: refsOf(arm) }
   }
@@ -531,29 +532,29 @@ const toArm = (
 }
 
 /** @internal */
-export function mix<
-  C1 extends string = never,
-  P1 extends string = never,
-  C2 extends string = never,
-  P2 extends string = never,
->(
-  method: InterpolationMethod,
-  color1: Color<C1> | readonly [Color<C1>, number | Calc<P1, 'percentage', unknown>],
-  color2: Color<C2> | readonly [Color<C2>, number | Calc<P2, 'percentage', unknown>],
-): Color<C1 | P1 | C2 | P2> {
-  const a1 = toArm(color1)
-  const a2 = toArm(color2)
+export function mix(
+  space: ColorSpace<unknown>,
+  arg2: HueInterpolation<string> | MixArmInput,
+  arg3: MixArmInput,
+  arg4?: MixArmInput,
+): Color<never> {
+  // (space, color1, color2), or (space, hue, color1, color2) — the hue form is
+  // the one with a fourth argument
+  const hasHue = arg4 !== undefined
+  const hue = hasHue ? strategyOf(arg2 as HueInterpolation<string>) : undefined
+  const a1 = toArm((hasHue ? arg3 : arg2) as MixArmInput)
+  const a2 = toArm((hasHue ? arg4 : arg3) as MixArmInput)
   return new ColorImpl(
     {
       _tag: 'ColorMix',
-      method: normalizeMethod(method),
+      method: { colorspace: spaceDataOf(space).token, hue },
       color1: a1.color,
       percentage1: a1.percentage,
       color2: a2.color,
       percentage2: a2.percentage,
     },
     unionRefs(a1.refs, a2.refs),
-  ) as Color<C1 | P1 | C2 | P2>
+  ) as Color<never>
 }
 
 const relative = (

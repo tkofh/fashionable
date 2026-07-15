@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Calc } from '#calc'
-import { Channel, Color, ColorSpace, Keyword, Percentage } from '#data'
+import { Channel, Color, ColorSpace, HueInterpolation, Keyword, Percentage } from '#data'
 
 describe('color', () => {
   describe('oklch', () => {
@@ -110,43 +110,51 @@ describe('color', () => {
 
   describe('mix', () => {
     test('serializes a bare two-color mix', () => {
-      expect(Color.serialize(Color.mix('oklch', Color.named('red'), Color.named('blue')))).toBe(
-        'color-mix(in oklch, red, blue)',
-      )
+      expect(
+        Color.serialize(Color.mix(ColorSpace.oklch, Color.named('red'), Color.named('blue'))),
+      ).toBe('color-mix(in oklch, red, blue)')
     })
 
     test('mixes whole color functions as arms', () => {
-      const color = Color.mix('srgb', Color.srgb(0.1, 0.2, 0.3), Color.oklch(0.7, 0.15, 220))
+      const color = Color.mix(
+        ColorSpace.srgb,
+        Color.srgb(0.1, 0.2, 0.3),
+        Color.oklch(0.7, 0.15, 220),
+      )
       expect(Color.serialize(color)).toBe(
         'color-mix(in srgb, color(srgb 0.1 0.2 0.3), oklch(0.7 0.15 220))',
       )
     })
 
     test('a bare number arm weight renders as a percent', () => {
-      const color = Color.mix('srgb', [Color.named('white'), 20], Color.named('black'))
+      const color = Color.mix(ColorSpace.srgb, [Color.named('white'), 20], Color.named('black'))
       expect(Color.serialize(color)).toBe('color-mix(in srgb, white 20%, black)')
     })
 
     test('both arms may carry weights', () => {
-      const color = Color.mix('oklch', [Color.named('red'), 40], [Color.named('blue'), 60])
+      const color = Color.mix(ColorSpace.oklch, [Color.named('red'), 40], [Color.named('blue'), 60])
       expect(Color.serialize(color)).toBe('color-mix(in oklch, red 40%, blue 60%)')
     })
 
     test('a Percentage weight serializes identically to the number form', () => {
-      const color = Color.mix('oklch', [Color.named('red'), Percentage.of(40)], Color.named('blue'))
+      const color = Color.mix(
+        ColorSpace.oklch,
+        [Color.named('red'), Percentage.of(40)],
+        Color.named('blue'),
+      )
       expect(Color.serialize(color)).toBe('color-mix(in oklch, red 40%, blue)')
     })
 
     test('summed constant percentages fold; an arithmetic weight wraps in calc()', () => {
       const folded = Color.mix(
-        'oklch',
+        ColorSpace.oklch,
         [Color.named('red'), Calc.add(Percentage.of(20), Percentage.of(5))],
         Color.named('blue'),
       )
       expect(Color.serialize(folded)).toBe('color-mix(in oklch, red 25%, blue)')
 
       const scaled = Color.mix(
-        'oklch',
+        ColorSpace.oklch,
         [Color.named('red'), Calc.multiply(Percentage.of(50), Calc.ref('t'))],
         Color.named('blue'),
       )
@@ -155,7 +163,8 @@ describe('color', () => {
 
     test('a polar space carries a hue-interpolation strategy', () => {
       const color = Color.mix(
-        { colorspace: 'oklch', hue: 'longer' },
+        ColorSpace.oklch,
+        HueInterpolation.longer,
         Color.named('red'),
         Color.named('blue'),
       )
@@ -164,7 +173,7 @@ describe('color', () => {
 
     test('unions arm and percentage references, and binds through both', () => {
       const color = Color.mix(
-        'oklch',
+        ColorSpace.oklch,
         [Color.oklch(Calc.ref('l'), 0.1, 250), Calc.multiply(Percentage.of(50), Calc.ref('t'))],
         Color.srgb(Calc.ref('r'), 0.2, 0.3),
       )
@@ -177,7 +186,7 @@ describe('color', () => {
 
     test('serialize applies partial bindings, leaving an unbound weight symbolic', () => {
       const color = Color.mix(
-        'srgb',
+        ColorSpace.srgb,
         [Color.srgb(Calc.ref('r'), 0, 0), Calc.multiply(Percentage.of(50), Calc.ref('w'))],
         Color.named('black'),
       )
@@ -187,33 +196,44 @@ describe('color', () => {
       )
     })
 
-    test('equality is structural over method, arms, and weights', () => {
-      const base = Color.mix('oklch', [Color.named('red'), 40], Color.named('blue'))
+    test('equality is structural over space, arms, and weights', () => {
+      const base = Color.mix(ColorSpace.oklch, [Color.named('red'), 40], Color.named('blue'))
       expect(
-        Color.equals(base, Color.mix('oklch', [Color.named('red'), 40], Color.named('blue'))),
+        Color.equals(
+          base,
+          Color.mix(ColorSpace.oklch, [Color.named('red'), 40], Color.named('blue')),
+        ),
       ).toBe(true)
       // a different colorspace never compares equal
       expect(
-        Color.equals(base, Color.mix('srgb', [Color.named('red'), 40], Color.named('blue'))),
+        Color.equals(
+          base,
+          Color.mix(ColorSpace.srgb, [Color.named('red'), 40], Color.named('blue')),
+        ),
       ).toBe(false)
       // a different weight never compares equal
       expect(
-        Color.equals(base, Color.mix('oklch', [Color.named('red'), 60], Color.named('blue'))),
+        Color.equals(
+          base,
+          Color.mix(ColorSpace.oklch, [Color.named('red'), 60], Color.named('blue')),
+        ),
       ).toBe(false)
       // an omitted weight never equals a present one
-      expect(Color.equals(base, Color.mix('oklch', Color.named('red'), Color.named('blue')))).toBe(
-        false,
-      )
+      expect(
+        Color.equals(base, Color.mix(ColorSpace.oklch, Color.named('red'), Color.named('blue'))),
+      ).toBe(false)
       // the hue strategy participates
       expect(
         Color.equals(
           Color.mix(
-            { colorspace: 'oklch', hue: 'longer' },
+            ColorSpace.oklch,
+            HueInterpolation.longer,
             Color.named('red'),
             Color.named('blue'),
           ),
           Color.mix(
-            { colorspace: 'oklch', hue: 'shorter' },
+            ColorSpace.oklch,
+            HueInterpolation.shorter,
             Color.named('red'),
             Color.named('blue'),
           ),
@@ -222,14 +242,14 @@ describe('color', () => {
     })
 
     test('arms are positional: swapping colors is a different mix', () => {
-      const a = Color.mix('oklch', [Color.named('red'), 40], Color.named('blue'))
-      const b = Color.mix('oklch', Color.named('blue'), [Color.named('red'), 40])
+      const a = Color.mix(ColorSpace.oklch, [Color.named('red'), 40], Color.named('blue'))
+      const b = Color.mix(ColorSpace.oklch, Color.named('blue'), [Color.named('red'), 40])
       expect(Color.equals(a, b)).toBe(false)
     })
 
     test('a mix nests as a color-mix arm and a light-dark arm', () => {
-      const inner = Color.mix('oklch', Color.named('red'), Color.named('blue'))
-      expect(Color.serialize(Color.mix('srgb', inner, Color.named('white')))).toBe(
+      const inner = Color.mix(ColorSpace.oklch, Color.named('red'), Color.named('blue'))
+      expect(Color.serialize(Color.mix(ColorSpace.srgb, inner, Color.named('white')))).toBe(
         'color-mix(in srgb, color-mix(in oklch, red, blue), white)',
       )
       expect(Color.serialize(Color.lightDark(inner, Color.transparent))).toBe(
@@ -419,7 +439,7 @@ describe('color', () => {
     })
 
     test('composes as a mix arm and a light-dark arm', () => {
-      expect(Color.serialize(Color.mix('oklch', Color.ref('a'), Color.ref('b')))).toBe(
+      expect(Color.serialize(Color.mix(ColorSpace.oklch, Color.ref('a'), Color.ref('b')))).toBe(
         'color-mix(in oklch, var(--a), var(--b))',
       )
       expect(Color.serialize(Color.lightDark(Color.ref('light'), Color.ref('dark')))).toBe(

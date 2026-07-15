@@ -1,6 +1,15 @@
 import { describe, expect, expectTypeOf, test } from 'vitest'
 import { Calc } from '#calc'
-import { Angle, Channel, Color, ColorSpace, Length, Percentage, type Unit } from '#data'
+import {
+  Angle,
+  Channel,
+  Color,
+  ColorSpace,
+  HueInterpolation,
+  Length,
+  Percentage,
+  type Unit,
+} from '#data'
 import { Declaration } from '#declaration'
 import { FontFaceRule } from '#fontFace'
 import { PropertyRule, PropertySyntax } from '#property'
@@ -77,14 +86,12 @@ const rejectsMismatchedInitialValues = (): void => {
 const rejectsInvalidMixMethods = (): void => {
   const red = Color.named('red')
   const blue = Color.named('blue')
-  // @ts-expect-error a hue strategy is only grammatical after a polar colorspace
-  Color.mix({ colorspace: 'srgb', hue: 'longer' }, red, blue)
-  // @ts-expect-error 'okrgb' is not one of the interpolation colorspaces
-  Color.mix('okrgb', red, blue)
+  // @ts-expect-error a hue strategy is only grammatical after a polar space
+  Color.mix(ColorSpace.srgb, HueInterpolation.longer, red, blue)
   // @ts-expect-error an arm weight is a <percentage>, not a plain number-kind expression
-  Color.mix('oklch', [red, Calc.of(40)], blue)
+  Color.mix(ColorSpace.oklch, [red, Calc.of(40)], blue)
   // @ts-expect-error an arm weight is a <percentage>, not a <length>
-  Color.mix('oklch', [red, Length.px(40)], blue)
+  Color.mix(ColorSpace.oklch, [red, Length.px(40)], blue)
 }
 
 // Compile-time assertions only — never invoked.
@@ -189,11 +196,21 @@ describe('types', () => {
 
   test('color mix unions both arms and both percentage refs', () => {
     const color = Color.mix(
-      'oklch',
+      ColorSpace.oklch,
       [Color.oklch(Calc.ref('l'), 0.1, 250), Calc.multiply(Percentage.of(50), Calc.ref('t'))],
       Color.srgb(Calc.ref('r'), 0.2, 0.3),
     )
     expectTypeOf(color).toEqualTypeOf<Color.Color<'l' | 't' | 'r'>>()
+  })
+
+  test('mixing in a polar space takes a hue and unions arm refs', () => {
+    const color = Color.mix(
+      ColorSpace.oklch,
+      HueInterpolation.longer,
+      Color.ref('a'),
+      Color.ref('b'),
+    )
+    expectTypeOf(color).toEqualTypeOf<Color.Color<'a' | 'b'>>()
   })
 
   test('declarations carry their value refs', () => {
