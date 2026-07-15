@@ -1,5 +1,6 @@
-import type { Calc } from '#calc/calc'
+import type { Calc, Kind } from '#calc/calc'
 import type { Color } from '#data/color'
+import type { AbsoluteLength, Angle, Percentage } from '#data/units'
 import type { Pipeable } from '#util'
 import type { PropertySyntaxTypeId } from './propertySyntax.internal.ts'
 import * as internal from './propertySyntax.internal.ts'
@@ -32,13 +33,14 @@ export interface PropertySyntax<out V = Value> extends Pipeable {
 /**
  * The full initial-value domain — what the universal syntax accepts.
  * Individual syntaxes narrow this: number-land syntaxes take numbers and
- * closed `Calc` expressions, `color` takes closed `Color` expressions or
- * text, keyword sets take exactly their literals, and everything else
- * takes literal text carrying its own units.
+ * closed `Calc` expressions, dimensioned syntaxes take a closed `Calc` of
+ * their kind (a `<length>` initial value must be computationally independent,
+ * so only absolute units), `color` takes closed `Color` expressions or text,
+ * keyword sets take exactly their literals, and the rest take literal text.
  *
  * @since 0.1.0
  */
-export type Value = string | number | Calc<never> | Color<never>
+export type Value = string | number | Calc<never, Kind, unknown> | Color<never>
 
 /**
  * The initial-value forms a syntax accepts — the type-level counterpart
@@ -81,12 +83,12 @@ export interface Universal extends PropertySyntax<Value> {
 export const universal: Universal = internal.universal
 
 /**
- * The `<angle>` data type. Initial values are literal text carrying an
- * angle unit (`'90deg'`).
+ * The `<angle>` data type. Initial values are a closed angle-kind `Calc`
+ * (`Angle.rad(...)`) or literal text carrying an angle unit (`'90deg'`).
  *
  * @since 0.1.0
  */
-export const angle: PropertySyntax<string> = internal.angle
+export const angle: PropertySyntax<string | Calc<never, 'angle', Angle>> = internal.angle
 
 /**
  * The `<color>` data type. Initial values are closed `Color` expressions
@@ -122,19 +124,26 @@ export const image: PropertySyntax<string> = internal.image
 export const integer: PropertySyntax<number | Calc<never>> = internal.integer
 
 /**
- * The `<length>` data type. Initial values are literal text carrying a
- * length unit (`'0px'` — a bare `0` is not a valid registered length).
+ * The `<length>` data type. Initial values are a closed length-kind `Calc`
+ * (`Length.px(8)`) or literal text carrying a length unit (`'8px'` — a bare
+ * `0` is not a valid registered length). An `@property` initial value must be
+ * computationally independent, so an expression may carry only absolute units
+ * (`px`) — a viewport- or font-relative length (`Length.vw(8)`) is rejected.
  *
  * @since 0.1.0
  */
-export const length: PropertySyntax<string> = internal.length
+export const length: PropertySyntax<string | Calc<never, 'length', AbsoluteLength>> =
+  internal.length
 
 /**
- * The `<length-percentage>` data type. Initial values are literal text.
+ * The `<length-percentage>` data type. Initial values are a closed
+ * absolute-length or percentage `Calc`, or literal text.
  *
  * @since 0.1.0
  */
-export const lengthPercentage: PropertySyntax<string> = internal.lengthPercentage
+export const lengthPercentage: PropertySyntax<
+  string | Calc<never, 'length', AbsoluteLength> | Calc<never, 'percentage', Percentage>
+> = internal.lengthPercentage
 
 /**
  * The `<number>` data type. Initial values are numbers or closed `Calc`
@@ -146,12 +155,13 @@ export const lengthPercentage: PropertySyntax<string> = internal.lengthPercentag
 export const number: PropertySyntax<number | Calc<never>> = internal.number
 
 /**
- * The `<percentage>` data type. Initial values are literal text carrying
- * the `%` unit (`'50%'`).
+ * The `<percentage>` data type. Initial values are a closed percentage-kind
+ * `Calc` (`Percentage.of(50)`) or literal text carrying the `%` unit (`'50%'`).
  *
  * @since 0.1.0
  */
-export const percentage: PropertySyntax<string> = internal.percentage
+export const percentage: PropertySyntax<string | Calc<never, 'percentage', Percentage>> =
+  internal.percentage
 
 /**
  * The `<resolution>` data type. Initial values are literal text.

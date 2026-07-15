@@ -36,10 +36,25 @@ export interface RefNode {
   readonly name: string
 }
 
+/**
+ * A bare CSS identifier leaf — an unquoted token the browser resolves from
+ * its surrounding context, not the custom-property channel. Serializes as its
+ * name (`l`, not `var(--l)`), contributes no references, and cannot be solved,
+ * since no `bind` value reaches it. Today the relative-color channel keywords
+ * (`Channel.L`, `Channel.C`, ...) are its only source.
+ *
+ * @internal
+ */
+export interface IdentNode {
+  readonly _tag: 'Ident'
+  readonly name: string
+}
+
 /** @internal */
 export type CalcNode =
   | ConstantNode
   | RefNode
+  | IdentNode
   | { readonly _tag: 'Add'; readonly terms: ReadonlyArray<CalcNode> }
   | { readonly _tag: 'Subtract'; readonly left: CalcNode; readonly right: CalcNode }
   | { readonly _tag: 'Multiply'; readonly left: CalcNode; readonly right: CalcNode }
@@ -58,7 +73,9 @@ export type CalcNode =
   | { readonly _tag: 'Sign'; readonly argument: CalcNode }
   | { readonly _tag: 'Sin'; readonly argument: CalcNode }
   | { readonly _tag: 'Cos'; readonly argument: CalcNode }
+  | { readonly _tag: 'Tan'; readonly argument: CalcNode }
   | { readonly _tag: 'Acos'; readonly argument: CalcNode }
+  | { readonly _tag: 'Atan2'; readonly y: CalcNode; readonly x: CalcNode }
 
 const isConstant = (node: CalcNode): node is ConstantNode => node._tag === 'Constant'
 
@@ -228,33 +245,60 @@ const clampNode = (minimum: CalcNode, value: CalcNode, maximum: CalcNode): CalcN
   return { _tag: 'Clamp', minimum, value, maximum }
 }
 
-const unaryNode =
-  (tag: 'Sign' | 'Sin' | 'Cos', compute: (x: number) => number) =>
-  (argument: CalcNode): CalcNode => {
-    if (isConstant(argument)) {
-      return constantNode(compute(argument.value), argument.precision)
-    }
-    return { _tag: tag, argument }
-  }
+type UnaryTag = 'Abs' | 'Sign' | 'Sin' | 'Cos' | 'Tan' | 'Acos'
 
-// abs preserves the operand's dimension; sign/sin/cos produce a number
-const absNode = (argument: CalcNode): CalcNode => {
-  if (isConstant(argument)) {
-    return constantNode(Math.abs(argument.value), argument.precision, argument.unit, argument.kind)
+/**
+ * Per-function data for the unary math nodes — the single source of truth the
+ * fold constructor, the evaluator, and the serializer all read:
+ *
+ * - `fn` both folds a constant operand and lowers the node under `solve`, so the
+ *   construction-time and solve-time numerics can never drift.
+ * - `css` is the math-function name serialization emits.
+ * - `result` is the folded constant's dimension: `sign`/`sin`/`cos`/`tan`
+ *   produce a plain `number`; `abs` preserves the operand's; `acos` returns
+ *   radians, so its constant composes with `Angle.rad` terms and stays valid CSS
+ *   with no plain-number-beside-angle hack.
+ */
+const UNARY: Record<
+  UnaryTag,
+  {
+    readonly fn: (x: number) => number
+    readonly css: string
+    readonly result: 'number' | 'preserve' | 'rad'
   }
-  return { _tag: 'Abs', argument }
+> = {
+  Abs: { fn: Math.abs, css: 'abs', result: 'preserve' },
+  Sign: { fn: Math.sign, css: 'sign', result: 'number' },
+  Sin: { fn: Math.sin, css: 'sin', result: 'number' },
+  Cos: { fn: Math.cos, css: 'cos', result: 'number' },
+  Tan: { fn: Math.tan, css: 'tan', result: 'number' },
+  Acos: { fn: Math.acos, css: 'acos', result: 'rad' },
 }
-const signNode = unaryNode('Sign', Math.sign)
-const sinNode = unaryNode('Sin', Math.sin)
-const cosNode = unaryNode('Cos', Math.cos)
 
-// acos returns an <angle>: a folded result is a radian constant, so it composes
-// with Angle.rad terms and stays valid CSS with no plain-number-beside-angle hack
-const acosNode = (argument: CalcNode): CalcNode => {
+const foldUnary = (tag: UnaryTag, argument: CalcNode): CalcNode => {
   if (isConstant(argument)) {
-    return constantNode(Math.acos(argument.value), argument.precision, 'rad', 'angle')
+    const { fn, result } = UNARY[tag]
+    const value = fn(argument.value)
+    if (result === 'preserve') {
+      return constantNode(value, argument.precision, argument.unit, argument.kind)
+    }
+    if (result === 'rad') {
+      return constantNode(value, argument.precision, 'rad', 'angle')
+    }
+    return constantNode(value, argument.precision)
   }
-  return { _tag: 'Acos', argument }
+  return { _tag: tag, argument }
+}
+
+// atan2(y, x) returns an <angle>. It also divides same-kind dimensions to a
+// number via tan(atan2(a, b)): a length ratio that works where `a / b` does not
+// (Firefox does not yet support <length> / <length> in calc). Folds only when
+// both operands share a unit, so the ratio is unit-free (like divide).
+const atan2Node = (y: CalcNode, x: CalcNode): CalcNode => {
+  if (isConstant(y) && isConstant(x) && y.unit === x.unit) {
+    return constantNode(Math.atan2(y.value, x.value), bestPrecision([y, x]), 'rad', 'angle')
+  }
+  return { _tag: 'Atan2', y, x }
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +312,8 @@ export const substituteNode = (node: CalcNode, bindings: Record<string, CalcNode
       return node
     case 'Ref':
       return bindings[node.name] ?? node
+    case 'Ident':
+      return node
     case 'Add':
       return addNode(node.terms.map((term) => substituteNode(term, bindings)))
     case 'Subtract':
@@ -294,15 +340,14 @@ export const substituteNode = (node: CalcNode, bindings: Record<string, CalcNode
         substituteNode(node.maximum, bindings),
       )
     case 'Abs':
-      return absNode(substituteNode(node.argument, bindings))
     case 'Sign':
-      return signNode(substituteNode(node.argument, bindings))
     case 'Sin':
-      return sinNode(substituteNode(node.argument, bindings))
     case 'Cos':
-      return cosNode(substituteNode(node.argument, bindings))
+    case 'Tan':
     case 'Acos':
-      return acosNode(substituteNode(node.argument, bindings))
+      return foldUnary(node._tag, substituteNode(node.argument, bindings))
+    case 'Atan2':
+      return atan2Node(substituteNode(node.y, bindings), substituteNode(node.x, bindings))
   }
 }
 
@@ -331,6 +376,8 @@ export const evaluateNode = (node: CalcNode, context: Record<string, number>): n
     }
     case 'Ref':
       throw new Error(`Cannot evaluate non-constant reference: ${node.name}`)
+    case 'Ident':
+      throw new Error(`Cannot evaluate bare identifier: ${node.name}`)
     case 'Add':
       return node.terms.reduce((total, term) => total + evaluateNode(term, context), 0)
     case 'Subtract':
@@ -355,15 +402,14 @@ export const evaluateNode = (node: CalcNode, context: Record<string, number>): n
         Math.min(evaluateNode(node.value, context), evaluateNode(node.maximum, context)),
       )
     case 'Abs':
-      return Math.abs(evaluateNode(node.argument, context))
     case 'Sign':
-      return Math.sign(evaluateNode(node.argument, context))
     case 'Sin':
-      return Math.sin(evaluateNode(node.argument, context))
     case 'Cos':
-      return Math.cos(evaluateNode(node.argument, context))
+    case 'Tan':
     case 'Acos':
-      return Math.acos(evaluateNode(node.argument, context))
+      return UNARY[node._tag].fn(evaluateNode(node.argument, context))
+    case 'Atan2':
+      return Math.atan2(evaluateNode(node.y, context), evaluateNode(node.x, context))
   }
 }
 
@@ -452,6 +498,8 @@ export const serializeNode = (
       return formatConstant(node, insideMath, context)
     case 'Ref':
       return `var(--${node.name})`
+    case 'Ident':
+      return node.name
     case 'Add': {
       let out = ''
       for (const [index, term] of node.terms.entries()) {
@@ -496,15 +544,14 @@ export const serializeNode = (
     case 'Clamp':
       return `clamp(${serializeNode(node.minimum, true, context)}, ${serializeNode(node.value, true, context)}, ${serializeNode(node.maximum, true, context)})`
     case 'Abs':
-      return `abs(${serializeNode(node.argument, true, context)})`
     case 'Sign':
-      return `sign(${serializeNode(node.argument, true, context)})`
     case 'Sin':
-      return `sin(${serializeNode(node.argument, true, context)})`
     case 'Cos':
-      return `cos(${serializeNode(node.argument, true, context)})`
+    case 'Tan':
     case 'Acos':
-      return `acos(${serializeNode(node.argument, true, context)})`
+      return `${UNARY[node._tag].css}(${serializeNode(node.argument, true, context)})`
+    case 'Atan2':
+      return `atan2(${serializeNode(node.y, true, context)}, ${serializeNode(node.x, true, context)})`
   }
 }
 
@@ -539,6 +586,8 @@ export const nodeEquals = (a: CalcNode, b: CalcNode): boolean => {
     }
     case 'Ref':
       return a.name === (b as RefNode).name
+    case 'Ident':
+      return a.name === (b as IdentNode).name
     case 'Add':
       return nodeArrayEquals(a.terms, (b as typeof a).terms)
     case 'Subtract':
@@ -567,8 +616,13 @@ export const nodeEquals = (a: CalcNode, b: CalcNode): boolean => {
     case 'Sign':
     case 'Sin':
     case 'Cos':
+    case 'Tan':
     case 'Acos':
       return nodeEquals(a.argument, (b as typeof a).argument)
+    case 'Atan2': {
+      const other = b as typeof a
+      return nodeEquals(a.y, other.y) && nodeEquals(a.x, other.x)
+    }
   }
 }
 
@@ -596,6 +650,8 @@ export const nodeHash = (node: CalcNode): number => {
     }
     case 'Ref':
       return Equal.combine(Equal.hashString('Ref'), Equal.hashString(node.name))
+    case 'Ident':
+      return Equal.combine(Equal.hashString('Ident'), Equal.hashString(node.name))
     case 'Add':
       return hashNodeArray('Add', node.terms)
     case 'Subtract':
@@ -614,8 +670,11 @@ export const nodeHash = (node: CalcNode): number => {
     case 'Sign':
     case 'Sin':
     case 'Cos':
+    case 'Tan':
     case 'Acos':
       return hashNodeArray(node._tag, [node.argument])
+    case 'Atan2':
+      return hashNodeArray('Atan2', [node.y, node.x])
   }
 }
 
@@ -740,6 +799,19 @@ export function ref<Name extends string>(name: Name): Calc<Name> {
   return expr as Calc<Name>
 }
 
+/**
+ * Builds a bare-identifier constant — a leaf serializing as `name`, carrying no
+ * references. The `data` module's `Channel` keywords call this; the identifier
+ * text is opaque to the calc core, resolved by whatever CSS context surrounds
+ * it (a relative-color function today).
+ *
+ * @internal
+ */
+export function ident(name: string): Calc<never> {
+  invariant(name.length > 0, 'Identifier name must be a non-empty string')
+  return makeCalc({ _tag: 'Ident', name }, EMPTY_REFS) as Calc<never>
+}
+
 // ---------------------------------------------------------------------------
 // combinators
 // ---------------------------------------------------------------------------
@@ -755,86 +827,48 @@ const addImpl = liftNary(addNode)
 const minImpl = liftNary(minNode)
 const maxImpl = liftNary(maxNode)
 
-/** @internal */
-export function add<A extends string = never, B extends string = never>(
-  a: Input<A>,
-  b: Input<B>,
-): Calc<A | B>
-/** @internal */
-export function add<A extends string = never, B extends string = never, C extends string = never>(
-  a: Input<A>,
-  b: Input<B>,
-  c: Input<C>,
-): Calc<A | B | C>
-/** @internal */
-export function add<
-  A extends string = never,
-  B extends string = never,
-  C extends string = never,
-  D extends string = never,
->(a: Input<A>, b: Input<B>, c: Input<C>, d: Input<D>): Calc<A | B | C | D>
-/** @internal */
-export function add(
-  ...args: readonly [Input<string>, Input<string>, ...ReadonlyArray<Input<string>>]
-): Calc<string>
-/** @internal */
-export function add(...args: ReadonlyArray<Input<string>>): Calc<string> {
-  return addImpl(args)
+/**
+ * The shared shape of the variadic same-kind combinators (`add`, `min`, `max`):
+ * fixed 2/3/4-ary overloads that union the operands' references, then a variadic
+ * tail. The precise kind/leaf algebra rides on the public re-exports in
+ * `calc.ts`; these internal arms track only references.
+ */
+interface NaryCombinator {
+  <A extends string = never, B extends string = never>(a: Input<A>, b: Input<B>): Calc<A | B>
+  <A extends string = never, B extends string = never, C extends string = never>(
+    a: Input<A>,
+    b: Input<B>,
+    c: Input<C>,
+  ): Calc<A | B | C>
+  <
+    A extends string = never,
+    B extends string = never,
+    C extends string = never,
+    D extends string = never,
+  >(
+    a: Input<A>,
+    b: Input<B>,
+    c: Input<C>,
+    d: Input<D>,
+  ): Calc<A | B | C | D>
+  (...args: readonly [Input<string>, Input<string>, ...ReadonlyArray<Input<string>>]): Calc<string>
 }
 
-/** @internal */
-export function min<A extends string = never, B extends string = never>(
-  a: Input<A>,
-  b: Input<B>,
-): Calc<A | B>
-/** @internal */
-export function min<A extends string = never, B extends string = never, C extends string = never>(
-  a: Input<A>,
-  b: Input<B>,
-  c: Input<C>,
-): Calc<A | B | C>
-/** @internal */
-export function min<
-  A extends string = never,
-  B extends string = never,
-  C extends string = never,
-  D extends string = never,
->(a: Input<A>, b: Input<B>, c: Input<C>, d: Input<D>): Calc<A | B | C | D>
-/** @internal */
-export function min(
-  ...args: readonly [Input<string>, Input<string>, ...ReadonlyArray<Input<string>>]
-): Calc<string>
-/** @internal */
-export function min(...args: ReadonlyArray<Input<string>>): Calc<string> {
-  return minImpl(args)
-}
+// The precise arms widen the loose runtime impl (every arity returns
+// `Calc<string>`); the function-overload form these three replace hid the same
+// widening behind lenient overload checking, so the cast loses no safety.
+const naryCombinator = (
+  impl: (args: ReadonlyArray<Input<string>>) => Calc<string>,
+): NaryCombinator => ((...args: ReadonlyArray<Input<string>>) => impl(args)) as NaryCombinator
 
 /** @internal */
-export function max<A extends string = never, B extends string = never>(
-  a: Input<A>,
-  b: Input<B>,
-): Calc<A | B>
+export const add: NaryCombinator = naryCombinator(addImpl)
+
 /** @internal */
-export function max<A extends string = never, B extends string = never, C extends string = never>(
-  a: Input<A>,
-  b: Input<B>,
-  c: Input<C>,
-): Calc<A | B | C>
+export const min: NaryCombinator = naryCombinator(minImpl)
+
 /** @internal */
-export function max<
-  A extends string = never,
-  B extends string = never,
-  C extends string = never,
-  D extends string = never,
->(a: Input<A>, b: Input<B>, c: Input<C>, d: Input<D>): Calc<A | B | C | D>
-/** @internal */
-export function max(
-  ...args: readonly [Input<string>, Input<string>, ...ReadonlyArray<Input<string>>]
-): Calc<string>
-/** @internal */
-export function max(...args: ReadonlyArray<Input<string>>): Calc<string> {
-  return maxImpl(args)
-}
+export const max: NaryCombinator = naryCombinator(maxImpl)
 
 const liftBinary =
   (construct: (left: CalcNode, right: CalcNode) => CalcNode) =>
@@ -849,6 +883,7 @@ const multiplyImpl = liftBinary(multiplyNode)
 const divideImpl = liftBinary(divideNode)
 const powImpl = liftBinary(powNode)
 const signedPowImpl = liftBinary(signedPowNode)
+const atan2Impl = liftBinary(atan2Node)
 
 /** @internal */
 export function subtract(left: AnyInput, right: AnyInput): Bottom {
@@ -891,11 +926,12 @@ const liftUnary =
     return makeCalc(construct(nodeOf(arg)), refsOf(arg))
   }
 
-const absImpl = liftUnary(absNode)
-const signImpl = liftUnary(signNode)
-const sinImpl = liftUnary(sinNode)
-const cosImpl = liftUnary(cosNode)
-const acosImpl = liftUnary(acosNode)
+const absImpl = liftUnary((argument) => foldUnary('Abs', argument))
+const signImpl = liftUnary((argument) => foldUnary('Sign', argument))
+const sinImpl = liftUnary((argument) => foldUnary('Sin', argument))
+const cosImpl = liftUnary((argument) => foldUnary('Cos', argument))
+const tanImpl = liftUnary((argument) => foldUnary('Tan', argument))
+const acosImpl = liftUnary((argument) => foldUnary('Acos', argument))
 
 /** @internal */
 export function abs(argument: AnyInput): Bottom {
@@ -918,8 +954,18 @@ export function cos(argument: AnyInput): Bottom {
 }
 
 /** @internal */
+export function tan(argument: AnyInput): Bottom {
+  return tanImpl(argument) as Bottom
+}
+
+/** @internal */
 export function acos(argument: AnyInput): Bottom {
   return acosImpl(argument) as Bottom
+}
+
+/** @internal */
+export function atan2(y: AnyInput, x: AnyInput): Bottom {
+  return atan2Impl(y, x) as Bottom
 }
 
 /** @internal */

@@ -22,9 +22,9 @@ unit-bearing tree lowers its leaves through a context rather than refusing.
   dimensional states are unrepresentable (design.md principle 1), not merely
   caught at runtime.
 - Units in scope, driven by real consumer need: `px`, `rem`, `em`, `vw`, `vh`,
-  `vmin`, `vmax` (`<length>`); `rad` (`<angle>`). Percentage is deferred
-  (section 11). `deg`/`turn`/`grad` are trivial later additions, unbuilt until
-  a consumer needs them.
+  `vmin`, `vmax` (`<length>`); `rad` (`<angle>`); `%` (`<percentage>`, added
+  with `color-mix` — section 11). `deg`/`turn`/`grad` are trivial later
+  additions, unbuilt until a consumer needs them.
 - A new `fashionable/data` module holds the value vocabulary: `Length`,
   `Angle`, and — folded in from `fashionable/color` — `Color` (section 9).
 - The calc core stays **unit-agnostic**: it reasons about dimension and unions
@@ -42,8 +42,9 @@ and the `1rad` machinery in `calc.internal.ts` bolted on to fake angle-ness at
 serialization time.
 
 **Closed-kind model, not the full exponent algebra.** We cap the tracked set at
-degree-1 kinds — `number | length | angle`, with room for `time`/`resolution`
-later — and make transitions that would leave the set (`length * length`)
+degree-1 kinds — `number | length | angle | percentage`, with room for
+`time`/`resolution` later — and make transitions that would leave the set
+(`length * length`)
 compile errors. The payoff is that the type-level algebra is a finite
 conditional-type lookup, not integer arithmetic over a record: cheap to
 evaluate, fast to check, and legible in error messages. The set is closed under
@@ -68,7 +69,7 @@ interface Calc<
 }
 
 namespace Calc {
-  export type Kind = 'number' | 'length' | 'angle'
+  export type Kind = 'number' | 'length' | 'angle' | 'percentage'
   export type Top = Calc<string, Kind, unknown>
 }
 
@@ -116,8 +117,13 @@ All rules are non-recursive conditional types over the closed kind set.
 - **Divide**: `K / number = K`, `K / K = number`; `number / length` and mixed
   dimensions are invalid.
 - **Trig and powers**: `pow`, `signedPow`, `sqrt` take `number`, return
-  `number`; `sin`/`cos` take `number` or `angle`, return `number`; `acos`
-  takes `number`, returns `angle`.
+  `number`; `sin`/`cos`/`tan` take `number` or `angle`, return `number`; `acos`
+  takes `number`, returns `angle`; `atan2` takes two same-kind operands, returns
+  `angle`. `tan(atan2(a, b))` divides two same-kind dimensions to a `<number>`,
+  and is what the codegen emits for a `<length>` ratio: `<length> / <length>`
+  is valid in the type algebra and serializes, but Firefox does not yet support
+  it in `calc()`, whereas `tan(atan2(...))` is portable. The two forms are
+  interchangeable — same kind (`<number>`), same leaves, same solved value.
 
 **Invalid combinations are compile errors (proven), not runtime throws.**
 Multiply and divide each split into two overloads that require at least one
@@ -385,10 +391,17 @@ Angle.rad(h))` and a bare-number hue both type.
 
 ## 11. Open decisions
 
-- **Percentage.** The genuinely hard corner (context-resolved, percent hint);
-  `50%` is length-percentage in one property and number-percentage in oklch.
-  Deferred. If a consumer needs it, model `length-percentage` as the single join
-  kind consumers target, not full percent-hint resolution.
+- **Percentage — no longer the hard corner.** The fear was solve-time: that
+  `<percentage>` forced the library to interpret what a `50%` was _of_. Leaf
+  lowering dissolves it exactly as it dissolved angle solvability (section 6) —
+  a `%` is a leaf, and "what it is a percentage of" is only ever a context ratio
+  supplied at `solve`, never something the model resolves. So `<percentage>`
+  ships as its own kind (a `%` leaf, combining only with other percentages),
+  added with `color-mix`, whose weights are percentages it serializes rather
+  than solves. What stays open is narrower: the length-percentage _join_ — one
+  expression that is at once `<length>` and `<percentage>` (`calc(100% - 20px)`).
+  No current consumer needs it; model it as the single `length-percentage` kind
+  consumers target if one arrives, not full percent-hint resolution.
 - **Kinded refs and binding kind-checks.** `Calc.ref('gap')` defaults to
   `number`-kind today; a length-typed `var()` (`calc(var(--gap) + 10px)`) needs
   a kinded ref, and bindings should kind-check against the ref's kind. Neither

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Calc } from '#calc'
-import { Color, Keyword } from '#data'
+import { Channel, Color, Keyword, Percentage } from '#data'
 
 describe('color', () => {
   describe('oklch', () => {
@@ -105,6 +105,289 @@ describe('color', () => {
       expect(Color.serialize(outer)).toBe(
         'light-dark(light-dark(color(srgb 1 1 1), color(srgb 0 0 0)), oklch(0.2 0 0))',
       )
+    })
+  })
+
+  describe('mix', () => {
+    test('serializes a bare two-color mix', () => {
+      expect(Color.serialize(Color.mix('oklch', Color.named('red'), Color.named('blue')))).toBe(
+        'color-mix(in oklch, red, blue)',
+      )
+    })
+
+    test('mixes whole color functions as arms', () => {
+      const color = Color.mix('srgb', Color.srgb(0.1, 0.2, 0.3), Color.oklch(0.7, 0.15, 220))
+      expect(Color.serialize(color)).toBe(
+        'color-mix(in srgb, color(srgb 0.1 0.2 0.3), oklch(0.7 0.15 220))',
+      )
+    })
+
+    test('a bare number arm weight renders as a percent', () => {
+      const color = Color.mix('srgb', [Color.named('white'), 20], Color.named('black'))
+      expect(Color.serialize(color)).toBe('color-mix(in srgb, white 20%, black)')
+    })
+
+    test('both arms may carry weights', () => {
+      const color = Color.mix('oklch', [Color.named('red'), 40], [Color.named('blue'), 60])
+      expect(Color.serialize(color)).toBe('color-mix(in oklch, red 40%, blue 60%)')
+    })
+
+    test('a Percentage weight serializes identically to the number form', () => {
+      const color = Color.mix('oklch', [Color.named('red'), Percentage.of(40)], Color.named('blue'))
+      expect(Color.serialize(color)).toBe('color-mix(in oklch, red 40%, blue)')
+    })
+
+    test('summed constant percentages fold; an arithmetic weight wraps in calc()', () => {
+      const folded = Color.mix(
+        'oklch',
+        [Color.named('red'), Calc.add(Percentage.of(20), Percentage.of(5))],
+        Color.named('blue'),
+      )
+      expect(Color.serialize(folded)).toBe('color-mix(in oklch, red 25%, blue)')
+
+      const scaled = Color.mix(
+        'oklch',
+        [Color.named('red'), Calc.multiply(Percentage.of(50), Calc.ref('t'))],
+        Color.named('blue'),
+      )
+      expect(Color.serialize(scaled)).toBe('color-mix(in oklch, red calc(50% * var(--t)), blue)')
+    })
+
+    test('a polar space carries a hue-interpolation strategy', () => {
+      const color = Color.mix(
+        { colorspace: 'oklch', hue: 'longer' },
+        Color.named('red'),
+        Color.named('blue'),
+      )
+      expect(Color.serialize(color)).toBe('color-mix(in oklch longer hue, red, blue)')
+    })
+
+    test('unions arm and percentage references, and binds through both', () => {
+      const color = Color.mix(
+        'oklch',
+        [Color.oklch(Calc.ref('l'), 0.1, 250), Calc.multiply(Percentage.of(50), Calc.ref('t'))],
+        Color.srgb(Calc.ref('r'), 0.2, 0.3),
+      )
+      expect(Color.refs(color)).toEqual(new Set(['l', 't', 'r']))
+      // binding is partial evaluation: the weight folds `50% * 0.5` to `25%`
+      expect(Color.serialize(Color.bind(color, { l: 0.9, t: 0.5, r: 0.1 }))).toBe(
+        'color-mix(in oklch, oklch(0.9 0.1 250) 25%, color(srgb 0.1 0.2 0.3))',
+      )
+    })
+
+    test('serialize applies partial bindings, leaving an unbound weight symbolic', () => {
+      const color = Color.mix(
+        'srgb',
+        [Color.srgb(Calc.ref('r'), 0, 0), Calc.multiply(Percentage.of(50), Calc.ref('w'))],
+        Color.named('black'),
+      )
+      // r binds into the channel; w stays unbound, so its weight keeps the calc() wrap
+      expect(Color.serialize(color, { bindings: { r: 0.8 } })).toBe(
+        'color-mix(in srgb, color(srgb 0.8 0 0) calc(50% * var(--w)), black)',
+      )
+    })
+
+    test('equality is structural over method, arms, and weights', () => {
+      const base = Color.mix('oklch', [Color.named('red'), 40], Color.named('blue'))
+      expect(
+        Color.equals(base, Color.mix('oklch', [Color.named('red'), 40], Color.named('blue'))),
+      ).toBe(true)
+      // a different colorspace never compares equal
+      expect(
+        Color.equals(base, Color.mix('srgb', [Color.named('red'), 40], Color.named('blue'))),
+      ).toBe(false)
+      // a different weight never compares equal
+      expect(
+        Color.equals(base, Color.mix('oklch', [Color.named('red'), 60], Color.named('blue'))),
+      ).toBe(false)
+      // an omitted weight never equals a present one
+      expect(Color.equals(base, Color.mix('oklch', Color.named('red'), Color.named('blue')))).toBe(
+        false,
+      )
+      // the hue strategy participates
+      expect(
+        Color.equals(
+          Color.mix(
+            { colorspace: 'oklch', hue: 'longer' },
+            Color.named('red'),
+            Color.named('blue'),
+          ),
+          Color.mix(
+            { colorspace: 'oklch', hue: 'shorter' },
+            Color.named('red'),
+            Color.named('blue'),
+          ),
+        ),
+      ).toBe(false)
+    })
+
+    test('arms are positional: swapping colors is a different mix', () => {
+      const a = Color.mix('oklch', [Color.named('red'), 40], Color.named('blue'))
+      const b = Color.mix('oklch', Color.named('blue'), [Color.named('red'), 40])
+      expect(Color.equals(a, b)).toBe(false)
+    })
+
+    test('a mix nests as a color-mix arm and a light-dark arm', () => {
+      const inner = Color.mix('oklch', Color.named('red'), Color.named('blue'))
+      expect(Color.serialize(Color.mix('srgb', inner, Color.named('white')))).toBe(
+        'color-mix(in srgb, color-mix(in oklch, red, blue), white)',
+      )
+      expect(Color.serialize(Color.lightDark(inner, Color.transparent))).toBe(
+        'light-dark(color-mix(in oklch, red, blue), transparent)',
+      )
+    })
+  })
+
+  describe('relative color', () => {
+    test('oklchFrom serializes the from-origin consumer shape byte-exact', () => {
+      const hover = Color.oklchFrom(
+        Color.ref('accent'),
+        Calc.multiply(Channel.L, 0.8),
+        Channel.C,
+        Channel.H,
+      )
+      expect(Color.serialize(hover)).toBe('oklch(from var(--accent) calc(l * 0.8) c h)')
+    })
+
+    test('passing the keywords straight through reproduces the origin', () => {
+      const same = Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H)
+      expect(Color.serialize(same)).toBe('oklch(from var(--accent) l c h)')
+    })
+
+    test('srgbFrom derives inside color(from … srgb …) with an alpha slash', () => {
+      const faded = Color.srgbFrom(
+        Color.ref('brand'),
+        Channel.R,
+        Channel.G,
+        Channel.B,
+        Calc.multiply(Channel.Alpha, 0.5),
+      )
+      expect(Color.serialize(faded)).toBe('color(from var(--brand) srgb r g b / calc(alpha * 0.5))')
+    })
+
+    test('the origin may be any color, not just a reference', () => {
+      const rel = Color.oklchFrom(Color.oklch(0.6, 0.15, 250), Channel.L, Channel.C, Channel.H)
+      expect(Color.serialize(rel)).toBe('oklch(from oklch(0.6 0.15 250) l c h)')
+    })
+
+    test('channels accept none, and alpha accepts none after the slash', () => {
+      const color = Color.oklchFrom(Color.ref('x'), 0.5, Keyword.none, Channel.H, Keyword.none)
+      expect(Color.serialize(color)).toBe('oklch(from var(--x) 0.5 none h / none)')
+    })
+
+    test('unions the origin and channel references and binds through channels', () => {
+      const color = Color.oklchFrom(
+        Color.ref('accent'),
+        Calc.multiply(Channel.L, Calc.ref('k')),
+        Channel.C,
+        Channel.H,
+      )
+      expect(Color.refs(color)).toEqual(new Set(['accent', 'k']))
+      // the channel ref binds; the color reference rides through, unbound
+      const bound = Color.bind(color, { k: 0.8 })
+      expect(Color.refs(bound)).toEqual(new Set(['accent']))
+      expect(Color.serialize(bound)).toBe('oklch(from var(--accent) calc(l * 0.8) c h)')
+    })
+
+    test('binding through the origin color reaches its channels', () => {
+      const color = Color.oklchFrom(
+        Color.oklch(Calc.ref('base'), 0.1, 250),
+        Channel.L,
+        Channel.C,
+        Channel.H,
+      )
+      expect(Color.serialize(Color.bind(color, { base: 0.6 }))).toBe(
+        'oklch(from oklch(0.6 0.1 250) l c h)',
+      )
+    })
+
+    test('equality is structural over form, origin, channels, and alpha', () => {
+      const base = Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H)
+      expect(
+        Color.equals(base, Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H)),
+      ).toBe(true)
+      // a different origin never compares equal
+      expect(
+        Color.equals(base, Color.oklchFrom(Color.ref('brand'), Channel.L, Channel.C, Channel.H)),
+      ).toBe(false)
+      // a present alpha never equals an omitted one
+      expect(
+        Color.equals(
+          base,
+          Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H, Channel.Alpha),
+        ),
+      ).toBe(false)
+      // the destination function participates: an srgb form never equals an oklch one
+      expect(
+        Color.equals(base, Color.srgbFrom(Color.ref('accent'), Channel.R, Channel.G, Channel.B)),
+      ).toBe(false)
+    })
+
+    test('a relative color nests as an origin and as a light-dark arm', () => {
+      const inner = Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H)
+      expect(Color.serialize(Color.oklchFrom(inner, Channel.L, Channel.C, Channel.H))).toBe(
+        'oklch(from oklch(from var(--accent) l c h) l c h)',
+      )
+      expect(Color.serialize(Color.lightDark(inner, Color.transparent))).toBe(
+        'light-dark(oklch(from var(--accent) l c h), transparent)',
+      )
+    })
+  })
+
+  describe('color reference', () => {
+    test('ref serializes as a custom property', () => {
+      expect(Color.serialize(Color.ref('accent'))).toBe('var(--accent)')
+    })
+
+    test('reports its name as a dependency and has no channels to bind', () => {
+      const accent = Color.ref('accent')
+      expect(Color.refs(accent)).toEqual(new Set(['accent']))
+      // bind operates on channels, not whole colors: the reference rides through,
+      // and its ref survives rather than being silently dropped
+      expect(Color.serialize(Color.bind(accent, { accent: 0 }))).toBe('var(--accent)')
+      expect(Color.refs(Color.bind(accent, { accent: 0 }))).toEqual(new Set(['accent']))
+    })
+
+    test('composes as a mix arm and a light-dark arm', () => {
+      expect(Color.serialize(Color.mix('oklch', Color.ref('a'), Color.ref('b')))).toBe(
+        'color-mix(in oklch, var(--a), var(--b))',
+      )
+      expect(Color.serialize(Color.lightDark(Color.ref('light'), Color.ref('dark')))).toBe(
+        'light-dark(var(--light), var(--dark))',
+      )
+    })
+
+    test('equality is the name', () => {
+      expect(Color.equals(Color.ref('accent'), Color.ref('accent'))).toBe(true)
+      expect(Color.equals(Color.ref('accent'), Color.ref('brand'))).toBe(false)
+      // a reference is not the named color of the same text
+      expect(Color.equals(Color.ref('accent'), Color.named('accent'))).toBe(false)
+    })
+
+    test('rejects an empty name', () => {
+      expect(() => Color.ref('')).toThrow('non-empty')
+    })
+  })
+
+  describe('channel keywords', () => {
+    test('serialize bare and wrap only when arithmetic', () => {
+      expect(Calc.serialize(Channel.L)).toBe('l')
+      expect(Calc.serialize(Channel.Alpha)).toBe('alpha')
+      expect(Calc.serialize(Calc.multiply(Channel.L, 0.8))).toBe('calc(l * 0.8)')
+    })
+
+    test('contribute no references', () => {
+      expect(Calc.refs(Channel.C)).toEqual(new Set())
+      expect(Calc.refs(Calc.add(Channel.L, Calc.ref('k')))).toEqual(new Set(['k']))
+    })
+
+    test('equality is per keyword', () => {
+      expect(Calc.equals(Channel.L, Channel.L)).toBe(true)
+      expect(Calc.equals(Channel.L, Channel.C)).toBe(false)
+    })
+
+    test('cannot be solved — the browser resolves them from the origin', () => {
+      expect(() => Calc.solve(Channel.L)).toThrow('bare identifier')
     })
   })
 

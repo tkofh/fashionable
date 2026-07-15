@@ -7,14 +7,16 @@ import type { Precision } from './precision.ts'
 declare const CalcVariance: unique symbol
 
 /**
- * The CSS dimension an expression carries: `<number>`, `<length>`, or
- * `<angle>`. It is the `Kind` parameter of `Calc`, and the algebra enforces
- * it — same-kind addition, kind-merging multiplication, same-kind division
- * yielding a number.
+ * The CSS dimension an expression carries: `<number>`, `<length>`, `<angle>`,
+ * or `<percentage>`. It is the `Kind` parameter of `Calc`, and the algebra
+ * enforces it — same-kind addition, kind-merging multiplication, same-kind
+ * division yielding a number. A `<percentage>` is its own kind, not a
+ * length: it adds only to another percentage, and `<length-percentage>`
+ * mixing stays out of the model (see `docs/design.md`).
  *
  * @since 0.2.0
  */
-export type Kind = 'number' | 'length' | 'angle'
+export type Kind = 'number' | 'length' | 'angle' | 'percentage'
 
 /**
  * A CSS value expression: a tree of constants, unbound references, and math
@@ -469,6 +471,21 @@ export const cos: {
 } = internal.cos
 
 /**
+ * The tangent of its argument. Serializes as the CSS `tan()` function, which
+ * accepts an `<angle>` or a plain number treated as radians. Paired with
+ * `atan2`, `tan(atan2(a, b))` divides two same-kind dimensions to a `<number>` —
+ * the length ratio that works where `a / b` does not, since Firefox does not
+ * yet support `<length> / <length>` in `calc()`.
+ *
+ * @param argument - An angle, or a plain number in radians.
+ * @returns The tangent, a `<number>`, carrying the argument's units.
+ * @since 0.2.0
+ */
+export const tan: {
+  <A extends NumberOrAngleIn>(argument: A): Calc<RefsOf<A>, 'number', LeavesOf<A>>
+} = internal.tan
+
+/**
  * The arccosine of a value in `[-1, 1]`, an `<angle>` in radians (CSS's
  * `acos()` returns an `<angle>`). Solving evaluates `Math.acos`, in radians.
  *
@@ -489,6 +506,30 @@ export const cos: {
 export const acos: {
   <A extends NumberIn>(argument: A): Calc<RefsOf<A>, 'angle', LeavesOf<A>>
 } = internal.acos
+
+/**
+ * The angle, in radians, of the vector from the origin to `(x, y)` — CSS's
+ * `atan2()`, which returns an `<angle>`. The operands must share a kind (two
+ * numbers, two lengths, two angles); their units cancel in the ratio, so
+ * `tan(atan2(a, b))` recovers `a / b` as a `<number>` and is the portable way to
+ * divide two `<length>`s.
+ *
+ * @param y - The vertical component.
+ * @param x - The horizontal component, sharing `y`'s kind.
+ * @returns The angle, an `<angle>`, with the operands' units unioned.
+ * @example
+ * ```ts
+ * const ratio = Calc.tan(Calc.atan2(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160)))
+ * Calc.serialize(ratio) // 'tan(atan2(100vw - 320px, 160px))'
+ * ```
+ * @since 0.2.0
+ */
+export const atan2: {
+  <A extends In, B extends SameKindIn<A>>(
+    y: A,
+    x: B,
+  ): Calc<RefsOf<A> | RefsOf<B>, 'angle', LeavesOf<A> | LeavesOf<B>>
+} = internal.atan2
 
 export const bind: {
   /**

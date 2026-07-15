@@ -1,4 +1,4 @@
-import type { ApplyBindings, Bindings, Input, SerializeOptions } from '#calc/calc'
+import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from '#calc/calc'
 import {
   type CalcNode,
   collectBindings,
@@ -16,9 +16,10 @@ import * as Equal from '#internal/equal'
 import { DEFAULT_FORMAT, type FormatSpec } from '#internal/format'
 import { EMPTY_REFS, unionRefs } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
-import type { Color } from './color.ts'
+import type { Color, HueInterpolation, InterpolationMethod } from './color.ts'
 import { isNone } from './keywords.internal.ts'
 import type { None } from './keywords.ts'
+import { of as percentageOf } from './percentage.internal.ts'
 
 export const ColorTypeId = Symbol.for('fashionable/color')
 export type ColorTypeId = typeof ColorTypeId
@@ -81,8 +82,79 @@ export interface LightDarkNode {
   readonly dark: ColorNode
 }
 
+/**
+ * The normalized interpolation method of a `color-mix()`: a colorspace
+ * token plus, for polar spaces, an optional hue-interpolation strategy.
+ * The type-level polar/rectangular split lives in `color.ts`; the node
+ * carries the erased strings.
+ *
+ * @internal
+ */
+export interface MethodNode {
+  readonly colorspace: string
+  readonly hue: HueInterpolation | undefined
+}
+
+/**
+ * A `color-mix(in method, c1 p1?, c2 p2?)`. The two arms are whole color
+ * nodes, each with an optional percentage — a percentage-kind `CalcNode`,
+ * never `none`, `undefined` when omitted. Arms are positional (they carry
+ * their own percentages), so the node operations recurse, as `LightDark`
+ * does.
+ *
+ * @internal
+ */
+export interface ColorMixNode {
+  readonly _tag: 'ColorMix'
+  readonly method: MethodNode
+  readonly color1: ColorNode
+  readonly percentage1: CalcNode | undefined
+  readonly color2: ColorNode
+  readonly percentage2: CalcNode | undefined
+}
+
+/**
+ * A relative color: `oklch(from origin l c h [/ a])` or
+ * `color(from origin srgb r g b [/ a])`. `form` selects the destination
+ * function; `origin` is a whole color node (recursed, as `LightDark` arms
+ * are). The three `channels` and the optional `alpha` are calc slots whose
+ * expressions may read the origin's channels through the `Channel` keywords —
+ * bare-identifier leaves that stay put under bind and contribute no refs.
+ *
+ * @internal
+ */
+export interface RelativeNode {
+  readonly _tag: 'Relative'
+  readonly form: 'oklch' | 'srgb'
+  readonly origin: ColorNode
+  readonly channels: readonly [ChannelNode, ChannelNode, ChannelNode]
+  readonly alpha: ChannelNode | undefined
+}
+
+/**
+ * A color-valued custom-property reference: `var(--name)` used as a whole
+ * color. The reference is the whole value, so — like a `Named` — it has no
+ * channels to descend into; it serializes `var(--name)` and reports `name` as
+ * a ref. The channel-binding path cannot substitute a color into it, so its
+ * ref rides through `bind` (restored structurally), the browser being the one
+ * to resolve it.
+ *
+ * @internal
+ */
+export interface ColorRefNode {
+  readonly _tag: 'ColorRef'
+  readonly name: string
+}
+
 /** @internal */
-export type ColorNode = OklchNode | SrgbNode | LightDarkNode | NamedColorNode
+export type ColorNode =
+  | OklchNode
+  | SrgbNode
+  | LightDarkNode
+  | NamedColorNode
+  | ColorMixNode
+  | RelativeNode
+  | ColorRefNode
 
 type ChannelFunctionNode = OklchNode | SrgbNode
 
@@ -116,18 +188,56 @@ const mapColorNode = (node: ColorNode, f: (channel: CalcNode) => CalcNode): Colo
         light: mapColorNode(node.light, f),
         dark: mapColorNode(node.dark, f),
       }
+    case 'ColorMix':
+      return {
+        _tag: 'ColorMix',
+        method: node.method,
+        color1: mapColorNode(node.color1, f),
+        percentage1: node.percentage1 === undefined ? undefined : f(node.percentage1),
+        color2: mapColorNode(node.color2, f),
+        percentage2: node.percentage2 === undefined ? undefined : f(node.percentage2),
+      }
+    case 'Relative':
+      return {
+        _tag: 'Relative',
+        form: node.form,
+        origin: mapColorNode(node.origin, f),
+        channels: [
+          mapChannel(node.channels[0], f),
+          mapChannel(node.channels[1], f),
+          mapChannel(node.channels[2], f),
+        ],
+        alpha: node.alpha === undefined ? undefined : mapChannel(node.alpha, f),
+      }
+    case 'ColorRef':
     case 'Named':
       return node
   }
 }
 
-const serializeChannel = (channel: ChannelNode, precision: FormatSpec): string => {
-  if (isNoneChannel(channel)) {
-    return 'none'
-  }
-  const wrap = needsCalcWrap(channel)
-  const body = serializeNode(channel, wrap, { precision })
+// A single calc-expression slot — a channel or a percentage — wrapped in
+// `calc()` only when it is arithmetic; function forms and leaves stand alone.
+const serializeCalcNode = (node: CalcNode, precision: FormatSpec): string => {
+  const wrap = needsCalcWrap(node)
+  const body = serializeNode(node, wrap, { precision })
   return wrap ? `calc(${body})` : body
+}
+
+const serializeChannel = (channel: ChannelNode, precision: FormatSpec): string =>
+  isNoneChannel(channel) ? 'none' : serializeCalcNode(channel, precision)
+
+const serializeMethod = (method: MethodNode): string =>
+  method.hue === undefined ? `in ${method.colorspace}` : `in ${method.colorspace} ${method.hue} hue`
+
+const serializeMixArm = (
+  color: ColorNode,
+  percentage: CalcNode | undefined,
+  precision: FormatSpec,
+): string => {
+  const rendered = serializeColorNode(color, precision)
+  return percentage === undefined
+    ? rendered
+    : `${rendered} ${serializeCalcNode(percentage, precision)}`
 }
 
 const serializeColorNode = (node: ColorNode, precision: FormatSpec): string => {
@@ -136,6 +246,20 @@ const serializeColorNode = (node: ColorNode, precision: FormatSpec): string => {
   }
   if (node._tag === 'LightDark') {
     return `light-dark(${serializeColorNode(node.light, precision)}, ${serializeColorNode(node.dark, precision)})`
+  }
+  if (node._tag === 'ColorMix') {
+    return `color-mix(${serializeMethod(node.method)}, ${serializeMixArm(node.color1, node.percentage1, precision)}, ${serializeMixArm(node.color2, node.percentage2, precision)})`
+  }
+  if (node._tag === 'ColorRef') {
+    return `var(--${node.name})`
+  }
+  if (node._tag === 'Relative') {
+    const origin = serializeColorNode(node.origin, precision)
+    const channels = node.channels.map((channel) => serializeChannel(channel, precision)).join(' ')
+    const alpha = node.alpha === undefined ? '' : ` / ${serializeChannel(node.alpha, precision)}`
+    return node.form === 'oklch'
+      ? `oklch(from ${origin} ${channels}${alpha})`
+      : `color(from ${origin} srgb ${channels}${alpha})`
   }
   const channels = channelsOf(node)
     .map((channel) => serializeChannel(channel, precision))
@@ -150,6 +274,14 @@ const channelEquals = (a: ChannelNode, b: ChannelNode): boolean => {
   return nodeEquals(a, b)
 }
 
+const percentageEquals = (a: CalcNode | undefined, b: CalcNode | undefined): boolean =>
+  a === undefined || b === undefined ? a === b : nodeEquals(a, b)
+
+// An optional channel — a relative color's alpha — where an omitted slot only
+// equals another omitted slot, never a present `none` or expression.
+const alphaEquals = (a: ChannelNode | undefined, b: ChannelNode | undefined): boolean =>
+  a === undefined || b === undefined ? a === b : channelEquals(a, b)
+
 const colorNodeEquals = (a: ColorNode, b: ColorNode): boolean => {
   if (a._tag !== b._tag) {
     return false
@@ -161,23 +293,70 @@ const colorNodeEquals = (a: ColorNode, b: ColorNode): boolean => {
     const other = b as LightDarkNode
     return colorNodeEquals(a.light, other.light) && colorNodeEquals(a.dark, other.dark)
   }
+  if (a._tag === 'ColorMix') {
+    const other = b as ColorMixNode
+    return (
+      a.method.colorspace === other.method.colorspace &&
+      a.method.hue === other.method.hue &&
+      colorNodeEquals(a.color1, other.color1) &&
+      percentageEquals(a.percentage1, other.percentage1) &&
+      colorNodeEquals(a.color2, other.color2) &&
+      percentageEquals(a.percentage2, other.percentage2)
+    )
+  }
+  if (a._tag === 'ColorRef') {
+    return a.name === (b as ColorRefNode).name
+  }
+  if (a._tag === 'Relative') {
+    const other = b as RelativeNode
+    return (
+      a.form === other.form &&
+      colorNodeEquals(a.origin, other.origin) &&
+      a.channels.every((channel, index) =>
+        channelEquals(channel, other.channels[index] as ChannelNode),
+      ) &&
+      alphaEquals(a.alpha, other.alpha)
+    )
+  }
   const others = channelsOf(b as ChannelFunctionNode)
   return channelsOf(a).every((channel, index) =>
     channelEquals(channel, others[index] as ChannelNode),
   )
 }
 
+const hashChannel = (channel: ChannelNode): number =>
+  isNoneChannel(channel) ? Equal.hashString('none') : nodeHash(channel)
+
 const colorNodeHash = (node: ColorNode): number => {
   let h = Equal.hashString(node._tag)
   if (node._tag === 'Named') {
+    return Equal.combine(h, Equal.hashString(node.name))
+  }
+  if (node._tag === 'ColorRef') {
     return Equal.combine(h, Equal.hashString(node.name))
   }
   if (node._tag === 'LightDark') {
     h = Equal.combine(h, colorNodeHash(node.light))
     return Equal.combine(h, colorNodeHash(node.dark))
   }
+  if (node._tag === 'ColorMix') {
+    h = Equal.combine(h, Equal.hashString(node.method.colorspace))
+    h = Equal.combine(h, node.method.hue === undefined ? 0 : Equal.hashString(node.method.hue))
+    h = Equal.combine(h, colorNodeHash(node.color1))
+    h = Equal.combine(h, node.percentage1 === undefined ? 0 : nodeHash(node.percentage1))
+    h = Equal.combine(h, colorNodeHash(node.color2))
+    return Equal.combine(h, node.percentage2 === undefined ? 0 : nodeHash(node.percentage2))
+  }
+  if (node._tag === 'Relative') {
+    h = Equal.combine(h, Equal.hashString(node.form))
+    h = Equal.combine(h, colorNodeHash(node.origin))
+    for (const channel of node.channels) {
+      h = Equal.combine(h, hashChannel(channel))
+    }
+    return Equal.combine(h, node.alpha === undefined ? 0 : hashChannel(node.alpha))
+  }
   for (const channel of channelsOf(node)) {
-    h = Equal.combine(h, isNoneChannel(channel) ? Equal.hashString('none') : nodeHash(channel))
+    h = Equal.combine(h, hashChannel(channel))
   }
   return h
 }
@@ -293,6 +472,12 @@ export const named = (name: string): Color<never> => {
 export const transparent: Color<never> = named('transparent')
 
 /** @internal */
+export const ref = <Name extends string>(name: Name): Color<Name> => {
+  invariant(name.length > 0, 'Color reference name must be a non-empty string')
+  return new ColorImpl({ _tag: 'ColorRef', name }, new Set([name])) as Color<Name>
+}
+
+/** @internal */
 export function lightDark<A extends string = never, B extends string = never>(
   light: Color<A>,
   dark: Color<B>,
@@ -301,6 +486,137 @@ export function lightDark<A extends string = never, B extends string = never>(
     { _tag: 'LightDark', light: nodeOfColor(light), dark: nodeOfColor(dark) },
     unionRefs(refsOf(light), refsOf(dark)),
   ) as Color<A | B>
+}
+
+const normalizeMethod = (method: InterpolationMethod): MethodNode =>
+  typeof method === 'string'
+    ? { colorspace: method, hue: undefined }
+    : { colorspace: method.colorspace, hue: 'hue' in method ? method.hue : undefined }
+
+interface ResolvedArm {
+  readonly color: ColorNode
+  readonly percentage: CalcNode | undefined
+  readonly refs: ReadonlySet<string>
+}
+
+const toArm = (
+  arm: Color<string> | readonly [Color<string>, number | Calc<string, 'percentage', unknown>],
+): ResolvedArm => {
+  if (isColor(arm)) {
+    return { color: nodeOfColor(arm), percentage: undefined, refs: refsOf(arm) }
+  }
+  const [color, percentage] = arm
+  const pct = typeof percentage === 'number' ? percentageOf(percentage) : percentage
+  return {
+    color: nodeOfColor(color),
+    percentage: nodeOf(pct),
+    refs: unionRefs(refsOf(color), calcRefsOf(pct)),
+  }
+}
+
+/** @internal */
+export function mix<
+  C1 extends string = never,
+  P1 extends string = never,
+  C2 extends string = never,
+  P2 extends string = never,
+>(
+  method: InterpolationMethod,
+  color1: Color<C1> | readonly [Color<C1>, number | Calc<P1, 'percentage', unknown>],
+  color2: Color<C2> | readonly [Color<C2>, number | Calc<P2, 'percentage', unknown>],
+): Color<C1 | P1 | C2 | P2> {
+  const a1 = toArm(color1)
+  const a2 = toArm(color2)
+  return new ColorImpl(
+    {
+      _tag: 'ColorMix',
+      method: normalizeMethod(method),
+      color1: a1.color,
+      percentage1: a1.percentage,
+      color2: a2.color,
+      percentage2: a2.percentage,
+    },
+    unionRefs(a1.refs, a2.refs),
+  ) as Color<C1 | P1 | C2 | P2>
+}
+
+const relative = (
+  form: 'oklch' | 'srgb',
+  origin: Color<string>,
+  channel1: Input<string> | None,
+  channel2: Input<string> | None,
+  channel3: Input<string> | None,
+  alpha: Input<string> | None | undefined,
+): Color<string> => {
+  const c1 = toChannel(channel1)
+  const c2 = toChannel(channel2)
+  const c3 = toChannel(channel3)
+  const a = alpha === undefined ? undefined : toChannel(alpha)
+  return new ColorImpl(
+    {
+      _tag: 'Relative',
+      form,
+      origin: nodeOfColor(origin),
+      channels: [c1.node, c2.node, c3.node],
+      alpha: a === undefined ? undefined : a.node,
+    },
+    unionRefs(refsOf(origin), c1.refs, c2.refs, c3.refs, a === undefined ? EMPTY_REFS : a.refs),
+  )
+}
+
+/** @internal */
+export function oklchFrom<
+  O extends string = never,
+  L extends string = never,
+  C extends string = never,
+  H extends string = never,
+  A extends string = never,
+>(
+  origin: Color<O>,
+  lightness: Input<L> | None,
+  chroma: Input<C> | None,
+  hue: Input<H> | None,
+  alpha?: Input<A> | None,
+): Color<O | L | C | H | A> {
+  return relative('oklch', origin, lightness, chroma, hue, alpha) as Color<O | L | C | H | A>
+}
+
+/** @internal */
+export function srgbFrom<
+  O extends string = never,
+  R extends string = never,
+  G extends string = never,
+  B extends string = never,
+  A extends string = never,
+>(
+  origin: Color<O>,
+  red: Input<R> | None,
+  green: Input<G> | None,
+  blue: Input<B> | None,
+  alpha?: Input<A> | None,
+): Color<O | R | G | B | A> {
+  return relative('srgb', origin, red, green, blue, alpha) as Color<O | R | G | B | A>
+}
+
+// The color-valued reference names in a node — the `ColorRef` origins the
+// channel-binding path cannot substitute, so `bind` restores them structurally
+// rather than trust `collectBindings` to have kept them (it strips any bound
+// key, including a color-ref name a caller passed a value for).
+const colorRefNames = (node: ColorNode): ReadonlySet<string> => {
+  switch (node._tag) {
+    case 'ColorRef':
+      return new Set([node.name])
+    case 'LightDark':
+      return unionRefs(colorRefNames(node.light), colorRefNames(node.dark))
+    case 'ColorMix':
+      return unionRefs(colorRefNames(node.color1), colorRefNames(node.color2))
+    case 'Relative':
+      return colorRefNames(node.origin)
+    case 'Oklch':
+    case 'Srgb':
+    case 'Named':
+      return EMPTY_REFS
+  }
 }
 
 /** @internal */
@@ -314,10 +630,10 @@ export const bind: {
   ): Color<ApplyBindings<Refs, B>>
 } = dual(2, (color: Color<string>, bindings: Record<string, Input<string>>): Color<string> => {
   const collected = collectBindings(refsOf(color), bindings)
-  return new ColorImpl(
-    mapColorNode(nodeOfColor(color), (channel) => substituteNode(channel, collected.nodeBindings)),
-    collected.refSet,
+  const node = mapColorNode(nodeOfColor(color), (channel) =>
+    substituteNode(channel, collected.nodeBindings),
   )
+  return new ColorImpl(node, unionRefs(collected.refSet, colorRefNames(node)))
 })
 
 /** @internal */

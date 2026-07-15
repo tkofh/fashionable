@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, test } from 'vitest'
 import { Calc } from '#calc'
-import { Color } from '#data'
+import { Angle, Channel, Color, Length, Percentage } from '#data'
 import { Declaration } from '#declaration'
 import { FontFaceRule } from '#fontFace'
 import { PropertyRule, PropertySyntax } from '#property'
@@ -39,6 +39,24 @@ const rejectsOpenInitialValues = (): void => {
   PropertyRule.make('--depth', PropertySyntax.number, Calc.ref('u'))
   // @ts-expect-error an initial value must be computationally independent — Color.Color<'l'> is not Color.Color<never>
   PropertyRule.make('--accent', PropertySyntax.color, Color.oklch(Calc.ref('l'), 0.1, 250))
+  // @ts-expect-error a color reference reads a custom property — Color.Color<'accent'> is not Color.Color<never>
+  PropertyRule.make('--accent', PropertySyntax.color, Color.ref('accent'))
+  // @ts-expect-error a length reading a reference is not computationally independent
+  PropertyRule.make('--gap', PropertySyntax.length, Calc.multiply(Length.px(10), Calc.ref('scale')))
+}
+
+// Compile-time assertions only — never invoked.
+const acceptsDimensionedInitialValues = (): void => {
+  // a closed dimensioned Calc registers under its data-type syntax
+  PropertyRule.make('--gap', PropertySyntax.length, Length.px(8))
+  PropertyRule.make('--gap', PropertySyntax.length, Calc.add(Length.px(4), Length.px(4)))
+  PropertyRule.make('--spin', PropertySyntax.angle, Angle.rad(1.5708))
+  PropertyRule.make('--fill', PropertySyntax.percentage, Percentage.of(50))
+  // and, as a <length-percentage>, either kind
+  PropertyRule.make('--inset', PropertySyntax.lengthPercentage, Length.px(4))
+  PropertyRule.make('--inset', PropertySyntax.lengthPercentage, Percentage.of(25))
+  // literal text still works everywhere
+  PropertyRule.make('--gap', PropertySyntax.length, '8px')
 }
 
 // Compile-time assertions only — never invoked.
@@ -47,10 +65,26 @@ const rejectsMismatchedInitialValues = (): void => {
   PropertyRule.make('--depth', PropertySyntax.number, Color.oklch(0.7, 0.1, 250))
   // @ts-expect-error <number> takes the typed forms — a number or closed Calc, not text
   PropertyRule.make('--depth', PropertySyntax.number, '0')
-  // @ts-expect-error a length initial value is literal text carrying its unit — expressions serialize unitless
+  // @ts-expect-error a <number> expression is not a <length> — the kinds differ
   PropertyRule.make('--gap', PropertySyntax.length, Calc.of(0))
+  // @ts-expect-error a viewport-relative length is not computationally independent
+  PropertyRule.make('--gap', PropertySyntax.length, Length.vw(8))
   // @ts-expect-error 'medium' is not in the declared keyword set
   PropertyRule.make('--size', PropertySyntax.keywords('small', 'large'), 'medium')
+}
+
+// Compile-time assertions only — never invoked.
+const rejectsInvalidMixMethods = (): void => {
+  const red = Color.named('red')
+  const blue = Color.named('blue')
+  // @ts-expect-error a hue strategy is only grammatical after a polar colorspace
+  Color.mix({ colorspace: 'srgb', hue: 'longer' }, red, blue)
+  // @ts-expect-error 'okrgb' is not one of the interpolation colorspaces
+  Color.mix('okrgb', red, blue)
+  // @ts-expect-error an arm weight is a <percentage>, not a plain number-kind expression
+  Color.mix('oklch', [red, Calc.of(40)], blue)
+  // @ts-expect-error an arm weight is a <percentage>, not a <length>
+  Color.mix('oklch', [red, Length.px(40)], blue)
 }
 
 describe('types', () => {
@@ -105,6 +139,44 @@ describe('types', () => {
   test('color bind subtracts bound names', () => {
     const color = Color.oklch(Calc.ref('l'), Calc.ref('c'), 250)
     expectTypeOf(Color.bind(color, { l: 0.5 })).toEqualTypeOf<Color.Color<'c'>>()
+  })
+
+  test('color ref carries its name', () => {
+    expectTypeOf(Color.ref('accent')).toEqualTypeOf<Color.Color<'accent'>>()
+  })
+
+  test('relative color unions the origin and channel refs', () => {
+    const color = Color.oklchFrom(
+      Color.ref('accent'),
+      Calc.multiply(Channel.L, Calc.ref('k')),
+      Channel.C,
+      Channel.H,
+    )
+    expectTypeOf(color).toEqualTypeOf<Color.Color<'accent' | 'k'>>()
+  })
+
+  test('relative alpha contributes its refs', () => {
+    const color = Color.srgbFrom(
+      Color.ref('x'),
+      Channel.R,
+      Channel.G,
+      Channel.B,
+      Calc.multiply(Channel.Alpha, Calc.ref('a')),
+    )
+    expectTypeOf(color).toEqualTypeOf<Color.Color<'x' | 'a'>>()
+  })
+
+  test('channel keywords are closed calc expressions', () => {
+    expectTypeOf(Channel.L).toEqualTypeOf<Calc.Calc<never>>()
+  })
+
+  test('color mix unions both arms and both percentage refs', () => {
+    const color = Color.mix(
+      'oklch',
+      [Color.oklch(Calc.ref('l'), 0.1, 250), Calc.multiply(Percentage.of(50), Calc.ref('t'))],
+      Color.srgb(Calc.ref('r'), 0.2, 0.3),
+    )
+    expectTypeOf(color).toEqualTypeOf<Color.Color<'l' | 't' | 'r'>>()
   })
 
   test('declarations carry their value refs', () => {
@@ -241,5 +313,13 @@ describe('types', () => {
 
   test('initial values narrow to the declared syntax at compile time', () => {
     expect(rejectsMismatchedInitialValues).toBeTypeOf('function')
+  })
+
+  test('closed dimensioned initial values are accepted at compile time', () => {
+    expect(acceptsDimensionedInitialValues).toBeTypeOf('function')
+  })
+
+  test('invalid color-mix methods and weights are rejected at compile time', () => {
+    expect(rejectsInvalidMixMethods).toBeTypeOf('function')
   })
 })

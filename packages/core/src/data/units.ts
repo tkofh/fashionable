@@ -14,6 +14,7 @@
 
 declare const LengthUnitId: unique symbol
 declare const AngleUnitId: unique symbol
+declare const PercentageUnitId: unique symbol
 
 /**
  * The `px` unit (absolute length).
@@ -88,6 +89,17 @@ export interface Rad {
 }
 
 /**
+ * The `%` unit (percentage). Keyed by its own dimension symbol, so a
+ * percentage never unifies with a length or an angle — a `<percentage>`
+ * is its own `Calc` kind, not a length that happens to be relative.
+ *
+ * @since 0.2.0
+ */
+export interface Percent {
+  readonly [PercentageUnitId]: '%'
+}
+
+/**
  * Any `<length>` unit.
  *
  * @since 0.2.0
@@ -100,6 +112,15 @@ export type Length = Px | Rem | Em | Vw | Vh | Vmin | Vmax
  * @since 0.2.0
  */
 export type Angle = Rad
+
+/**
+ * Any `<percentage>` unit. There is only one (`%`); the alias exists for
+ * symmetry with `Length` and `Angle`, so `Calc<never, 'percentage', Unit.Percentage>`
+ * reads uniformly.
+ *
+ * @since 0.2.0
+ */
+export type Percentage = Percent
 
 /**
  * The context-dependent length units — those whose pixel ratio depends on the
@@ -135,7 +156,9 @@ export type Token<U> = U extends { readonly [LengthUnitId]: infer T }
   ? T
   : U extends { readonly [AngleUnitId]: infer T }
     ? T
-    : never
+    : U extends { readonly [PercentageUnitId]: infer T }
+      ? T
+      : never
 
 /**
  * The context `Calc.solve` requires to lower an expression carrying the units
