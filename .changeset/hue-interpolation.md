@@ -10,7 +10,12 @@
 import { Calc } from 'fashionable/calc'
 import { HueInterpolation } from 'fashionable/data'
 
-const hue = HueInterpolation.interpolate(HueInterpolation.shorter, 30, Calc.ref('to'), Calc.ref('t'))
+const hue = HueInterpolation.interpolate(
+  HueInterpolation.shorter,
+  30,
+  Calc.ref('to'),
+  Calc.ref('t'),
+)
 Calc.serialize(hue) // 'calc(30 + (mod(var(--to) - 30 + 180, 360) - 180) * var(--t))'
 Calc.serialize(HueInterpolation.interpolate(HueInterpolation.increasing, 20, 350, 0.5)) // '185'
 ```

@@ -10,9 +10,22 @@ The `space` scopes the channel arguments: a keyword the destination space does n
 import { Calc } from 'fashionable/calc'
 import { Channel, Color, ColorSpace } from 'fashionable/data'
 
-const hover = Color.from(Color.ref('accent'), ColorSpace.oklch, Calc.multiply(Channel.L, 0.8), Channel.C, Channel.H)
+const hover = Color.from(
+  Color.ref('accent'),
+  ColorSpace.oklch,
+  Calc.multiply(Channel.L, 0.8),
+  Channel.C,
+  Channel.H,
+)
 Color.serialize(hover) // 'oklch(from var(--accent) calc(l * 0.8) c h)'
 
-const faded = Color.from(Color.ref('brand'), ColorSpace.srgb, Channel.R, Channel.G, Channel.B, Calc.multiply(Channel.Alpha, 0.5))
+const faded = Color.from(
+  Color.ref('brand'),
+  ColorSpace.srgb,
+  Channel.R,
+  Channel.G,
+  Channel.B,
+  Calc.multiply(Channel.Alpha, 0.5),
+)
 Color.serialize(faded) // 'color(from var(--brand) srgb r g b / calc(alpha * 0.5))'
 ```
