@@ -13,7 +13,7 @@ const ratio = Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.
 Calc.serialize(ratio) // 'calc((100vw - 320px) / 160px)'
 ```
 
-The dimensional rules follow CSS and are enforced in the types: `add`/`subtract`/`min`/`max`/`clamp` require a shared kind, `multiply` scales a dimension by a number, and `divide` of two like dimensions is a number. Illegal combinations are compile errors — `Calc.add(Length.px(10), 5)` (a length plus a number) and `Calc.multiply(Length.px(10), Length.px(10))` (two lengths) both fail to typecheck, rather than emitting invalid CSS. `<percentage>` is its own kind under these same rules — percentages fold and scale together, and a percentage over a percentage is a number — but, unlike a length or angle, it serializes and does not `solve`.
+The dimensional rules follow CSS and are enforced in the types: `add`/`subtract`/`min`/`max`/`clamp` require a shared kind, `multiply` scales a dimension by a number, and `divide` of two like dimensions is a number. Illegal combinations are compile errors — `Calc.add(Length.px(10), 5)` (a length plus a number) and `Calc.multiply(Length.px(10), Length.px(10))` (two lengths) both fail to typecheck, rather than emitting invalid CSS. `<percentage>` is its own kind under these same rules — `Percentage.of(40)` serializes as `40%`, percentages fold and scale together (`Calc.add(Percentage.of(20), Percentage.of(5))` is `25%`), and a percentage over a percentage is a number — but, unlike a length or angle, it serializes and does not `solve`.
 
 **Solving through a unit context.** A closed number-or-angle tree still solves directly; a tree carrying viewport- or font-relative units lowers them through a context, so one tree serves verification and serialization at once:
 

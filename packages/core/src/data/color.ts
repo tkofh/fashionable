@@ -2,6 +2,7 @@ import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from '#ca
 import type { Pipeable } from '#util'
 import type { ColorTypeId } from './color.internal.ts'
 import * as internal from './color.internal.ts'
+import type { ColorSpace } from './colorSpace.ts'
 import type { None } from './keywords.ts'
 
 declare const ColorRefs: unique symbol
@@ -19,8 +20,8 @@ declare const ColorRefs: unique symbol
  * arrive as a consumer needs them. Channels accept `Keyword.none`, CSS's
  * missing-component value.
  *
- * Construct via `oklch`, `srgb`, `lightDark`, `mix`, `named`, `oklchFrom`,
- * `srgbFrom`, and `ref` (or the `transparent` constant).
+ * Construct via `oklch`, `srgb`, `lightDark`, `mix`, `named`, `from`, and
+ * `ref` (or the `transparent` constant).
  *
  * @since 0.1.0
  */
@@ -122,8 +123,8 @@ export const transparent: Color<never> = internal.transparent
 /**
  * Creates a color-valued custom-property reference — `ref('accent')`
  * serializes as `var(--accent)`. Use it where a whole color is read from a
- * custom property: as a standalone value, or as the `from` origin of a
- * relative color (`oklchFrom`, `srgbFrom`).
+ * custom property: as a standalone value, or as the origin of a relative color
+ * (`from`).
  *
  * The reference is the whole value, so it carries `name` as its one unbound
  * reference — a dependency, exactly as an unbound `Calc.ref` does — but has no
@@ -276,84 +277,72 @@ export const mix: <
 ) => Color<C1 | P1 | C2 | P2> = internal.mix
 
 /**
- * Creates a relative `oklch(from origin ...)` color: the browser converts
- * `origin` into oklch, exposes its channels as the keywords `Channel.L`,
- * `Channel.C`, `Channel.H`, and `Channel.Alpha`, and rebuilds a color from the
- * lightness, chroma, and hue expressions (and optional alpha). Passing the
- * keywords straight through reproduces the origin (`oklch(from origin l c h)`);
- * arithmetic on them derives a related color.
+ * A channel slot of a relative color: a bare number, `Keyword.none`, or a
+ * `Calc` number expression. `Channels` is the set of origin-channel keyword
+ * brands (`Channel`) the expression may read — the space's own channels — so a
+ * keyword from another color space (`Channel.R` in an `oklch` slot) is a
+ * compile error. A plain expression (a constant, a `Calc.ref`, a `clamp`)
+ * carries no channel keyword and fits any slot.
  *
- * Each channel serializes independently — wrapped in `calc()` when arithmetic,
- * bare when a lone keyword — and may be `Keyword.none`. A supplied `alpha`
- * renders after a slash (`/ calc(alpha * 0.5)`); omitted, the origin's alpha
- * carries through. The origin's own references union into the result; the
- * channel keywords contribute none, since the browser resolves them from the
- * origin.
- *
- * @param origin - The color to derive from — any `Color`, commonly a `ref`.
- * @param lightness - The lightness channel.
- * @param chroma - The chroma channel.
- * @param hue - The hue channel, in degrees.
- * @param alpha - The optional alpha channel; omitted, the origin's alpha is kept.
- * @returns A `Color` unioning the origin's and the channels' references.
- * @example
- * ```ts
- * const hover = Color.oklchFrom(Color.ref('accent'), Calc.multiply(Channel.L, 0.8), Channel.C, Channel.H)
- * Color.serialize(hover) // 'oklch(from var(--accent) calc(l * 0.8) c h)'
- * ```
  * @since 0.2.0
  */
-export const oklchFrom: <
-  O extends string = never,
-  L extends string = never,
-  C extends string = never,
-  H extends string = never,
-  A extends string = never,
->(
-  origin: Color<O>,
-  lightness: Input<L> | None,
-  chroma: Input<C> | None,
-  hue: Input<H> | None,
-  alpha?: Input<A> | None,
-) => Color<O | L | C | H | A> = internal.oklchFrom
+export type RelativeChannel<Refs extends string, Channels> =
+  | number
+  | None
+  | Calc<Refs, 'number', Channels>
+
+// The channel-keyword brands a `ColorSpace` admits, extracted for scoping.
+type ChannelsOf<Space> = Space extends ColorSpace<infer Channels> ? Channels : never
 
 /**
- * Creates a relative `color(from origin srgb ...)` color: the browser converts
- * `origin` into srgb, exposes its channels as the keywords `Channel.R`,
- * `Channel.G`, `Channel.B`, and `Channel.Alpha`, and rebuilds a color from the
- * red, green, and blue expressions (and optional alpha), each `0` to `1`.
+ * Creates a relative color from an origin and a destination `ColorSpace`:
+ * `Color.from(origin, ColorSpace.oklch, l, c, h)` is `oklch(from origin l c h)`
+ * and `Color.from(origin, ColorSpace.srgb, r, g, b)` is
+ * `color(from origin srgb r g b)`. The browser converts `origin` into the
+ * space and exposes its channels as the `Channel` keywords the space names
+ * (`Channel.L`/`C`/`H` for `oklch`, `Channel.R`/`G`/`B` for `srgb`, `Channel.Alpha`
+ * for both); passing them straight through reproduces the origin, and
+ * arithmetic on them derives a related color.
  *
- * Serialization mirrors `oklchFrom` inside the `color()` function's `srgb`
- * colorspace: each channel wrapped in `calc()` only when arithmetic, `none`
- * permitted, an optional alpha after a slash. The origin's references union
- * into the result; the channel keywords contribute none.
+ * The `space` scopes the channel arguments — a keyword the space does not name
+ * is a compile error. Each channel serializes independently, wrapped in
+ * `calc()` when arithmetic and bare when a lone keyword, and may be
+ * `Keyword.none`. A supplied `alpha` renders after a slash
+ * (`/ calc(alpha * 0.5)`); omitted, the origin's alpha carries through. The
+ * origin's own references union into the result; the channel keywords
+ * contribute none, since the browser resolves them from the origin.
  *
  * @param origin - The color to derive from — any `Color`, commonly a `ref`.
- * @param red - The red channel.
- * @param green - The green channel.
- * @param blue - The blue channel.
+ * @param space - The destination `ColorSpace`, fixing the function form and the channels in scope.
+ * @param channel1 - The first channel (`l`/`r`), in the space's order.
+ * @param channel2 - The second channel (`c`/`g`).
+ * @param channel3 - The third channel (`h`/`b`).
  * @param alpha - The optional alpha channel; omitted, the origin's alpha is kept.
  * @returns A `Color` unioning the origin's and the channels' references.
  * @example
  * ```ts
- * const faded = Color.srgbFrom(Color.ref('brand'), Channel.R, Channel.G, Channel.B, Calc.multiply(Channel.Alpha, 0.5))
+ * const hover = Color.from(Color.ref('accent'), ColorSpace.oklch, Calc.multiply(Channel.L, 0.8), Channel.C, Channel.H)
+ * Color.serialize(hover) // 'oklch(from var(--accent) calc(l * 0.8) c h)'
+ * const faded = Color.from(Color.ref('brand'), ColorSpace.srgb, Channel.R, Channel.G, Channel.B, Calc.multiply(Channel.Alpha, 0.5))
  * Color.serialize(faded) // 'color(from var(--brand) srgb r g b / calc(alpha * 0.5))'
  * ```
  * @since 0.2.0
  */
-export const srgbFrom: <
+export const from: <
   O extends string = never,
-  R extends string = never,
-  G extends string = never,
-  B extends string = never,
+  Space extends ColorSpace = ColorSpace,
+  C1 extends string = never,
+  C2 extends string = never,
+  C3 extends string = never,
   A extends string = never,
 >(
   origin: Color<O>,
-  red: Input<R> | None,
-  green: Input<G> | None,
-  blue: Input<B> | None,
-  alpha?: Input<A> | None,
-) => Color<O | R | G | B | A> = internal.srgbFrom
+  space: Space,
+  channel1: RelativeChannel<C1, ChannelsOf<Space>>,
+  channel2: RelativeChannel<C2, ChannelsOf<Space>>,
+  channel3: RelativeChannel<C3, ChannelsOf<Space>>,
+  alpha?: RelativeChannel<A, ChannelsOf<Space>>,
+) => Color<O | C1 | C2 | C3 | A> = internal.from
 
 export const bind: {
   /**
@@ -415,6 +404,29 @@ export const serialize: <Refs extends string>(
  * @since 0.1.0
  */
 export const refs: <Refs extends string>(color: Color<Refs>) => ReadonlySet<Refs> = internal.refs
+
+/**
+ * The origin-channel keyword tokens the color reads — the `Channel` keywords a
+ * relative color's channels reference (`l`, `c`, `h`, ...), gathered across its
+ * channels and any nested colors. Empty for a color with no relative parts.
+ *
+ * The `Color` companion to `Calc.channels`, and the mirror of `refs`: where
+ * `refs` reports the custom properties a color depends on, `channels` reports
+ * the origin channels a relative color reads. They are disjoint — a channel
+ * keyword is never a reference — so a channel token never appears in `refs` nor
+ * reaches a `Stylesheet`'s dependency report.
+ *
+ * @param color - The color to inspect.
+ * @returns The set of channel-keyword tokens the color reads.
+ * @example
+ * ```ts
+ * const hover = Color.from(Color.ref('accent'), ColorSpace.oklch, Calc.multiply(Channel.L, 0.8), Channel.C, Channel.H)
+ * Color.channels(hover) // Set { 'l', 'c', 'h' }
+ * Color.refs(hover) // Set { 'accent' }
+ * ```
+ * @since 0.2.0
+ */
+export const channels: (color: Color<string>) => ReadonlySet<string> = internal.channels
 
 export const equals: {
   /**

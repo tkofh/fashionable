@@ -37,11 +37,13 @@ export interface RefNode {
 }
 
 /**
- * A bare CSS identifier leaf — an unquoted token the browser resolves from
- * its surrounding context, not the custom-property channel. Serializes as its
- * name (`l`, not `var(--l)`), contributes no references, and cannot be solved,
- * since no `bind` value reaches it. Today the relative-color channel keywords
- * (`Channel.L`, `Channel.C`, ...) are its only source.
+ * A bare CSS identifier leaf — an unquoted token resolved from its surrounding
+ * context, not the custom-property channel. Serializes as its name (`l`, not
+ * `var(--l)`) and contributes no references; `bind` passes it through untouched.
+ * It carries a leaf brand (`Unit.ChannelLeaf`), so `solve` demands a value for
+ * it by name through the context, the way a viewport unit demands a ratio.
+ * Today the relative-color channel keywords (`Channel.L`, `Channel.C`, ...) are
+ * its only source.
  *
  * @internal
  */
@@ -276,18 +278,21 @@ const UNARY: Record<
 }
 
 const foldUnary = (tag: UnaryTag, argument: CalcNode): CalcNode => {
-  if (isConstant(argument)) {
-    const { fn, result } = UNARY[tag]
-    const value = fn(argument.value)
-    if (result === 'preserve') {
-      return constantNode(value, argument.precision, argument.unit, argument.kind)
-    }
-    if (result === 'rad') {
-      return constantNode(value, argument.precision, 'rad', 'angle')
-    }
-    return constantNode(value, argument.precision)
+  if (!isConstant(argument)) {
+    return { _tag: tag, argument }
   }
-  return { _tag: tag, argument }
+  const { fn, result } = UNARY[tag]
+  const value = fn(argument.value)
+  // No `default`: a new `result` variant becomes a missing-return type error here,
+  // the same exhaustiveness the node walkers rely on.
+  switch (result) {
+    case 'number':
+      return constantNode(value, argument.precision)
+    case 'preserve':
+      return constantNode(value, argument.precision, argument.unit, argument.kind)
+    case 'rad':
+      return constantNode(value, argument.precision, 'rad', 'angle')
+  }
 }
 
 // atan2(y, x) returns an <angle>. It also divides same-kind dimensions to a
@@ -376,8 +381,14 @@ export const evaluateNode = (node: CalcNode, context: Record<string, number>): n
     }
     case 'Ref':
       throw new Error(`Cannot evaluate non-constant reference: ${node.name}`)
-    case 'Ident':
-      throw new Error(`Cannot evaluate bare identifier: ${node.name}`)
+    case 'Ident': {
+      const value = context[node.name]
+      invariant(
+        value !== undefined,
+        `Cannot evaluate '${node.name}': no value for it in the solve context`,
+      )
+      return value
+    }
     case 'Add':
       return node.terms.reduce((total, term) => total + evaluateNode(term, context), 0)
     case 'Subtract':
@@ -724,6 +735,66 @@ export const nodeOf = (expr: Calc<string, Kind, unknown>): CalcNode => (expr as 
 export const refsOf = <R extends string>(expr: Calc<R, Kind, unknown>): ReadonlySet<R> =>
   (expr as unknown as CalcImpl).refSet as ReadonlySet<R>
 
+// Bare identifiers aren't tracked in the ref set (they are not custom
+// properties), so their names are gathered by walking the tree on demand —
+// the runtime counterpart to the `Leaves`-level channel typing.
+const collectIdents = (node: CalcNode, into: Set<string>): void => {
+  switch (node._tag) {
+    case 'Ident':
+      into.add(node.name)
+      return
+    case 'Constant':
+    case 'Ref':
+      return
+    case 'Add':
+      for (const term of node.terms) {
+        collectIdents(term, into)
+      }
+      return
+    case 'Min':
+    case 'Max':
+      for (const arg of node.args) {
+        collectIdents(arg, into)
+      }
+      return
+    case 'Subtract':
+    case 'Multiply':
+    case 'Divide':
+      collectIdents(node.left, into)
+      collectIdents(node.right, into)
+      return
+    case 'Pow':
+    case 'SignedPow':
+      collectIdents(node.base, into)
+      collectIdents(node.exponent, into)
+      return
+    case 'Clamp':
+      collectIdents(node.minimum, into)
+      collectIdents(node.value, into)
+      collectIdents(node.maximum, into)
+      return
+    case 'Abs':
+    case 'Sign':
+    case 'Sin':
+    case 'Cos':
+    case 'Tan':
+    case 'Acos':
+      collectIdents(node.argument, into)
+      return
+    case 'Atan2':
+      collectIdents(node.y, into)
+      collectIdents(node.x, into)
+      return
+  }
+}
+
+/** @internal */
+export const identsOf = (node: CalcNode): ReadonlySet<string> => {
+  const set = new Set<string>()
+  collectIdents(node, set)
+  return set
+}
+
 const makeCalc = (node: CalcNode, refSet: ReadonlySet<string>): Calc<string> =>
   new CalcImpl(node, refSet)
 
@@ -1063,6 +1134,11 @@ export function serialize<Refs extends string>(
 /** @internal */
 export function refs<Refs extends string>(expr: Calc<Refs, Kind, unknown>): ReadonlySet<Refs> {
   return refsOf(expr)
+}
+
+/** @internal */
+export function channels(expr: Calc<string, Kind, unknown>): ReadonlySet<string> {
+  return identsOf(nodeOf(expr))
 }
 
 /** @internal */

@@ -2,6 +2,7 @@ import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from '#ca
 import {
   type CalcNode,
   collectBindings,
+  identsOf,
   needsCalcWrap,
   nodeEquals,
   nodeHash,
@@ -16,10 +17,13 @@ import * as Equal from '#internal/equal'
 import { DEFAULT_FORMAT, type FormatSpec } from '#internal/format'
 import { EMPTY_REFS, unionRefs } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
-import type { Color, HueInterpolation, InterpolationMethod } from './color.ts'
+import type { Color, HueInterpolation, InterpolationMethod, RelativeChannel } from './color.ts'
+import { dataOf as spaceDataOf, type Wrap } from './colorSpace.internal.ts'
+import type { ColorSpace } from './colorSpace.ts'
 import { isNone } from './keywords.internal.ts'
 import type { None } from './keywords.ts'
 import { of as percentageOf } from './percentage.internal.ts'
+import type { ChannelLeaf } from './units.ts'
 
 export const ColorTypeId = Symbol.for('fashionable/color')
 export type ColorTypeId = typeof ColorTypeId
@@ -115,17 +119,20 @@ export interface ColorMixNode {
 
 /**
  * A relative color: `oklch(from origin l c h [/ a])` or
- * `color(from origin srgb r g b [/ a])`. `form` selects the destination
- * function; `origin` is a whole color node (recursed, as `LightDark` arms
- * are). The three `channels` and the optional `alpha` are calc slots whose
- * expressions may read the origin's channels through the `Channel` keywords —
- * bare-identifier leaves that stay put under bind and contribute no refs.
+ * `color(from origin srgb r g b [/ a])`. `token` names the destination space
+ * and `wrap` selects its serialized form — a named function or the `color()`
+ * wrapper — both read off the `ColorSpace` argument. `origin` is a whole color
+ * node (recursed, as `LightDark` arms are). The three `channels` and the
+ * optional `alpha` are calc slots whose expressions may read the origin's
+ * channels through the `Channel` keywords — bare-identifier leaves that stay
+ * put under bind and contribute no refs.
  *
  * @internal
  */
 export interface RelativeNode {
   readonly _tag: 'Relative'
-  readonly form: 'oklch' | 'srgb'
+  readonly token: string
+  readonly wrap: Wrap
   readonly origin: ColorNode
   readonly channels: readonly [ChannelNode, ChannelNode, ChannelNode]
   readonly alpha: ChannelNode | undefined
@@ -200,7 +207,8 @@ const mapColorNode = (node: ColorNode, f: (channel: CalcNode) => CalcNode): Colo
     case 'Relative':
       return {
         _tag: 'Relative',
-        form: node.form,
+        token: node.token,
+        wrap: node.wrap,
         origin: mapColorNode(node.origin, f),
         channels: [
           mapChannel(node.channels[0], f),
@@ -255,16 +263,16 @@ const serializeColorNode = (node: ColorNode, precision: FormatSpec): string => {
   }
   if (node._tag === 'Relative') {
     const origin = serializeColorNode(node.origin, precision)
-    const channels = node.channels.map((channel) => serializeChannel(channel, precision)).join(' ')
+    const rendered = node.channels.map((channel) => serializeChannel(channel, precision)).join(' ')
     const alpha = node.alpha === undefined ? '' : ` / ${serializeChannel(node.alpha, precision)}`
-    return node.form === 'oklch'
-      ? `oklch(from ${origin} ${channels}${alpha})`
-      : `color(from ${origin} srgb ${channels}${alpha})`
+    return node.wrap === 'function'
+      ? `${node.token}(from ${origin} ${rendered}${alpha})`
+      : `color(from ${origin} ${node.token} ${rendered}${alpha})`
   }
-  const channels = channelsOf(node)
+  const rendered = channelsOf(node)
     .map((channel) => serializeChannel(channel, precision))
     .join(' ')
-  return node._tag === 'Oklch' ? `oklch(${channels})` : `color(srgb ${channels})`
+  return node._tag === 'Oklch' ? `oklch(${rendered})` : `color(srgb ${rendered})`
 }
 
 const channelEquals = (a: ChannelNode, b: ChannelNode): boolean => {
@@ -310,7 +318,8 @@ const colorNodeEquals = (a: ColorNode, b: ColorNode): boolean => {
   if (a._tag === 'Relative') {
     const other = b as RelativeNode
     return (
-      a.form === other.form &&
+      a.token === other.token &&
+      a.wrap === other.wrap &&
       colorNodeEquals(a.origin, other.origin) &&
       a.channels.every((channel, index) =>
         channelEquals(channel, other.channels[index] as ChannelNode),
@@ -348,7 +357,8 @@ const colorNodeHash = (node: ColorNode): number => {
     return Equal.combine(h, node.percentage2 === undefined ? 0 : nodeHash(node.percentage2))
   }
   if (node._tag === 'Relative') {
-    h = Equal.combine(h, Equal.hashString(node.form))
+    h = Equal.combine(h, Equal.hashString(node.token))
+    h = Equal.combine(h, Equal.hashString(node.wrap))
     h = Equal.combine(h, colorNodeHash(node.origin))
     for (const channel of node.channels) {
       h = Equal.combine(h, hashChannel(channel))
@@ -408,7 +418,13 @@ interface ResolvedChannel {
   readonly refs: ReadonlySet<string>
 }
 
-const toChannel = (input: Input<string> | None): ResolvedChannel => {
+// The erased channel input the constructors funnel through `toChannel`: a
+// number, `none`, or any number-kind expression — including one branded with a
+// relative-color channel keyword. The public signatures pin the precise refs
+// and scope the keywords to the space; this stays wide enough to accept all.
+type RelativeChannelInput = RelativeChannel<string, ChannelLeaf<string>>
+
+const toChannel = (input: RelativeChannelInput): ResolvedChannel => {
   if (isNone(input)) {
     return { node: NONE_CHANNEL, refs: EMPTY_REFS }
   }
@@ -541,12 +557,13 @@ export function mix<
 }
 
 const relative = (
-  form: 'oklch' | 'srgb',
+  token: string,
+  wrap: Wrap,
   origin: Color<string>,
-  channel1: Input<string> | None,
-  channel2: Input<string> | None,
-  channel3: Input<string> | None,
-  alpha: Input<string> | None | undefined,
+  channel1: RelativeChannelInput,
+  channel2: RelativeChannelInput,
+  channel3: RelativeChannelInput,
+  alpha: RelativeChannelInput | undefined,
 ): Color<string> => {
   const c1 = toChannel(channel1)
   const c2 = toChannel(channel2)
@@ -555,7 +572,8 @@ const relative = (
   return new ColorImpl(
     {
       _tag: 'Relative',
-      form,
+      token,
+      wrap,
       origin: nodeOfColor(origin),
       channels: [c1.node, c2.node, c3.node],
       alpha: a === undefined ? undefined : a.node,
@@ -565,37 +583,16 @@ const relative = (
 }
 
 /** @internal */
-export function oklchFrom<
-  O extends string = never,
-  L extends string = never,
-  C extends string = never,
-  H extends string = never,
-  A extends string = never,
->(
-  origin: Color<O>,
-  lightness: Input<L> | None,
-  chroma: Input<C> | None,
-  hue: Input<H> | None,
-  alpha?: Input<A> | None,
-): Color<O | L | C | H | A> {
-  return relative('oklch', origin, lightness, chroma, hue, alpha) as Color<O | L | C | H | A>
-}
-
-/** @internal */
-export function srgbFrom<
-  O extends string = never,
-  R extends string = never,
-  G extends string = never,
-  B extends string = never,
-  A extends string = never,
->(
-  origin: Color<O>,
-  red: Input<R> | None,
-  green: Input<G> | None,
-  blue: Input<B> | None,
-  alpha?: Input<A> | None,
-): Color<O | R | G | B | A> {
-  return relative('srgb', origin, red, green, blue, alpha) as Color<O | R | G | B | A>
+export function from(
+  origin: Color<string>,
+  space: ColorSpace<unknown>,
+  channel1: RelativeChannelInput,
+  channel2: RelativeChannelInput,
+  channel3: RelativeChannelInput,
+  alpha?: RelativeChannelInput,
+): Color<never> {
+  const { token, wrap } = spaceDataOf(space)
+  return relative(token, wrap, origin, channel1, channel2, channel3, alpha) as Color<never>
 }
 
 // The color-valued reference names in a node — the `ColorRef` origins the
@@ -616,6 +613,50 @@ const colorRefNames = (node: ColorNode): ReadonlySet<string> => {
     case 'Srgb':
     case 'Named':
       return EMPTY_REFS
+  }
+}
+
+const identsOfChannel = (channel: ChannelNode): ReadonlySet<string> =>
+  isNoneChannel(channel) ? EMPTY_REFS : identsOf(channel)
+
+// The channel-keyword tokens a color reads — each channel slot's calc tree
+// walked and sub-colors recursed, the `Color` counterpart to `Calc.channels`.
+// Only relative colors introduce keywords; other nodes carry them solely
+// through a nested relative origin or arm.
+const colorChannels = (node: ColorNode): ReadonlySet<string> => {
+  switch (node._tag) {
+    case 'Named':
+    case 'ColorRef':
+      return EMPTY_REFS
+    case 'Oklch':
+      return unionRefs(
+        identsOfChannel(node.lightness),
+        identsOfChannel(node.chroma),
+        identsOfChannel(node.hue),
+      )
+    case 'Srgb':
+      return unionRefs(
+        identsOfChannel(node.red),
+        identsOfChannel(node.green),
+        identsOfChannel(node.blue),
+      )
+    case 'LightDark':
+      return unionRefs(colorChannels(node.light), colorChannels(node.dark))
+    case 'ColorMix':
+      return unionRefs(
+        colorChannels(node.color1),
+        node.percentage1 === undefined ? EMPTY_REFS : identsOf(node.percentage1),
+        colorChannels(node.color2),
+        node.percentage2 === undefined ? EMPTY_REFS : identsOf(node.percentage2),
+      )
+    case 'Relative':
+      return unionRefs(
+        colorChannels(node.origin),
+        identsOfChannel(node.channels[0]),
+        identsOfChannel(node.channels[1]),
+        identsOfChannel(node.channels[2]),
+        node.alpha === undefined ? EMPTY_REFS : identsOfChannel(node.alpha),
+      )
   }
 }
 
@@ -656,6 +697,11 @@ export function serialize<Refs extends string>(
 /** @internal */
 export function refs<Refs extends string>(color: Color<Refs>): ReadonlySet<Refs> {
   return refsOf(color)
+}
+
+/** @internal */
+export function channels(color: Color<string>): ReadonlySet<string> {
+  return colorChannels(nodeOfColor(color))
 }
 
 /** @internal */

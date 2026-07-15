@@ -14,7 +14,21 @@
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
 import * as internal from './angle.internal.ts'
-import type { Rad } from './units.ts'
+import type { Angle as AngleUnit, Rad } from './units.ts'
+
+/**
+ * An `<angle>` expression: a `Calc` of angle kind, in any angle unit. Names the
+ * dimension without spelling `Calc<Refs, 'angle', Unit.Angle>` — `Angle.rad(2)`
+ * produces one, and it composes with every `Calc` combinator (subtracting two
+ * angles is an angle, scaling by a number stays an angle). `Refs` unions the
+ * unbound reference names, as on `Calc`.
+ *
+ * The leaf is the widened `Unit.Angle`, so every specific angle expression is
+ * assignable to it; a constructor narrows it (`Angle.rad` carries `Unit.Rad`).
+ *
+ * @since 0.2.0
+ */
+export type Angle<Refs extends string = string> = Calc<Refs, 'angle', AngleUnit>
 
 /**
  * An angle in `rad` (radians). Radians are the numeric measure of an angle, so

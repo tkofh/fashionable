@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Calc } from '#calc'
-import { Channel, Color, Keyword, Percentage } from '#data'
+import { Channel, Color, ColorSpace, Keyword, Percentage } from '#data'
 
 describe('color', () => {
   describe('oklch', () => {
@@ -239,9 +239,10 @@ describe('color', () => {
   })
 
   describe('relative color', () => {
-    test('oklchFrom serializes the from-origin consumer shape byte-exact', () => {
-      const hover = Color.oklchFrom(
+    test('from an oklch space serializes the consumer shape byte-exact', () => {
+      const hover = Color.from(
         Color.ref('accent'),
+        ColorSpace.oklch,
         Calc.multiply(Channel.L, 0.8),
         Channel.C,
         Channel.H,
@@ -250,13 +251,20 @@ describe('color', () => {
     })
 
     test('passing the keywords straight through reproduces the origin', () => {
-      const same = Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H)
+      const same = Color.from(
+        Color.ref('accent'),
+        ColorSpace.oklch,
+        Channel.L,
+        Channel.C,
+        Channel.H,
+      )
       expect(Color.serialize(same)).toBe('oklch(from var(--accent) l c h)')
     })
 
-    test('srgbFrom derives inside color(from … srgb …) with an alpha slash', () => {
-      const faded = Color.srgbFrom(
+    test('an srgb space derives inside color(from … srgb …) with an alpha slash', () => {
+      const faded = Color.from(
         Color.ref('brand'),
+        ColorSpace.srgb,
         Channel.R,
         Channel.G,
         Channel.B,
@@ -266,18 +274,32 @@ describe('color', () => {
     })
 
     test('the origin may be any color, not just a reference', () => {
-      const rel = Color.oklchFrom(Color.oklch(0.6, 0.15, 250), Channel.L, Channel.C, Channel.H)
+      const rel = Color.from(
+        Color.oklch(0.6, 0.15, 250),
+        ColorSpace.oklch,
+        Channel.L,
+        Channel.C,
+        Channel.H,
+      )
       expect(Color.serialize(rel)).toBe('oklch(from oklch(0.6 0.15 250) l c h)')
     })
 
     test('channels accept none, and alpha accepts none after the slash', () => {
-      const color = Color.oklchFrom(Color.ref('x'), 0.5, Keyword.none, Channel.H, Keyword.none)
+      const color = Color.from(
+        Color.ref('x'),
+        ColorSpace.oklch,
+        0.5,
+        Keyword.none,
+        Channel.H,
+        Keyword.none,
+      )
       expect(Color.serialize(color)).toBe('oklch(from var(--x) 0.5 none h / none)')
     })
 
     test('unions the origin and channel references and binds through channels', () => {
-      const color = Color.oklchFrom(
+      const color = Color.from(
         Color.ref('accent'),
+        ColorSpace.oklch,
         Calc.multiply(Channel.L, Calc.ref('k')),
         Channel.C,
         Channel.H,
@@ -289,9 +311,29 @@ describe('color', () => {
       expect(Color.serialize(bound)).toBe('oklch(from var(--accent) calc(l * 0.8) c h)')
     })
 
+    test('channels() reports the origin channels read; refs() the custom properties', () => {
+      const hover = Color.from(
+        Color.ref('accent'),
+        ColorSpace.oklch,
+        Calc.multiply(Channel.L, 0.8),
+        Channel.C,
+        Channel.H,
+      )
+      expect(Color.channels(hover)).toEqual(new Set(['l', 'c', 'h']))
+      expect(Color.refs(hover)).toEqual(new Set(['accent']))
+    })
+
+    test('a custom property named like a channel is a ref, not a channel', () => {
+      // var(--l) is the reference l; Channel.L is the bare keyword l — distinct
+      const color = Color.oklch(Calc.ref('l'), 0.1, 250)
+      expect(Color.refs(color)).toEqual(new Set(['l']))
+      expect(Color.channels(color)).toEqual(new Set())
+    })
+
     test('binding through the origin color reaches its channels', () => {
-      const color = Color.oklchFrom(
+      const color = Color.from(
         Color.oklch(Calc.ref('base'), 0.1, 250),
+        ColorSpace.oklch,
         Channel.L,
         Channel.C,
         Channel.H,
@@ -301,33 +343,61 @@ describe('color', () => {
       )
     })
 
-    test('equality is structural over form, origin, channels, and alpha', () => {
-      const base = Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H)
+    test('equality is structural over space, origin, channels, and alpha', () => {
+      const base = Color.from(
+        Color.ref('accent'),
+        ColorSpace.oklch,
+        Channel.L,
+        Channel.C,
+        Channel.H,
+      )
       expect(
-        Color.equals(base, Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H)),
+        Color.equals(
+          base,
+          Color.from(Color.ref('accent'), ColorSpace.oklch, Channel.L, Channel.C, Channel.H),
+        ),
       ).toBe(true)
       // a different origin never compares equal
       expect(
-        Color.equals(base, Color.oklchFrom(Color.ref('brand'), Channel.L, Channel.C, Channel.H)),
+        Color.equals(
+          base,
+          Color.from(Color.ref('brand'), ColorSpace.oklch, Channel.L, Channel.C, Channel.H),
+        ),
       ).toBe(false)
       // a present alpha never equals an omitted one
       expect(
         Color.equals(
           base,
-          Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H, Channel.Alpha),
+          Color.from(
+            Color.ref('accent'),
+            ColorSpace.oklch,
+            Channel.L,
+            Channel.C,
+            Channel.H,
+            Channel.Alpha,
+          ),
         ),
       ).toBe(false)
-      // the destination function participates: an srgb form never equals an oklch one
+      // the destination space participates: an srgb form never equals an oklch one
       expect(
-        Color.equals(base, Color.srgbFrom(Color.ref('accent'), Channel.R, Channel.G, Channel.B)),
+        Color.equals(
+          base,
+          Color.from(Color.ref('accent'), ColorSpace.srgb, Channel.R, Channel.G, Channel.B),
+        ),
       ).toBe(false)
     })
 
     test('a relative color nests as an origin and as a light-dark arm', () => {
-      const inner = Color.oklchFrom(Color.ref('accent'), Channel.L, Channel.C, Channel.H)
-      expect(Color.serialize(Color.oklchFrom(inner, Channel.L, Channel.C, Channel.H))).toBe(
-        'oklch(from oklch(from var(--accent) l c h) l c h)',
+      const inner = Color.from(
+        Color.ref('accent'),
+        ColorSpace.oklch,
+        Channel.L,
+        Channel.C,
+        Channel.H,
       )
+      expect(
+        Color.serialize(Color.from(inner, ColorSpace.oklch, Channel.L, Channel.C, Channel.H)),
+      ).toBe('oklch(from oklch(from var(--accent) l c h) l c h)')
       expect(Color.serialize(Color.lightDark(inner, Color.transparent))).toBe(
         'light-dark(oklch(from var(--accent) l c h), transparent)',
       )
@@ -381,13 +451,27 @@ describe('color', () => {
       expect(Calc.refs(Calc.add(Channel.L, Calc.ref('k')))).toEqual(new Set(['k']))
     })
 
+    test('channels() collects the keyword tokens, disjoint from refs()', () => {
+      const expr = Calc.multiply(Channel.L, Calc.ref('k'))
+      expect(Calc.channels(expr)).toEqual(new Set(['l']))
+      expect(Calc.refs(expr)).toEqual(new Set(['k']))
+      expect(Calc.channels(Calc.ref('k'))).toEqual(new Set())
+    })
+
     test('equality is per keyword', () => {
       expect(Calc.equals(Channel.L, Channel.L)).toBe(true)
       expect(Calc.equals(Channel.L, Channel.C)).toBe(false)
     })
 
-    test('cannot be solved — the browser resolves them from the origin', () => {
-      expect(() => Calc.solve(Channel.L)).toThrow('bare identifier')
+    test('solve resolves a channel from a value in the context', () => {
+      expect(Calc.solve(Calc.multiply(Channel.L, 0.8), {}, { l: 0.5 })).toBe(0.4)
+    })
+
+    test('solving without a value for the channel throws', () => {
+      // the missing value is a compile error; cast past it to pin the guard
+      expect(() => Calc.solve(Calc.multiply(Channel.L, 0.8) as Calc.Calc<never>, {}, {})).toThrow(
+        'no value for it in the solve context',
+      )
     })
   })
 

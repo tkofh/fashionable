@@ -15,7 +15,22 @@
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
 import * as internal from './length.internal.ts'
-import type { Em, Px, Rem, Vh, Vmax, Vmin, Vw } from './units.ts'
+import type { Em, Length as LengthUnit, Px, Rem, Vh, Vmax, Vmin, Vw } from './units.ts'
+
+/**
+ * A `<length>` expression: a `Calc` of length kind, in any length unit. Names
+ * the dimension without spelling `Calc<Refs, 'length', Unit.Length>` —
+ * `Length.px(16)` produces one, and it composes with every `Calc` combinator
+ * (adding two lengths is a length, dividing one by another is a number). `Refs`
+ * unions the unbound reference names, as on `Calc`.
+ *
+ * The leaf is the widened `Unit.Length`, so a mixed-unit sum
+ * (`Calc.add(Length.px(16), Length.vw(2))`) and every single-unit length are
+ * alike assignable to it.
+ *
+ * @since 0.2.0
+ */
+export type Length<Refs extends string = string> = Calc<Refs, 'length', LengthUnit>
 
 /**
  * A length in `px` (absolute pixels).

@@ -9,12 +9,17 @@
  * stamp them — but they surface in `Calc<Refs, Kind, Leaves>` hovers as the set
  * of units an expression contains (`Calc<never, 'number', Unit.Vw | Unit.Px>`).
  *
+ * Not every leaf provenance is a unit: a relative-color channel keyword
+ * (`ChannelLeaf`) rides the same third parameter, so `solve` can demand a value
+ * for it the way it demands a ratio for a viewport unit.
+ *
  * @since 0.2.0
  */
 
 declare const LengthUnitId: unique symbol
 declare const AngleUnitId: unique symbol
 declare const PercentageUnitId: unique symbol
+declare const ChannelId: unique symbol
 
 /**
  * The `px` unit (absolute length).
@@ -100,6 +105,21 @@ export interface Percent {
 }
 
 /**
+ * A relative-color channel keyword (`Channel.L` -> `l`) as a leaf provenance
+ * rather than a CSS unit. It carries the keyword name and is keyed by its own
+ * `unique symbol`, so it never unifies with a unit; `solve` treats it like a
+ * context-dependent unit, but demands a *value* for the keyword rather than a
+ * pixels-per-unit ratio — there is no `value * ratio`, the keyword is itself the
+ * value the browser reads from the origin. Surfaces in `Calc<Refs, Kind, Leaves>`
+ * hovers as `Calc<never, 'number', Unit.ChannelLeaf<'l'>>`.
+ *
+ * @since 0.2.0
+ */
+export interface ChannelLeaf<Name extends string> {
+  readonly [ChannelId]: Name
+}
+
+/**
  * Any `<length>` unit.
  *
  * @since 0.2.0
@@ -158,20 +178,26 @@ export type Token<U> = U extends { readonly [LengthUnitId]: infer T }
     ? T
     : U extends { readonly [PercentageUnitId]: infer T }
       ? T
-      : never
+      : U extends { readonly [ChannelId]: infer T }
+        ? T
+        : never
 
 /**
  * The context `Calc.solve` requires to lower an expression carrying the units
  * `L` to a number. Each context-dependent (relative) unit present is a required
  * `number` ratio — pixels per unit, as `sampleWidth / 100` is per `vw` — while
  * absolute lengths (`px`) are optional overrides and angle units never appear
- * (radians are already numeric). An expression whose units are all context-free
+ * (radians are already numeric). Each relative-color channel keyword present is
+ * a required `number` too, but the value itself, not a ratio (`{ l: 0.62 }`),
+ * keyed by the keyword token. An expression whose leaves are all context-free
  * needs no context at all.
  *
  * @since 0.2.0
  */
 export type UnitContext<L> = {
   readonly [K in Token<Extract<L, Relative>> & string]: number
+} & {
+  readonly [K in Token<Extract<L, ChannelLeaf<string>>> & string]: number
 } & {
   readonly [K in Token<Extract<L, AbsoluteLength>> & string]?: number
 }

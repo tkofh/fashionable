@@ -19,7 +19,18 @@
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
 import * as internal from './percentage.internal.ts'
-import type { Percent } from './units.ts'
+import type { Percent, Percentage as PercentageUnit } from './units.ts'
+
+/**
+ * A `<percentage>` expression: a `Calc` of percentage kind. Names the dimension
+ * without spelling `Calc<Refs, 'percentage', Unit.Percentage>` —
+ * `Percentage.of(40)` produces one, and it composes with every `Calc`
+ * combinator (adding two percentages is a percentage, one over another is a
+ * number). `Refs` unions the unbound reference names, as on `Calc`.
+ *
+ * @since 0.2.0
+ */
+export type Percentage<Refs extends string = string> = Calc<Refs, 'percentage', PercentageUnit>
 
 /**
  * A percentage — a number rendered with a trailing `%`. `Percentage.of(40)`

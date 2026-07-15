@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, test } from 'vitest'
 import { Calc } from '#calc'
-import { Angle, Channel, Color, Length, Percentage } from '#data'
+import { Angle, Channel, Color, ColorSpace, Length, Percentage, type Unit } from '#data'
 import { Declaration } from '#declaration'
 import { FontFaceRule } from '#fontFace'
 import { PropertyRule, PropertySyntax } from '#property'
@@ -87,6 +87,17 @@ const rejectsInvalidMixMethods = (): void => {
   Color.mix('oklch', [red, Length.px(40)], blue)
 }
 
+// Compile-time assertions only — never invoked.
+const rejectsCrossSpaceRelativeChannels = (): void => {
+  const accent = Color.ref('accent')
+  // @ts-expect-error an srgb channel keyword is out of scope for an oklch relative color
+  Color.from(accent, ColorSpace.oklch, Channel.R, Channel.C, Channel.H)
+  // @ts-expect-error an oklch channel keyword is out of scope for an srgb relative color
+  Color.from(accent, ColorSpace.srgb, Channel.L, Channel.G, Channel.B)
+  // @ts-expect-error a channel keyword needs a value in the solve context
+  Calc.solve(Calc.multiply(Channel.L, 0.8))
+}
+
 describe('types', () => {
   test('ref infers its name', () => {
     expectTypeOf(Calc.ref('x')).toEqualTypeOf<Calc.Calc<'x'>>()
@@ -146,8 +157,9 @@ describe('types', () => {
   })
 
   test('relative color unions the origin and channel refs', () => {
-    const color = Color.oklchFrom(
+    const color = Color.from(
       Color.ref('accent'),
+      ColorSpace.oklch,
       Calc.multiply(Channel.L, Calc.ref('k')),
       Channel.C,
       Channel.H,
@@ -156,8 +168,9 @@ describe('types', () => {
   })
 
   test('relative alpha contributes its refs', () => {
-    const color = Color.srgbFrom(
+    const color = Color.from(
       Color.ref('x'),
+      ColorSpace.srgb,
       Channel.R,
       Channel.G,
       Channel.B,
@@ -166,8 +179,12 @@ describe('types', () => {
     expectTypeOf(color).toEqualTypeOf<Color.Color<'x' | 'a'>>()
   })
 
-  test('channel keywords are closed calc expressions', () => {
-    expectTypeOf(Channel.L).toEqualTypeOf<Calc.Calc<never>>()
+  test('channel keywords carry their leaf brand', () => {
+    expectTypeOf(Channel.L).toEqualTypeOf<Calc.Calc<never, 'number', Unit.ChannelLeaf<'l'>>>()
+  })
+
+  test('a channel keyword is solvable with its value in the context', () => {
+    expectTypeOf(Calc.solve(Calc.multiply(Channel.L, 0.8), {}, { l: 0.5 })).toEqualTypeOf<number>()
   })
 
   test('color mix unions both arms and both percentage refs', () => {
@@ -321,5 +338,9 @@ describe('types', () => {
 
   test('invalid color-mix methods and weights are rejected at compile time', () => {
     expect(rejectsInvalidMixMethods).toBeTypeOf('function')
+  })
+
+  test('cross-space channels and unresolved channel solves are rejected at compile time', () => {
+    expect(rejectsCrossSpaceRelativeChannels).toBeTypeOf('function')
   })
 })

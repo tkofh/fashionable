@@ -255,5 +255,17 @@ const dimensionalTypes = (): void => {
   Calc.add(Percentage.of(20), 5)
   // @ts-expect-error a <percentage> plus a <length> is invalid CSS
   Calc.add(Percentage.of(20), Length.px(10))
+
+  // the dimension aliases name the widened Calc for each kind. Angle.rad and
+  // Percentage.of land exactly on their alias (one unit each today); any
+  // length — single- or mixed-unit — is assignable to the wide Length alias.
+  expectTypeOf(Angle.rad(2)).toEqualTypeOf<Angle.Angle<never>>()
+  expectTypeOf(Percentage.of(40)).toEqualTypeOf<Percentage.Percentage<never>>()
+  const wideAngle: Angle.Angle = Angle.rad(2)
+  const wideLength: Length.Length = Calc.add(Length.px(16), Length.vw(2))
+  const widePercentage: Percentage.Percentage = Percentage.of(40)
+  void wideAngle
+  void wideLength
+  void widePercentage
 }
 void dimensionalTypes

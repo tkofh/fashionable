@@ -663,6 +663,30 @@ export const serialize: <Refs extends string>(
 export const refs: <Refs extends string>(expr: Calc<Refs, Kind, unknown>) => ReadonlySet<Refs> =
   internal.refs
 
+/**
+ * The channel-keyword tokens the expression reads — the `Channel` keywords a
+ * relative color introduces (`l`, `c`, `h`, ...). Empty for an expression with
+ * no channel keywords.
+ *
+ * This is the runtime companion to the `Leaves`-level scoping that `solve`'s
+ * context requires: `channels` reports which values a context must supply,
+ * exactly as `refs` reports the custom properties a binding must, and — unlike
+ * a `Calc`'s `Kind`/`Leaves` type — survives on a `Calc<Refs, Kind, unknown>`
+ * whose leaves have been erased. Channel keywords are not references, so `refs`
+ * never lists them and they never reach a `Stylesheet`'s dependency report.
+ *
+ * @param expr - The expression to inspect.
+ * @returns The set of channel-keyword tokens the expression reads.
+ * @example
+ * ```ts
+ * Calc.channels(Calc.multiply(Channel.L, 0.8)) // Set { 'l' }
+ * Calc.channels(Calc.ref('x')) // Set {}
+ * ```
+ * @since 0.2.0
+ */
+export const channels: (expr: Calc<string, Kind, unknown>) => ReadonlySet<string> =
+  internal.channels
+
 export const equals: {
   /**
    * Returns a function that checks structural equality against `that`.

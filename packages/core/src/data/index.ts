@@ -1,6 +1,7 @@
 export * as Angle from './angle.ts'
 export * as Channel from './channels.ts'
 export * as Color from './color.ts'
+export * as ColorSpace from './colorSpace.ts'
 export * as Keyword from './keywords.ts'
 export * as Length from './length.ts'
 export * as Percentage from './percentage.ts'
