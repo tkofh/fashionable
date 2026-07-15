@@ -18,18 +18,18 @@
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
 import * as internal from './percentage.internal.ts'
-import type { Percent, Percentage as PercentageUnit } from './units.ts'
+import type * as Unit from './unit.ts'
 
 /**
  * A `<percentage>` expression: a `Calc` of percentage kind. Names the dimension
- * without spelling `Calc<Vars, 'percentage', Unit.Percentage>` —
+ * without spelling `Calc<Vars, Unit.Percentage, unknown>` —
  * `Percentage.of(40)` produces one, and it composes with every `Calc`
  * combinator (adding two percentages is a percentage, one over another is a
  * number). `Vars` unions the unbound variable names, as on `Calc`.
  *
  * @since 0.2.0
  */
-export type Percentage<Vars extends string = string> = Calc<Vars, 'percentage', PercentageUnit>
+export type Percentage<Vars extends string = string> = Calc<Vars, Unit.Percentage, unknown>
 
 /**
  * A percentage — a number rendered with a trailing `%`. `Percentage.of(40)`
@@ -47,5 +47,5 @@ export type Percentage<Vars extends string = string> = Calc<Vars, 'percentage', 
  * ```
  * @since 0.2.0
  */
-export const of: (value: number, precision?: Precision) => Calc<never, 'percentage', Percent> =
+export const of: (value: number, precision?: Precision) => Calc<never, Unit.Percent, Unit.Percent> =
   internal.of

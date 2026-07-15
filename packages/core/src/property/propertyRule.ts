@@ -1,5 +1,5 @@
-import type { Calc, Kind } from '#calc/calc'
-import type { Color } from '#data/color'
+import type { Calc } from '#calc'
+import type { Color, Unit } from '#data'
 import type { RenderOptions as DeclarationRenderOptions } from '#declaration/declaration'
 import type { Pipeable } from '#util'
 import type { PropertyRuleTypeId } from './propertyRule.internal.ts'
@@ -15,7 +15,7 @@ import type { PropertySyntax, Universal } from './propertySyntax.ts'
  *
  * The registration is what turns a custom property into a typed,
  * animatable channel; a computed-property chain pairs one of these with
- * a `Declaration` writing the property and `Calc.ref` reads downstream.
+ * a `Declaration` writing the property and `Calc.var` reads downstream.
  *
  * Construct via `make`.
  *
@@ -54,7 +54,7 @@ export interface PropertyRule extends Pipeable {
  *
  * @since 0.1.0
  */
-export type Value = string | Calc<never, Kind, unknown> | Color<never>
+export type Value = string | Calc.Calc<never, Unit.Any, unknown> | Color.Color<never>
 
 /**
  * Options for `render`, in the render-options family rooted at

@@ -26,6 +26,7 @@ import type { HueInterpolation } from './hueInterpolation.ts'
 import { isNone } from './keywords.internal.ts'
 import type { None } from './keywords.ts'
 import { of as percentageOf } from './percentage.internal.ts'
+import type * as Unit from './unit.ts'
 
 export const ColorTypeId = Symbol.for('fashionable/color')
 export type ColorTypeId = typeof ColorTypeId
@@ -510,7 +511,7 @@ export function lightDark<A extends string = never, B extends string = never>(
 // a percentage-kind expression (a bare number reads as a percent).
 type MixArmInput =
   | Color<string>
-  | readonly [Color<string>, number | Calc<string, 'percentage', unknown>]
+  | readonly [Color<string>, number | Calc<string, Unit.Percentage, unknown>]
 
 interface ResolvedArm {
   readonly color: ColorNode

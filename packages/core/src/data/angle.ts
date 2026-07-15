@@ -14,21 +14,21 @@
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
 import * as internal from './angle.internal.ts'
-import type { Angle as AngleUnit, Deg, Rad } from './units.ts'
+import type * as Unit from './unit.ts'
 
 /**
  * An `<angle>` expression: a `Calc` of angle kind, in any angle unit. Names the
- * dimension without spelling `Calc<Vars, 'angle', Unit.Angle>` — `Angle.rad(2)`
+ * dimension without spelling `Calc<Vars, Unit.Angle, unknown>` — `Angle.rad(2)`
  * produces one, and it composes with every `Calc` combinator (subtracting two
  * angles is an angle, scaling by a number stays an angle). `Vars` unions the
  * unbound variable names, as on `Calc`.
  *
- * The leaf is the widened `Unit.Angle`, so every specific angle expression is
- * assignable to it; a constructor narrows it (`Angle.rad` carries `Unit.Rad`).
+ * The result is the widened `Unit.Angle`, so every specific angle expression
+ * is assignable to it; a constructor narrows it (`Angle.rad` carries `Unit.Rad`).
  *
  * @since 0.2.0
  */
-export type Angle<Vars extends string = string> = Calc<Vars, 'angle', AngleUnit>
+export type Angle<Vars extends string = string> = Calc<Vars, Unit.Angle, unknown>
 
 /**
  * An angle in `rad` (radians). Radians are the numeric measure of an angle, so
@@ -43,7 +43,8 @@ export type Angle<Vars extends string = string> = Calc<Vars, 'angle', AngleUnit>
  * ```
  * @since 0.2.0
  */
-export const rad: (value: number, precision?: Precision) => Calc<never, 'angle', Rad> = internal.rad
+export const rad: (value: number, precision?: Precision) => Calc<never, Unit.Rad, Unit.Rad> =
+  internal.rad
 
 /**
  * An angle in `deg` (degrees). Degrees lower to radians at solve (`180deg` is
@@ -58,4 +59,5 @@ export const rad: (value: number, precision?: Precision) => Calc<never, 'angle',
  * ```
  * @since 0.2.0
  */
-export const deg: (value: number, precision?: Precision) => Calc<never, 'angle', Deg> = internal.deg
+export const deg: (value: number, precision?: Precision) => Calc<never, Unit.Deg, Unit.Deg> =
+  internal.deg

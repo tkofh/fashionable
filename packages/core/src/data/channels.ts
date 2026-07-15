@@ -26,6 +26,7 @@
 
 import type { Calc, Ident } from '#calc/calc'
 import * as internal from './channels.internal.ts'
+import type * as Unit from './unit.ts'
 
 declare const ChannelId: unique symbol
 
@@ -49,42 +50,42 @@ export interface ChannelIdent<Name extends string> extends Ident<Name> {
  *
  * @since 0.2.0
  */
-export const L: Calc<never, 'number', ChannelIdent<'l'>> = internal.L
+export const L: Calc<never, Unit.None, ChannelIdent<'l'>> = internal.L
 
 /**
  * The `c` origin channel — chroma in `oklch`. Serializes bare as `c`.
  *
  * @since 0.2.0
  */
-export const C: Calc<never, 'number', ChannelIdent<'c'>> = internal.C
+export const C: Calc<never, Unit.None, ChannelIdent<'c'>> = internal.C
 
 /**
  * The `h` origin channel — hue in `oklch`, in degrees. Serializes bare as `h`.
  *
  * @since 0.2.0
  */
-export const H: Calc<never, 'number', ChannelIdent<'h'>> = internal.H
+export const H: Calc<never, Unit.None, ChannelIdent<'h'>> = internal.H
 
 /**
  * The `r` origin channel — red in `color(srgb ...)`. Serializes bare as `r`.
  *
  * @since 0.2.0
  */
-export const R: Calc<never, 'number', ChannelIdent<'r'>> = internal.R
+export const R: Calc<never, Unit.None, ChannelIdent<'r'>> = internal.R
 
 /**
  * The `g` origin channel — green in `color(srgb ...)`. Serializes bare as `g`.
  *
  * @since 0.2.0
  */
-export const G: Calc<never, 'number', ChannelIdent<'g'>> = internal.G
+export const G: Calc<never, Unit.None, ChannelIdent<'g'>> = internal.G
 
 /**
  * The `b` origin channel — blue in `color(srgb ...)`. Serializes bare as `b`.
  *
  * @since 0.2.0
  */
-export const B: Calc<never, 'number', ChannelIdent<'b'>> = internal.B
+export const B: Calc<never, Unit.None, ChannelIdent<'b'>> = internal.B
 
 /**
  * The `alpha` origin channel — the opacity of the `from` origin, in `oklch`
@@ -92,4 +93,4 @@ export const B: Calc<never, 'number', ChannelIdent<'b'>> = internal.B
  *
  * @since 0.2.0
  */
-export const Alpha: Calc<never, 'number', ChannelIdent<'alpha'>> = internal.Alpha
+export const Alpha: Calc<never, Unit.None, ChannelIdent<'alpha'>> = internal.Alpha

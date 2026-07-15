@@ -189,7 +189,7 @@ describe('types', () => {
   })
 
   test('channel keywords carry their leaf brand', () => {
-    expectTypeOf(Channel.L).toEqualTypeOf<Calc.Calc<never, 'number', Channel.ChannelIdent<'l'>>>()
+    expectTypeOf(Channel.L).toEqualTypeOf<Calc.Calc<never, Unit.None, Channel.ChannelIdent<'l'>>>()
   })
 
   test('a channel keyword is solvable with its value in the idents section', () => {
@@ -201,16 +201,22 @@ describe('types', () => {
   test('ident leaves survive the combinator algebra', () => {
     // pow and sign propagate leaves instead of rejecting leaf-carrying operands
     expectTypeOf(Calc.pow(Channel.L, 2.2)).toEqualTypeOf<
-      Calc.Calc<never, 'number', Channel.ChannelIdent<'l'>>
+      Calc.Calc<never, Unit.None, Channel.ChannelIdent<'l'>>
     >()
-    expectTypeOf(Calc.sign(Length.px(-4))).toEqualTypeOf<Calc.Calc<never, 'number', Unit.Px>>()
-    // a number-kind divisor's leaves survive division
+    expectTypeOf(Calc.sign(Length.px(-4))).toEqualTypeOf<Calc.Calc<never, Unit.None, Unit.Px>>()
+    // a number-result divisor's requirements survive division
     expectTypeOf(Calc.divide(2, Channel.L)).toEqualTypeOf<
-      Calc.Calc<never, 'number', Channel.ChannelIdent<'l'>>
+      Calc.Calc<never, Unit.None, Channel.ChannelIdent<'l'>>
     >()
     // same-singleton cancellation never fires for idents — they are not constants
     expectTypeOf(Calc.divide(Calc.acos(Channel.L), Calc.acos(Channel.L))).toEqualTypeOf<
-      Calc.Calc<never, 'number', Channel.ChannelIdent<'l'>>
+      Calc.Calc<never, Unit.None, Channel.ChannelIdent<'l'>>
+    >()
+    // lerp: t contributes requirements but never the result
+    expectTypeOf(
+      Calc.lerp(Length.px(0), Length.vw(8), Calc.multiply(Channel.L, 0.5)),
+    ).toEqualTypeOf<
+      Calc.Calc<never, Unit.Px | Unit.Vw, Unit.Px | Unit.Vw | Channel.ChannelIdent<'l'>>
     >()
   })
 

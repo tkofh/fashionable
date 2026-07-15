@@ -1,4 +1,4 @@
-import type { ContextFree, UnitContext } from '#data/units'
+import type { Unit } from '#data'
 import type { Pipeable } from '#util'
 import type { CalcTypeId } from './calc.internal.ts'
 import * as internal from './calc.internal.ts'
@@ -8,12 +8,14 @@ declare const CalcVariance: unique symbol
 declare const IdentId: unique symbol
 
 /**
- * The CSS dimension an expression carries: `<number>`, `<length>`, `<angle>`,
- * or `<percentage>`. It is the `Kind` parameter of `Calc`, and the algebra
- * enforces it — same-kind addition, kind-merging multiplication, same-kind
- * division yielding a number. A `<percentage>` is its own kind, not a
- * length: it adds only to another percentage, and `<length-percentage>`
- * mixing stays out of the model (see `docs/design.md`).
+ * The CSS dimension vocabulary: `<number>`, `<length>`, `<angle>`, or
+ * `<percentage>`. The algebra itself runs on `Result` unit brands compared by
+ * `Unit.Family` — CSS type-checks `calc()` at this dimension level, and the
+ * family comparison implements exactly that — so `Kind` remains as the prose
+ * and runtime vocabulary: dimensioned constants carry it, and the docs speak
+ * it. A `<percentage>` is its own dimension, not a length: it adds only to
+ * another percentage, and `<length-percentage>` mixing stays out of the model
+ * (see `docs/design.md`).
  *
  * @since 0.2.0
  */
@@ -22,7 +24,7 @@ export type Kind = 'number' | 'length' | 'angle' | 'percentage'
 /**
  * The leaf brand of a bare CSS identifier — a token like a relative color's
  * `l` that serializes as itself and is resolved by the CSS construct around
- * it, not read from the cascade. It rides the `Leaves` parameter of `Calc`,
+ * it, not read from the cascade. It rides the `Requires` parameter of `Calc`,
  * so `solve` demands a value for the token through the `idents` section of
  * its options, the way a relative unit demands a ratio through `units`.
  *
@@ -49,16 +51,16 @@ export interface Ident<Name extends string = string> {
  *   combining expressions unions their variables; `bind` subtracts the
  *   names it binds. A fully bound (or constant) expression is a
  *   `Calc<never>`.
- * - `Kind` — the CSS dimension (`'number'` by default, or `'length'` /
- *   `'angle'`). `add`/`subtract` require a shared kind; `multiply` and
- *   `divide` combine kinds (a `<length>` over a `<length>` is a
- *   `<number>`); an invalid pairing (a `<length>` plus a `<number>`) is a
- *   type error.
- * - `Leaves` — the solve-relevant leaves the tree contains: `Unit` brands
- *   for its dimensioned constants and `Ident` brands for its bare
- *   identifiers (`never` when it has neither). It types the `units` and
- *   `idents` sections of the options `solve` needs to lower the tree to a
- *   number.
+ * - `Result` — what the expression produces, as a set of `Unit` brands:
+ *   `Unit.Px` for a pure pixel length, `Unit.Px | Unit.Vw` for a mixed sum
+ *   (a composition, not an uncertainty), `Unit.None` for a `<number>`. The
+ *   algebra enforces the CSS dimension rules through it — same-family
+ *   addition, family-merging multiplication, same-family division producing
+ *   `Unit.None` — so a `<length>` plus a `<number>` is a type error.
+ * - `Requires` — what stands between the expression and a number: the unit
+ *   ratios and identifier values the matching sections of `solve`'s options
+ *   must supply (`never` when nothing is needed). Absolute units ride it
+ *   with default supplies — `px`, `rad`, and `deg` demand no entry.
  *
  * Values are immutable and structurally comparable via `equals`.
  * Construction folds constant subtrees eagerly: `add(1, 2)` is the
@@ -75,11 +77,15 @@ export interface Ident<Name extends string = string> {
  */
 export interface Calc<
   out Vars extends string = string,
-  out K extends Kind = 'number',
-  out Leaves = never,
+  out Result = Unit.None,
+  out Requires = never,
 > extends Pipeable {
   readonly [CalcTypeId]: CalcTypeId
-  readonly [CalcVariance]?: { readonly vars: Vars; readonly kind: K; readonly leaves: Leaves }
+  readonly [CalcVariance]?: {
+    readonly vars: Vars
+    readonly result: Result
+    readonly requires: Requires
+  }
 }
 
 /**
@@ -88,40 +94,48 @@ export interface Calc<
  *
  * @since 0.2.0
  */
-export type Top = Calc<string, Kind, unknown>
+export type Top = Calc<string, Unit.Any, unknown>
 
 // ---------------------------------------------------------------------------
-// dimensioned-combinator type machinery (internal): facet extractors and the
-// kind/leaf algebra the combinator signatures below are built from.
+// combinator type machinery (internal): facet extractors and the family/
+// requirement algebra the combinator signatures below are built from.
+// Validated by the Result spike recorded in docs/result-calc.md.
 // ---------------------------------------------------------------------------
 
-/** Any operand a combinator accepts: an expression of any kind, or a bare number. */
+/** Any operand a combinator accepts: an expression of any dimension, or a bare number. */
 type In = Top | number
 
-type VarsOf<A> = A extends Calc<infer V, Kind, unknown> ? V : never
-type KindOf<A> = A extends Calc<string, infer K, unknown> ? K : 'number'
-type LeavesOf<A> = A extends Calc<string, Kind, infer L> ? L : never
+type VarsOf<A> = A extends Calc<infer X, Unit.Any, unknown> ? X : never
+type ResultOf<A> = A extends Calc<string, infer R, unknown> ? R : Unit.None
+type RequiresOf<A> = A extends Calc<string, Unit.Any, infer Q> ? Q : never
 
-/** An operand constrained to number-kind (or a bare number). */
-type NumberIn = number | Calc<string, 'number', unknown>
+/** An operand constrained to number-result (or a bare number). */
+type NumberIn = number | Calc<string, Unit.None, unknown>
 
 /** An operand accepted by `sin`/`cos`: a plain number (radians) or an angle. */
-type NumberOrAngleIn = number | Calc<string, 'number' | 'angle', unknown>
+type NumberOrAngleIn = number | Calc<string, Unit.None | Unit.Angle, unknown>
 
 /**
- * An operand constrained to `A`'s kind — a bare number only when `A` is
- * number-kind, so `add(length, 1)` is rejected while `add(length, length)`
- * holds.
+ * An operand constrained to `A`'s dimension family — a bare number only when
+ * `A` is number-result, so `add(length, 1)` is rejected while
+ * `add(length, length)` holds.
  */
 type SameKindIn<A> =
-  | Calc<string, KindOf<A> & Kind, unknown>
-  | (KindOf<A> extends 'number' ? number : never)
+  | Calc<string, Unit.Family<ResultOf<A>>, unknown>
+  | (Unit.Family<ResultOf<A>> extends Unit.None ? number : never)
 
 type VarsOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: VarsOf<T[K]> }[number]
-type LeavesOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: LeavesOf<T[K]> }[number]
+type ResultOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: ResultOf<T[K]> }[number]
+type RequiresOfAll<T extends ReadonlyArray<unknown>> = {
+  [K in keyof T]: RequiresOf<T[K]>
+}[number]
 
-// same-single-unit division cancels to a unit-free number; anything else keeps
-// both operands' leaves (conservative, but sound)
+// Requirement discharge under division. Cancellation is sound only where eager
+// folding guarantees the division folds once bound: same-single-unit constants
+// always do, ident leaves never do (an `Ident` is not a constant), and a
+// number-result divisor can itself carry requirements (`divide(vw, px)` is a
+// number), so its requirements always survive. The Result side needs none of
+// this: same-family division is `Unit.None` unconditionally.
 type IsUnion<T, U = T> = [T] extends [never]
   ? false
   : T extends T
@@ -133,18 +147,14 @@ type Singleton<T> = [T] extends [never] ? false : IsUnion<T> extends true ? fals
 type LeafFn<X> = <T>() => T extends X ? 1 : 2
 type LeafEqual<A, B> = LeafFn<A> extends LeafFn<B> ? true : false
 type SameSingleton<A, B> = LeafEqual<A, B> extends true ? Singleton<A> : false
-// Cancellation is sound only where eager folding guarantees the division
-// folds once bound: same-single-unit constants always do, ident leaves never
-// do (an `Ident` is not a constant), and a number-kind divisor can itself
-// carry leaves (`divide(vw, px)` is a number), so its leaves always survive.
-type DivLeaves<A, B> =
-  KindOf<B> extends 'number'
-    ? LeavesOf<A> | LeavesOf<B>
-    : SameSingleton<LeavesOf<A>, LeavesOf<B>> extends true
-      ? [Extract<LeavesOf<A>, Ident<string>>] extends [never]
+type DivRequires<A, B> =
+  Unit.Family<ResultOf<B>> extends Unit.None
+    ? RequiresOf<A> | RequiresOf<B>
+    : SameSingleton<RequiresOf<A>, RequiresOf<B>> extends true
+      ? [Extract<RequiresOf<A>, Ident<string>>] extends [never]
         ? never
-        : LeavesOf<A> | LeavesOf<B>
-      : LeavesOf<A> | LeavesOf<B>
+        : RequiresOf<A> | RequiresOf<B>
+      : RequiresOf<A> | RequiresOf<B>
 
 /**
  * A value accepted where an expression is expected: an existing `Calc` or
@@ -199,14 +209,14 @@ type IdentName<I> = I extends Ident<infer Name> ? Name : never
 
 /**
  * The `idents` section of `SolveOptions`: a numeric value for each
- * bare-identifier token in the leaves `L`. The value is the token's own —
- * read directly, not multiplied as a ratio — so `{ l: 0.62 }` supplies the
- * relative-color `l` keyword.
+ * bare-identifier token in the requirements `R`. The value is the token's
+ * own — read directly, not multiplied as a ratio — so `{ l: 0.62 }` supplies
+ * the relative-color `l` keyword.
  *
  * @since 0.4.0
  */
-export type IdentValues<L> = {
-  readonly [K in IdentName<Extract<L, Ident<string>>> & string]: number
+export type IdentValues<R> = {
+  readonly [K in IdentName<Extract<R, Ident<string>>> & string]: number
 }
 
 /**
@@ -229,15 +239,15 @@ export type IdentValues<L> = {
  *
  * @since 0.4.0
  */
-export type SolveOptions<Vars extends string, L> = ([Vars] extends [never]
+export type SolveOptions<Vars extends string, R> = ([Vars] extends [never]
   ? { readonly bindings?: Record<string, Input<never>> }
   : { readonly bindings: Record<Vars, Input<never>> }) &
-  ([Exclude<L, ContextFree | Ident<string>>] extends [never]
-    ? { readonly units?: UnitContext<L> }
-    : { readonly units: UnitContext<L> }) &
-  ([Extract<L, Ident<string>>] extends [never]
-    ? { readonly idents?: IdentValues<L> }
-    : { readonly idents: IdentValues<L> })
+  ([Exclude<R, Unit.ContextFree | Ident<string>>] extends [never]
+    ? { readonly units?: Unit.UnitContext<R> }
+    : { readonly units: Unit.UnitContext<R> }) &
+  ([Extract<R, Ident<string>>] extends [never]
+    ? { readonly idents?: IdentValues<R> }
+    : { readonly idents: IdentValues<R> })
 
 /**
  * Checks if a value is a `Calc`.
@@ -249,7 +259,7 @@ export type SolveOptions<Vars extends string, L> = ([Vars] extends [never]
  * @returns `true` if the value is a `Calc`, `false` otherwise.
  * @since 0.1.0
  */
-export const isCalc: (u: unknown) => u is Calc<string, Kind, unknown> = internal.isCalc
+export const isCalc: (u: unknown) => u is Calc<string, Unit.Any, unknown> = internal.isCalc
 
 /**
  * Creates a constant expression, optionally annotated with a serialization
@@ -303,8 +313,8 @@ export { _var as var }
  * `a + (-2)` serializes as `a - 2`.
  *
  * @param a - The first operand.
- * @param b - The second operand.
- * @returns The sum, with the operands' variables unioned.
+ * @param b - The second operand, sharing `a`'s dimension.
+ * @returns The sum, with the operands' variables, results, and requirements unioned.
  * @example
  * ```ts
  * Calc.serialize(Calc.add(Calc.var('x'), 10)) // 'calc(var(--x) + 10)'
@@ -321,32 +331,33 @@ export const add: <
   ...rest: Rest
 ) => Calc<
   VarsOf<A> | VarsOf<B> | VarsOfAll<Rest>,
-  KindOf<A> & Kind,
-  LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
+  ResultOf<A> | ResultOf<B> | ResultOfAll<Rest>,
+  RequiresOf<A> | RequiresOf<B> | RequiresOfAll<Rest>
 > = internal.add
 
 /**
  * Subtracts `right` from `left`. Constant operands fold at construction.
  *
  * @param left - The minuend.
- * @param right - The subtrahend.
- * @returns The difference, with the operands' variables unioned.
+ * @param right - The subtrahend, sharing `left`'s dimension.
+ * @returns The difference, with the operands' variables, results, and requirements unioned.
  * @since 0.1.0
  */
 export const subtract: <A extends In, B extends SameKindIn<A>>(
   left: A,
   right: B,
-) => Calc<VarsOf<A> | VarsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.subtract
+) => Calc<VarsOf<A> | VarsOf<B>, ResultOf<A> | ResultOf<B>, RequiresOf<A> | RequiresOf<B>> =
+  internal.subtract
 
 /**
  * The CSS `mod()` of `dividend` and `divisor` — the remainder that takes the
  * sign of the divisor (the floored modulo), so `mod(x, 360)` lands in
- * `[0, 360)` for a positive divisor. Same-kind operands, as `subtract`;
+ * `[0, 360)` for a positive divisor. Same-dimension operands, as `subtract`;
  * constant operands fold at construction.
  *
  * @param dividend - The value to reduce.
- * @param divisor - The modulus, sharing `dividend`'s kind.
- * @returns The modulo, with the operands' variables unioned.
+ * @param divisor - The modulus, sharing `dividend`'s dimension.
+ * @returns The modulo, with the operands' variables, results, and requirements unioned.
  * @example
  * ```ts
  * Calc.serialize(Calc.mod(Calc.var('h'), 360)) // 'mod(var(--h), 360)'
@@ -356,35 +367,43 @@ export const subtract: <A extends In, B extends SameKindIn<A>>(
 export const mod: <A extends In, B extends SameKindIn<A>>(
   dividend: A,
   divisor: B,
-) => Calc<VarsOf<A> | VarsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>> = internal.mod
+) => Calc<VarsOf<A> | VarsOf<B>, ResultOf<A> | ResultOf<B>, RequiresOf<A> | RequiresOf<B>> =
+  internal.mod
 
 /**
- * Multiplies expressions. Constant operands fold at construction.
+ * Multiplies expressions. One factor must be a `<number>`; the dimensioned
+ * factor's result rides through. Constant operands fold at construction.
  *
  * Addition and subtraction operands are parenthesized when serialized
  * under a product: `(a + b) * c`.
  *
  * @param left - The first factor.
  * @param right - The second factor.
- * @returns The product, with the operands' variables unioned.
+ * @returns The product, carrying the dimensioned factor's result and both operands' variables and requirements.
  * @since 0.1.0
  */
 export const multiply: {
   <A extends NumberIn, B extends In>(
     left: A,
     right: B,
-  ): Calc<VarsOf<A> | VarsOf<B>, KindOf<B> & Kind, LeavesOf<A> | LeavesOf<B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, ResultOf<B>, RequiresOf<A> | RequiresOf<B>>
   <A extends In, B extends NumberIn>(
     left: A,
     right: B,
-  ): Calc<VarsOf<A> | VarsOf<B>, KindOf<A> & Kind, LeavesOf<A> | LeavesOf<B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, ResultOf<A>, RequiresOf<A> | RequiresOf<B>>
 } = internal.multiply
 
 /**
  * Divides `left` by `right`. Constant operands fold at construction.
  *
+ * Dividing by a `<number>` keeps the dividend's result; dividing two
+ * same-dimension expressions produces a `<number>` (`Unit.None`) — the
+ * units cancel. The requirements discharge only where folding guarantees
+ * they can: a same-single-unit division always folds once bound, so its
+ * requirement drops; anything mixed keeps both operands'.
+ *
  * @param left - The dividend.
- * @param right - The divisor.
+ * @param right - The divisor: a number, or an expression sharing `left`'s dimension.
  * @returns The quotient, with the operands' variables unioned.
  * @since 0.1.0
  */
@@ -392,28 +411,28 @@ export const divide: {
   <A extends In, B extends NumberIn>(
     left: A,
     right: B,
-  ): Calc<VarsOf<A> | VarsOf<B>, KindOf<A> & Kind, DivLeaves<A, B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, ResultOf<A>, DivRequires<A, B>>
   <A extends In, B extends SameKindIn<A>>(
     left: A,
     right: B,
-  ): Calc<VarsOf<A> | VarsOf<B>, 'number', DivLeaves<A, B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, Unit.None, DivRequires<A, B>>
 } = internal.divide
 
 /**
  * Raises `base` to `exponent`. Serializes as the CSS `pow()` function,
- * whose operands are `<number>`s — so both take number-kind expressions,
- * which may carry identifier leaves (`pow(l, 2.2)` gamma-adjusts a
+ * whose operands are `<number>`s — so both take number-result expressions,
+ * which may carry identifier requirements (`pow(l, 2.2)` gamma-adjusts a
  * relative-color channel).
  *
  * @param base - The base.
  * @param exponent - The exponent.
- * @returns The power, with the operands' variables unioned.
+ * @returns The power, a `<number>`, with the operands' variables and requirements unioned.
  * @since 0.1.0
  */
 export const pow: <A extends NumberIn, B extends NumberIn>(
   base: A,
   exponent: B,
-) => Calc<VarsOf<A> | VarsOf<B>, 'number', LeavesOf<A> | LeavesOf<B>> = internal.pow
+) => Calc<VarsOf<A> | VarsOf<B>, Unit.None, RequiresOf<A> | RequiresOf<B>> = internal.pow
 
 /**
  * Sign-preserving power: `abs(base) ^ exponent * sign(base)`. Unlike
@@ -422,20 +441,20 @@ export const pow: <A extends NumberIn, B extends NumberIn>(
  *
  * @param base - The base.
  * @param exponent - The exponent.
- * @returns The signed power, with the operands' variables unioned.
+ * @returns The signed power, a `<number>`, with the operands' variables and requirements unioned.
  * @since 0.1.0
  */
 export const signedPow: <A extends NumberIn, B extends NumberIn>(
   base: A,
   exponent: B,
-) => Calc<VarsOf<A> | VarsOf<B>, 'number', LeavesOf<A> | LeavesOf<B>> = internal.signedPow
+) => Calc<VarsOf<A> | VarsOf<B>, Unit.None, RequiresOf<A> | RequiresOf<B>> = internal.signedPow
 
 /**
  * The minimum of the operands. Serializes as the CSS `min()` function.
  *
  * @param a - The first operand.
- * @param b - The second operand.
- * @returns The minimum, with the operands' variables unioned.
+ * @param b - The second operand, sharing `a`'s dimension.
+ * @returns The minimum, with the operands' variables, results, and requirements unioned.
  * @since 0.1.0
  */
 export const min: <
@@ -448,16 +467,16 @@ export const min: <
   ...rest: Rest
 ) => Calc<
   VarsOf<A> | VarsOf<B> | VarsOfAll<Rest>,
-  KindOf<A> & Kind,
-  LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
+  ResultOf<A> | ResultOf<B> | ResultOfAll<Rest>,
+  RequiresOf<A> | RequiresOf<B> | RequiresOfAll<Rest>
 > = internal.min
 
 /**
  * The maximum of the operands. Serializes as the CSS `max()` function.
  *
  * @param a - The first operand.
- * @param b - The second operand.
- * @returns The maximum, with the operands' variables unioned.
+ * @param b - The second operand, sharing `a`'s dimension.
+ * @returns The maximum, with the operands' variables, results, and requirements unioned.
  * @since 0.1.0
  */
 export const max: <
@@ -470,8 +489,8 @@ export const max: <
   ...rest: Rest
 ) => Calc<
   VarsOf<A> | VarsOf<B> | VarsOfAll<Rest>,
-  KindOf<A> & Kind,
-  LeavesOf<A> | LeavesOf<B> | LeavesOfAll<Rest>
+  ResultOf<A> | ResultOf<B> | ResultOfAll<Rest>,
+  RequiresOf<A> | RequiresOf<B> | RequiresOfAll<Rest>
 > = internal.max
 
 /**
@@ -479,9 +498,9 @@ export const max: <
  * `clamp()` function, with the CSS argument order `(min, value, max)`.
  *
  * @param minimum - The lower bound.
- * @param value - The value to clamp.
- * @param maximum - The upper bound.
- * @returns The clamped expression, with the operands' variables unioned.
+ * @param value - The value to clamp, sharing `minimum`'s dimension.
+ * @param maximum - The upper bound, likewise.
+ * @returns The clamped expression, with the operands' variables, results, and requirements unioned.
  * @example
  * ```ts
  * Calc.serialize(Calc.clamp(-1, Calc.var('u'), 1)) // 'clamp(-1, var(--u), 1)'
@@ -494,18 +513,19 @@ export const clamp: <A extends In, B extends SameKindIn<A>, C extends SameKindIn
   maximum: C,
 ) => Calc<
   VarsOf<A> | VarsOf<B> | VarsOf<C>,
-  KindOf<A> & Kind,
-  LeavesOf<A> | LeavesOf<B> | LeavesOf<C>
+  ResultOf<A> | ResultOf<B> | ResultOf<C>,
+  RequiresOf<A> | RequiresOf<B> | RequiresOf<C>
 > = internal.clamp
 
 /**
  * Linear interpolation from `a` to `b` by `t`. This is sugar, not a node:
  * it desugars to `(1 - t) * a + t * b`, and serializes as that expanded
- * form.
+ * form. `t` contributes its variables and requirements but never the
+ * result — the endpoints alone fix the dimension.
  *
  * @param a - The value at `t = 0`.
- * @param b - The value at `t = 1`.
- * @param t - The interpolation parameter.
+ * @param b - The value at `t = 1`, sharing `a`'s dimension.
+ * @param t - The interpolation parameter, a `<number>`.
  * @returns The interpolated expression, with the operands' variables unioned.
  * @since 0.1.0
  */
@@ -516,8 +536,8 @@ export const lerp: {
     t: T,
   ): Calc<
     VarsOf<A> | VarsOf<B> | VarsOf<T>,
-    KindOf<A> & Kind,
-    LeavesOf<A> | LeavesOf<B> | LeavesOf<T>
+    ResultOf<A> | ResultOf<B>,
+    RequiresOf<A> | RequiresOf<B> | RequiresOf<T>
   >
 } = internal.lerp
 
@@ -525,77 +545,79 @@ export const lerp: {
  * The absolute value. Serializes as the CSS `abs()` function.
  *
  * @param argument - The operand.
- * @returns The absolute value expression.
+ * @returns The absolute value expression, preserving the operand's result.
  * @since 0.1.0
  */
 export const abs: {
-  <A extends In>(argument: A): Calc<VarsOf<A>, KindOf<A> & Kind, LeavesOf<A>>
+  <A extends In>(argument: A): Calc<VarsOf<A>, ResultOf<A>, RequiresOf<A>>
 } = internal.abs
 
 /**
  * The sign (`-1`, `0`, or `1`). Serializes as the CSS `sign()` function,
  * which accepts a calculation of any dimension and returns a `<number>` —
- * so any operand kind is accepted here.
+ * so any operand is accepted here.
  *
- * @param argument - The operand, of any kind.
- * @returns The sign, a `<number>`, carrying the operand's leaves.
+ * @param argument - The operand, of any dimension.
+ * @returns The sign, a `<number>`, carrying the operand's requirements.
  * @since 0.1.0
  */
 export const sign: {
-  <A extends In>(argument: A): Calc<VarsOf<A>, 'number', LeavesOf<A>>
+  <A extends In>(argument: A): Calc<VarsOf<A>, Unit.None, RequiresOf<A>>
 } = internal.sign
 
 /**
  * The sine of its argument. Serializes as the CSS `sin()` function, which
  * accepts an `<angle>` or a plain number treated as radians — so this takes
- * either an angle-kind expression or a number, and returns a number.
+ * either an angle expression or a number, and returns a number.
  *
  * @param argument - An angle, or a plain number in radians.
- * @returns The sine, a `<number>`, carrying the argument's leaves.
+ * @returns The sine, a `<number>`, carrying the argument's requirements.
  * @since 0.1.0
  */
 export const sin: {
-  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, 'number', LeavesOf<A>>
+  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, Unit.None, RequiresOf<A>>
 } = internal.sin
 
 /**
  * The cosine of its argument. Serializes as the CSS `cos()` function, which
  * accepts an `<angle>` or a plain number treated as radians — so this takes
- * either an angle-kind expression or a number, and returns a number.
+ * either an angle expression or a number, and returns a number.
  *
  * @param argument - An angle, or a plain number in radians.
- * @returns The cosine, a `<number>`, carrying the argument's leaves.
+ * @returns The cosine, a `<number>`, carrying the argument's requirements.
  * @since 0.1.0
  */
 export const cos: {
-  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, 'number', LeavesOf<A>>
+  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, Unit.None, RequiresOf<A>>
 } = internal.cos
 
 /**
  * The tangent of its argument. Serializes as the CSS `tan()` function, which
  * accepts an `<angle>` or a plain number treated as radians. Paired with
- * `atan2`, `tan(atan2(a, b))` divides two same-kind dimensions to a `<number>` —
- * the length ratio that works where `a / b` does not, since Firefox does not
- * yet support `<length> / <length>` in `calc()`.
+ * `atan2`, `tan(atan2(a, b))` divides two same-dimension expressions to a
+ * `<number>` — the length ratio that works where `a / b` does not, since
+ * Firefox does not yet support `<length> / <length>` in `calc()`.
  *
  * @param argument - An angle, or a plain number in radians.
- * @returns The tangent, a `<number>`, carrying the argument's leaves.
+ * @returns The tangent, a `<number>`, carrying the argument's requirements.
  * @since 0.2.0
  */
 export const tan: {
-  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, 'number', LeavesOf<A>>
+  <A extends NumberOrAngleIn>(argument: A): Calc<VarsOf<A>, Unit.None, RequiresOf<A>>
 } = internal.tan
 
 /**
- * The arccosine of a value in `[-1, 1]`, an `<angle>` in radians (CSS's
- * `acos()` returns an `<angle>`). Solving evaluates `Math.acos`, in radians.
+ * The arccosine of a value in `[-1, 1]`, an `<angle>` in radians — the
+ * result is `Unit.Rad`, matching what solving evaluates (`Math.acos`) and
+ * what constant folding emits (`rad` constants); CSS's `acos()` returns an
+ * `<angle>` and serialization is unchanged.
  *
- * Because the result is angle-kind, it composes only with other angles: divide
+ * Because the result is an angle, it composes only with other angles: divide
  * or scale it by a number, and add or subtract an `Angle.rad(...)` phase. A
  * plain number added to it is a type error — supply the phase as an angle.
  *
  * @param argument - The cosine value, in `[-1, 1]`.
- * @returns The arccosine, an `<angle>`, carrying the argument's leaves.
+ * @returns The arccosine in radians, carrying the argument's requirements.
  * @example
  * ```ts
  * const phase = Angle.rad(2.0943951)
@@ -605,19 +627,20 @@ export const tan: {
  * @since 0.1.0
  */
 export const acos: {
-  <A extends NumberIn>(argument: A): Calc<VarsOf<A>, 'angle', LeavesOf<A>>
+  <A extends NumberIn>(argument: A): Calc<VarsOf<A>, Unit.Rad, RequiresOf<A>>
 } = internal.acos
 
 /**
  * The angle, in radians, of the vector from the origin to `(x, y)` — CSS's
- * `atan2()`, which returns an `<angle>`. The operands must share a kind (two
- * numbers, two lengths, two angles); their units cancel in the ratio, so
- * `tan(atan2(a, b))` recovers `a / b` as a `<number>` and is the portable way to
- * divide two `<length>`s.
+ * `atan2()`, which returns an `<angle>`; the result is `Unit.Rad`, as
+ * `acos`. The operands must share a dimension (two numbers, two lengths,
+ * two angles); their units cancel in the ratio, so `tan(atan2(a, b))`
+ * recovers `a / b` as a `<number>` and is the portable way to divide two
+ * `<length>`s.
  *
  * @param y - The vertical component.
- * @param x - The horizontal component, sharing `y`'s kind.
- * @returns The angle, an `<angle>`, with the operands' leaves unioned.
+ * @param x - The horizontal component, sharing `y`'s dimension.
+ * @returns The angle in radians, with the operands' variables and requirements unioned.
  * @example
  * ```ts
  * const ratio = Calc.tan(Calc.atan2(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160)))
@@ -629,7 +652,7 @@ export const atan2: {
   <A extends In, B extends SameKindIn<A>>(
     y: A,
     x: B,
-  ): Calc<VarsOf<A> | VarsOf<B>, 'angle', LeavesOf<A> | LeavesOf<B>>
+  ): Calc<VarsOf<A> | VarsOf<B>, Unit.Rad, RequiresOf<A> | RequiresOf<B>>
 } = internal.atan2
 
 export const bind: {
@@ -637,16 +660,17 @@ export const bind: {
    * Returns a function that binds the given names in an expression.
    *
    * @param bindings - Variable names to values or expressions. Names the expression does not read are ignored, as are `undefined` values.
-   * @returns A function replacing bound variables in its argument.
+   * @returns A function replacing bound variables in its argument, preserving its result and requirements.
    * @since 0.1.0
    */
   <const B extends Bindings>(
     bindings: B,
-  ): <Vars extends string>(expr: Calc<Vars>) => Calc<ApplyBindings<Vars, B>>
+  ): <A extends Top>(expr: A) => Calc<ApplyBindings<VarsOf<A>, B>, ResultOf<A>, RequiresOf<A>>
   /**
    * Replaces variables with values or other expressions. Binding is
    * partial evaluation: substituted subtrees re-fold, so binding every
-   * variable collapses the tree to a constant.
+   * variable collapses the tree to a constant. The expression's result and
+   * requirements are preserved — binding touches only the variable channel.
    *
    * Names the expression does not read are ignored (spreading a wider
    * bindings object is fine), as are `undefined` values. Binding a
@@ -665,10 +689,10 @@ export const bind: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends string, const B extends Bindings>(
-    expr: Calc<Vars>,
+  <A extends Top, const B extends Bindings>(
+    expr: A,
     bindings: B,
-  ): Calc<ApplyBindings<Vars, B>>
+  ): Calc<ApplyBindings<VarsOf<A>, B>, ResultOf<A>, RequiresOf<A>>
 } = internal.bind
 
 export const solve: {
@@ -678,12 +702,12 @@ export const solve: {
    * variable, a relative unit, a percentage, or a bare identifier needs the
    * options overload.
    *
-   * @param expr - The expression. No unbound variables, only context-free units.
+   * @param expr - The expression. No unbound variables, only pre-satisfied requirements.
    * @returns The numeric value.
-   * @throws `Error` when unbound variables or unresolvable leaves remain at runtime.
+   * @throws `Error` when unbound variables or unresolvable requirements remain at runtime.
    * @since 0.1.0
    */
-  (expr: Calc<never, Kind, ContextFree>): number
+  (expr: Calc<never, Unit.Any, Unit.ContextFree>): number
   /**
    * Applies bindings, lowers each unit and identifier through the matching
    * options section, then evaluates to a number. `SolveOptions` requires
@@ -704,7 +728,7 @@ export const solve: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends string, L>(expr: Calc<Vars, Kind, L>, options: SolveOptions<Vars, L>): number
+  <Vars extends string, R>(expr: Calc<Vars, Unit.Any, R>, options: SolveOptions<Vars, R>): number
 } = internal.solve
 
 /**
@@ -731,7 +755,7 @@ export const solve: {
  * @since 0.1.0
  */
 export const serialize: <Vars extends string>(
-  expr: Calc<Vars, Kind, unknown>,
+  expr: Calc<Vars, Unit.Any, unknown>,
   options?: SerializeOptions<Vars>,
 ) => string = internal.serialize
 
@@ -742,7 +766,7 @@ export const serialize: <Vars extends string>(
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends string>(expr: Calc<Vars, Kind, unknown>) => ReadonlySet<Vars> =
+export const vars: <Vars extends string>(expr: Calc<Vars, Unit.Any, unknown>) => ReadonlySet<Vars> =
   internal.refs
 
 /**
@@ -751,12 +775,12 @@ export const vars: <Vars extends string>(expr: Calc<Vars, Kind, unknown>) => Rea
  * around them, the `Channel` keywords being the only source today. Empty
  * for an expression with none.
  *
- * The runtime mirror of the `Ident` brands in `Leaves`: it reports which
+ * The runtime mirror of the `Ident` brands in `Requires`: it reports which
  * values the `idents` section of `solve`'s options must supply, exactly as
  * `vars` reports what `bindings` must — and, unlike the type parameter, it
- * survives on a `Calc<Vars, Kind, unknown>` whose leaves have been erased.
- * Identifiers are not variables, so `vars` never lists them and they never
- * reach a `Stylesheet`'s dependency report.
+ * survives on a `Calc<Vars, Unit.Any, unknown>` whose requirements have
+ * been erased. Identifiers are not variables, so `vars` never lists them
+ * and they never reach a `Stylesheet`'s dependency report.
  *
  * @param expr - The expression to inspect.
  * @returns The set of bare-identifier tokens the expression reads.
@@ -767,17 +791,18 @@ export const vars: <Vars extends string>(expr: Calc<Vars, Kind, unknown>) => Rea
  * ```
  * @since 0.2.0
  */
-export const idents: (expr: Calc<string, Kind, unknown>) => ReadonlySet<string> = internal.idents
+export const idents: (expr: Calc<string, Unit.Any, unknown>) => ReadonlySet<string> =
+  internal.idents
 
 /**
  * The unit tokens the expression's dimensioned constants carry (`'vw'`,
  * `'px'`, `'%'`). Empty for a unit-free expression.
  *
- * The runtime mirror of the `Unit` brands in `Leaves`: it reports which
+ * The runtime mirror of the `Unit` brands in `Requires`: it reports which
  * ratios the `units` section of `solve`'s options may need to supply, and —
- * unlike the type parameter — it survives on a `Calc<Vars, Kind, unknown>`
- * whose leaves have been erased. Context-free units (`px`, `rad`, `deg`)
- * are reported too; they lower with no entry.
+ * unlike the type parameter — it survives on a `Calc<Vars, Unit.Any, unknown>`
+ * whose requirements have been erased. Pre-satisfied units (`px`, `rad`,
+ * `deg`) are reported too; they lower with no entry.
  *
  * @param expr - The expression to inspect.
  * @returns The set of unit tokens the expression's constants carry.
@@ -787,7 +812,7 @@ export const idents: (expr: Calc<string, Kind, unknown>) => ReadonlySet<string> 
  * ```
  * @since 0.4.0
  */
-export const units: (expr: Calc<string, Kind, unknown>) => ReadonlySet<string> = internal.units
+export const units: (expr: Calc<string, Unit.Any, unknown>) => ReadonlySet<string> = internal.units
 
 export const equals: {
   /**
@@ -797,7 +822,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: Calc<string, Kind, unknown>): (self: Calc<string, Kind, unknown>) => boolean
+  (that: Calc<string, Unit.Any, unknown>): (self: Calc<string, Unit.Any, unknown>) => boolean
   /**
    * Structural equality over expression trees. Two expressions are equal
    * when their trees match node for node — including constant units and
@@ -809,5 +834,5 @@ export const equals: {
    * @returns `true` if the expressions are structurally equal.
    * @since 0.1.0
    */
-  (self: Calc<string, Kind, unknown>, that: Calc<string, Kind, unknown>): boolean
+  (self: Calc<string, Unit.Any, unknown>, that: Calc<string, Unit.Any, unknown>): boolean
 } = internal.equals

@@ -1,3 +1,4 @@
+import type { Unit } from '#data'
 import * as Equal from '#internal/equal'
 import {
   DEFAULT_FORMAT,
@@ -8,7 +9,7 @@ import {
 } from '#internal/format'
 import { EMPTY_REFS } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
-import type { ApplyBindings, Bindings, Calc, Input, Kind, SerializeOptions } from './calc.ts'
+import type { Bindings, Calc, Input, Kind, SerializeOptions, Top } from './calc.ts'
 import { toSpec } from './precision.internal.ts'
 import type { Precision } from './precision.ts'
 
@@ -779,14 +780,14 @@ class CalcImpl extends Pipeable implements Calc<string>, Equal.Equal {
 }
 
 /** @internal */
-export const isCalc = (u: unknown): u is Calc<string, Kind, unknown> =>
+export const isCalc = (u: unknown): u is Calc<string, Unit.Any, unknown> =>
   typeof u === 'object' && u !== null && CalcTypeId in u
 
 /** @internal */
-export const nodeOf = (expr: Calc<string, Kind, unknown>): CalcNode => (expr as CalcImpl).node
+export const nodeOf = (expr: Top): CalcNode => (expr as CalcImpl).node
 
 /** @internal */
-export const refsOf = <R extends string>(expr: Calc<R, Kind, unknown>): ReadonlySet<R> =>
+export const refsOf = <R extends string>(expr: Calc<R, Unit.Any, unknown>): ReadonlySet<R> =>
   (expr as unknown as CalcImpl).refSet as ReadonlySet<R>
 
 // Neither leaf token kind is tracked in the ref set (they are not custom
@@ -876,7 +877,7 @@ const makeCalc = (node: CalcNode, refSet: ReadonlySet<string>): Calc<string> =>
  *
  * @internal
  */
-export type AnyInput = Calc<string, Kind, unknown> | number
+export type AnyInput = Top | number
 
 /**
  * The bottom `Calc` — assignable to every precise combinator return in
@@ -1153,20 +1154,12 @@ export const collectBindings = (
 
 /** @internal */
 export const bind: {
-  <const B extends Bindings>(
-    bindings: B,
-  ): <Vars extends string>(expr: Calc<Vars, Kind, unknown>) => Calc<ApplyBindings<Vars, B>>
-  <Vars extends string, const B extends Bindings>(
-    expr: Calc<Vars, Kind, unknown>,
-    bindings: B,
-  ): Calc<ApplyBindings<Vars, B>>
-} = dual(
-  2,
-  (expr: Calc<string, Kind, unknown>, bindings: Record<string, Input<string>>): Calc<string> => {
-    const collected = collectBindings(refsOf(expr), bindings)
-    return makeCalc(substituteNode(nodeOf(expr), collected.nodeBindings), collected.refSet)
-  },
-)
+  <const B extends Bindings>(bindings: B): (expr: Top) => Bottom
+  (expr: Top, bindings: Bindings): Bottom
+} = dual(2, (expr: Top, bindings: Record<string, Input<string>>): Bottom => {
+  const collected = collectBindings(refsOf(expr), bindings)
+  return makeCalc(substituteNode(nodeOf(expr), collected.nodeBindings), collected.refSet) as Bottom
+})
 
 /**
  * The erased solve options: each section optional, keys untyped. The precise
@@ -1181,7 +1174,7 @@ export interface AnySolveOptions {
 }
 
 /** @internal */
-export function solve(expr: Calc<string, Kind, unknown>, options?: AnySolveOptions): number {
+export function solve(expr: Top, options?: AnySolveOptions): number {
   let node = nodeOf(expr)
   let remaining: ReadonlySet<string> = refsOf(expr)
   if (options?.bindings !== undefined) {
@@ -1195,7 +1188,7 @@ export function solve(expr: Calc<string, Kind, unknown>, options?: AnySolveOptio
 
 /** @internal */
 export function serialize<Vars extends string>(
-  expr: Calc<Vars, Kind, unknown>,
+  expr: Calc<Vars, Unit.Any, unknown>,
   options?: SerializeOptions<Vars>,
 ): string {
   let node = nodeOf(expr)
@@ -1211,24 +1204,22 @@ export function serialize<Vars extends string>(
 }
 
 /** @internal */
-export function refs<Vars extends string>(expr: Calc<Vars, Kind, unknown>): ReadonlySet<Vars> {
+export function refs<Vars extends string>(expr: Calc<Vars, Unit.Any, unknown>): ReadonlySet<Vars> {
   return refsOf(expr)
 }
 
 /** @internal */
-export function idents(expr: Calc<string, Kind, unknown>): ReadonlySet<string> {
+export function idents(expr: Top): ReadonlySet<string> {
   return identsOf(nodeOf(expr))
 }
 
 /** @internal */
-export function units(expr: Calc<string, Kind, unknown>): ReadonlySet<string> {
+export function units(expr: Top): ReadonlySet<string> {
   return unitsOf(nodeOf(expr))
 }
 
 /** @internal */
 export const equals = dual<
-  (that: Calc<string, Kind, unknown>) => (self: Calc<string, Kind, unknown>) => boolean,
-  (self: Calc<string, Kind, unknown>, that: Calc<string, Kind, unknown>) => boolean
->(2, (self: Calc<string, Kind, unknown>, that: Calc<string, Kind, unknown>): boolean =>
-  Equal.equals(self, that),
-)
+  (that: Top) => (self: Top) => boolean,
+  (self: Top, that: Top) => boolean
+>(2, (self: Top, that: Top): boolean => Equal.equals(self, that))

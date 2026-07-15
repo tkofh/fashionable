@@ -5,6 +5,7 @@ import * as internal from './color.internal.ts'
 import type { ColorSpace, PolarSpace } from './colorSpace.ts'
 import type { HueInterpolation } from './hueInterpolation.ts'
 import type { None } from './keywords.ts'
+import type * as Unit from './unit.ts'
 
 declare const ColorVars: unique symbol
 
@@ -176,7 +177,7 @@ export const lightDark: <A extends string = never, B extends string = never>(
 // computed one, and a plain number-kind `Calc` is rejected.
 type MixArm<C extends string, P extends string> =
   | Color<C>
-  | readonly [Color<C>, number | Calc<P, 'percentage', unknown>]
+  | readonly [Color<C>, number | Calc<P, Unit.Percentage, unknown>]
 
 /**
  * Creates a `color-mix(...)`: the browser mixes `color1` and `color2` in the
@@ -252,7 +253,7 @@ export const mix: {
 export type RelativeChannel<Vars extends string, Channels> =
   | number
   | None
-  | Calc<Vars, 'number', Channels>
+  | Calc<Vars, Unit.None, Channels>
 
 // The channel-keyword brands a `ColorSpace` admits, extracted for scoping.
 type ChannelsOf<Space> = Space extends ColorSpace<infer Channels> ? Channels : never

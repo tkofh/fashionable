@@ -159,7 +159,7 @@ describe('data — the full fluid curve', () => {
   })
 
   test('is number-kind at the top but carries its units as leaves', () => {
-    expectTypeOf(curve).toEqualTypeOf<Calc.Calc<never, 'number', Unit.Vw | Unit.Px | Unit.Rad>>()
+    expectTypeOf(curve).toEqualTypeOf<Calc.Calc<never, Unit.None, Unit.Vw | Unit.Px | Unit.Rad>>()
   })
 })
 
@@ -219,30 +219,32 @@ describe('data — structural equality', () => {
 
 // Compile-time assertions only — never invoked.
 const dimensionalTypes = (): void => {
-  expectTypeOf(Length.px(16)).toEqualTypeOf<Calc.Calc<never, 'length', Unit.Px>>()
-  expectTypeOf(Angle.rad(2)).toEqualTypeOf<Calc.Calc<never, 'angle', Unit.Rad>>()
+  expectTypeOf(Length.px(16)).toEqualTypeOf<Calc.Calc<never, Unit.Px, Unit.Px>>()
+  expectTypeOf(Angle.rad(2)).toEqualTypeOf<Calc.Calc<never, Unit.Rad, Unit.Rad>>()
 
-  // leaves accrue across a sum; the kind stays length
+  // results and requirements accrue across a sum, staying in the length family
   expectTypeOf(Calc.add(Length.px(16), Length.vw(2))).toEqualTypeOf<
-    Calc.Calc<never, 'length', Unit.Px | Unit.Vw>
+    Calc.Calc<never, Unit.Px | Unit.Vw, Unit.Px | Unit.Vw>
   >()
 
   // variadic add keeps precision past the old 4-arg ceiling
   expectTypeOf(
     Calc.add(Length.px(1), Length.px(2), Length.px(3), Length.px(4), Length.px(5)),
-  ).toEqualTypeOf<Calc.Calc<never, 'length', Unit.Px>>()
+  ).toEqualTypeOf<Calc.Calc<never, Unit.Px, Unit.Px>>()
 
-  // same-single-unit division proves pure; the position term stays conservative
+  // division: the result is None either way (the dimension cancels); the
+  // requirement discharges only for the same-single-unit shape, which folding
+  // guarantees — the position term stays conservative
   expectTypeOf(Calc.divide(Length.px(320), Length.px(160))).toEqualTypeOf<
-    Calc.Calc<never, 'number', never>
+    Calc.Calc<never, Unit.None, never>
   >()
   expectTypeOf(
     Calc.divide(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160)),
-  ).toEqualTypeOf<Calc.Calc<never, 'number', Unit.Vw | Unit.Px>>()
+  ).toEqualTypeOf<Calc.Calc<never, Unit.None, Unit.Vw | Unit.Px>>()
 
   // number * length is a length; length / number keeps the length
-  expectTypeOf(Calc.multiply(Length.px(10), 2)).toEqualTypeOf<Calc.Calc<never, 'length', Unit.Px>>()
-  expectTypeOf(Calc.divide(Length.vw(100), 4)).toEqualTypeOf<Calc.Calc<never, 'length', Unit.Vw>>()
+  expectTypeOf(Calc.multiply(Length.px(10), 2)).toEqualTypeOf<Calc.Calc<never, Unit.Px, Unit.Px>>()
+  expectTypeOf(Calc.divide(Length.vw(100), 4)).toEqualTypeOf<Calc.Calc<never, Unit.Vw, Unit.Vw>>()
 
   // @ts-expect-error a <length> plus a <number> is invalid CSS
   Calc.add(Length.px(10), 5)
@@ -271,34 +273,37 @@ const dimensionalTypes = (): void => {
   // tan(atan2(length, length)) is a <number> carrying both units — a portable a/b
   expectTypeOf(
     Calc.tan(Calc.atan2(Calc.subtract(Length.vw(100), Length.px(320)), Length.px(160))),
-  ).toEqualTypeOf<Calc.Calc<never, 'number', Unit.Vw | Unit.Px>>()
-  // @ts-expect-error atan2 requires a shared kind — a <length> and an <angle> do not
+  ).toEqualTypeOf<Calc.Calc<never, Unit.None, Unit.Vw | Unit.Px>>()
+  // trig inverses produce radians, not a bare 'angle'
+  expectTypeOf(Calc.acos(0.5)).toEqualTypeOf<Calc.Calc<never, Unit.Rad, never>>()
+  // @ts-expect-error atan2 requires a shared dimension — a <length> and an <angle> do not
   Calc.atan2(Length.px(10), Angle.rad(1))
 
   // a percentage is its own kind: it folds and scales, but never mixes with a
   // bare number or another dimension
-  expectTypeOf(Percentage.of(40)).toEqualTypeOf<Calc.Calc<never, 'percentage', Unit.Percent>>()
+  expectTypeOf(Percentage.of(40)).toEqualTypeOf<Calc.Calc<never, Unit.Percent, Unit.Percent>>()
   expectTypeOf(Calc.add(Percentage.of(20), Percentage.of(5))).toEqualTypeOf<
-    Calc.Calc<never, 'percentage', Unit.Percent>
+    Calc.Calc<never, Unit.Percent, Unit.Percent>
   >()
   expectTypeOf(Calc.multiply(Percentage.of(50), 2)).toEqualTypeOf<
-    Calc.Calc<never, 'percentage', Unit.Percent>
+    Calc.Calc<never, Unit.Percent, Unit.Percent>
   >()
   expectTypeOf(Calc.divide(Percentage.of(50), Percentage.of(100))).toEqualTypeOf<
-    Calc.Calc<never, 'number', never>
+    Calc.Calc<never, Unit.None, never>
   >()
   // @ts-expect-error a <percentage> plus a bare number is invalid CSS
   Calc.add(Percentage.of(20), 5)
   // @ts-expect-error a <percentage> plus a <length> is invalid CSS
   Calc.add(Percentage.of(20), Length.px(10))
 
-  // the dimension aliases name the widened Calc for each kind. A single-unit
-  // constructor lands on a narrower leaf than its alias — Angle now spans rad
+  // the dimension aliases name the widened Calc for each family. A single-unit
+  // constructor lands on a narrower result than its alias — Angle spans rad
   // and deg, Percentage has just `%` — but every specific expression, single-
   // or mixed-unit, is assignable to the wide alias.
-  expectTypeOf(Angle.rad(2)).toEqualTypeOf<Calc.Calc<never, 'angle', Unit.Rad>>()
-  expectTypeOf(Angle.deg(45)).toEqualTypeOf<Calc.Calc<never, 'angle', Unit.Deg>>()
-  expectTypeOf(Percentage.of(40)).toEqualTypeOf<Percentage.Percentage<never>>()
+  expectTypeOf(Angle.rad(2)).toEqualTypeOf<Calc.Calc<never, Unit.Rad, Unit.Rad>>()
+  expectTypeOf(Angle.deg(45)).toEqualTypeOf<Calc.Calc<never, Unit.Deg, Unit.Deg>>()
+  const widePct: Percentage.Percentage<never> = Percentage.of(40)
+  void widePct
   const wideAngle: Angle.Angle = Angle.rad(2)
   const wideLength: Length.Length = Calc.add(Length.px(16), Length.vw(2))
   const widePercentage: Percentage.Percentage = Percentage.of(40)

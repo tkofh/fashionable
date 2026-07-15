@@ -1,17 +1,20 @@
 /**
- * The unit vocabulary: the leaf brands dimensioned constants thread through
- * `Calc`'s third type parameter. Each unit is a distinct nominal type carrying
- * its CSS token, keyed by a per-dimension `unique symbol` so a length unit and
- * an angle unit never unify — that nominal split is what lets `solve` demand a
+ * The unit vocabulary: the brands `Calc` carries in both its `Result` and
+ * `Requires` parameters. Each unit is a distinct nominal type carrying its CSS
+ * token, keyed by a per-dimension `unique symbol` so a length unit and an
+ * angle unit never unify — that nominal split is what lets `solve` demand a
  * ratio for viewport-relative units while leaving absolute ones alone.
  *
  * You rarely name a unit type directly — `Length.px(10)` and `Angle.rad(2)`
- * stamp them — but they surface in `Calc<Vars, Kind, Leaves>` hovers as the set
- * of units an expression contains (`Calc<never, 'number', Unit.Vw | Unit.Px>`).
+ * stamp them — but they surface in `Calc<Vars, Result, Requires>` hovers: the
+ * `Result` side as the units the expression's value is composed from
+ * (`Unit.Px | Unit.Vw` for a mixed sum, `Unit.None` for a `<number>`), the
+ * `Requires` side as the ratios `solve` may need.
  *
- * Units share the `Leaves` parameter with the other leaf brand, `Calc.Ident` —
- * the bare-identifier tokens supplied by value through the `idents` section of
- * the solve options, where a unit is supplied by ratio through `units`.
+ * Units share the `Requires` parameter with the other requirement brand,
+ * `Calc.Ident` — the bare-identifier tokens supplied by value through the
+ * `idents` section of the solve options, where a unit is supplied by ratio
+ * through `units`.
  *
  * @since 0.2.0
  */
@@ -19,6 +22,7 @@
 declare const LengthUnitId: unique symbol
 declare const AngleUnitId: unique symbol
 declare const PercentageUnitId: unique symbol
+declare const NoneUnitId: unique symbol
 
 /**
  * The `px` unit (absolute length).
@@ -129,12 +133,51 @@ export type Angle = Rad | Deg
 
 /**
  * Any `<percentage>` unit. There is only one (`%`); the alias exists for
- * symmetry with `Length` and `Angle`, so `Calc<never, 'percentage', Unit.Percentage>`
+ * symmetry with `Length` and `Angle`, so `Calc<never, Unit.Percentage, ...>`
  * reads uniformly.
  *
  * @since 0.2.0
  */
 export type Percentage = Percent
+
+/**
+ * The absent unit: the `Result` of a `<number>` expression. A brand rather
+ * than a bare marker so it slots into the same algebra as the real units —
+ * `Family<None>` is `None`, and a `None`-result operand is what `multiply`
+ * and `pow` mean by "a number."
+ *
+ * @since 0.4.0
+ */
+export interface None {
+  readonly [NoneUnitId]: 'none'
+}
+
+/**
+ * The whole `Result` domain: every unit, plus `None` for numbers. The top of
+ * the parameter — `Calc.Top` and the widest signatures use it where they once
+ * used `Kind`.
+ *
+ * @since 0.4.0
+ */
+export type Any = Length | Angle | Percentage | None
+
+/**
+ * A unit widened to its dimension family — `Family<Unit.Px>` is
+ * `Unit.Length`, `Family<Unit.None>` is `Unit.None`. This is the
+ * specification's own type algebra as a projection of `Result`: CSS
+ * type-checks `calc()` at the dimension level, so the same-dimension operand
+ * constraints compare families, never single units. Distributes over unions
+ * (`Family<Unit.Px | Unit.Vw>` is `Unit.Length`).
+ *
+ * @since 0.4.0
+ */
+export type Family<U> = U extends Length
+  ? Length
+  : U extends Angle
+    ? Angle
+    : U extends Percentage
+      ? Percentage
+      : None
 
 /**
  * The context-dependent length units — those whose pixel ratio depends on the
@@ -154,9 +197,16 @@ export type Relative = Rem | Em | Vw | Vh | Vmin | Vmax
 export type AbsoluteLength = Px
 
 /**
- * The units an expression may carry and still `solve` with no options:
- * absolute lengths (fixed ratio) and angles (radians are already numbers,
- * degrees a fixed ratio of them).
+ * The requirements that are all pre-satisfied: absolute lengths (fixed
+ * ratio) and angles (radians are already numbers, degrees a fixed ratio of
+ * them). An expression whose `Requires` stays inside this set solves with
+ * no options.
+ *
+ * These units ride the `Requires` channel even though they demand nothing —
+ * deliberately, and load-bearing: division cancellation may discharge a
+ * requirement only when eager folding guarantees the division folds before
+ * evaluation needs a ratio, and foldability is a property of every unit in
+ * the tree, defaults included (see `docs/result-calc.md`).
  *
  * @since 0.2.0
  */
@@ -178,17 +228,17 @@ export type Token<U> = U extends { readonly [LengthUnitId]: infer T }
 
 /**
  * The `units` section of `Calc.SolveOptions`: the ratios that lower an
- * expression carrying the unit leaves `L` to a number. Each
- * context-dependent unit present is a required pixels-per-unit ratio — `vw`
- * is `sampleWidth / 100`, and `%` is `basis / 100`, per-hundred alike —
- * while absolute lengths (`px`) are optional overrides and angle units never
+ * expression with the requirements `R` to a number. Each context-dependent
+ * unit present is a required pixels-per-unit ratio — `vw` is
+ * `sampleWidth / 100`, and `%` is `basis / 100`, per-hundred alike — while
+ * absolute lengths (`px`) are optional overrides and angle units never
  * appear (radians are already numeric, degrees a fixed ratio). An expression
- * whose leaves are all context-free needs no entries at all.
+ * whose requirements are all pre-satisfied needs no entries at all.
  *
  * @since 0.2.0
  */
-export type UnitContext<L> = {
-  readonly [K in Token<Extract<L, Relative | Percent>> & string]: number
+export type UnitContext<R> = {
+  readonly [K in Token<Extract<R, Relative | Percent>> & string]: number
 } & {
-  readonly [K in Token<Extract<L, AbsoluteLength>> & string]?: number
+  readonly [K in Token<Extract<R, AbsoluteLength>> & string]?: number
 }

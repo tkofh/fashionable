@@ -1,8 +1,16 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, expectTypeOf, test } from 'vitest'
 import { Calc } from '#calc'
+import { Length, type Unit } from '#data'
 
 describe('binding', () => {
   describe('basic binding', () => {
+    test("binding preserves a dimensioned tree's result and requirements", () => {
+      const scaled = Calc.bind(Calc.multiply(Calc.var('t'), Length.vw(1)), { t: 2 })
+      expectTypeOf(scaled).toEqualTypeOf<Calc.Calc<never, Unit.Vw, Unit.Vw>>()
+      expect(Calc.serialize(scaled)).toBe('2vw')
+      expect(Calc.solve(scaled, { units: { vw: 1280 / 100 } })).toBeCloseTo(25.6)
+    })
+
     test('binds to constants', () => {
       const expr = Calc.multiply(2, Calc.var('x'))
       expect(Calc.solve(Calc.bind(expr, { x: 3 }))).toBe(6)

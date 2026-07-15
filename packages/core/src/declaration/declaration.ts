@@ -1,5 +1,6 @@
-import type { ApplyBindings, Bindings, Calc, Kind } from '#calc/calc'
+import type { ApplyBindings, Bindings, Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
+import type { Unit } from '#data'
 import type { Color } from '#data/color'
 import type { RenderOptions as MediaQueryRenderOptions } from '#query/mediaQuery'
 import type { Pipeable } from '#util'
@@ -42,7 +43,10 @@ export interface Declaration<out Vars extends string = string> extends Pipeable 
  *
  * @since 0.1.0
  */
-export type Value<Vars extends string = string> = string | Calc<Vars, Kind, unknown> | Color<Vars>
+export type Value<Vars extends string = string> =
+  | string
+  | Calc<Vars, Unit.Any, unknown>
+  | Color<Vars>
 
 /**
  * Checks if a value is a `Declaration`.
