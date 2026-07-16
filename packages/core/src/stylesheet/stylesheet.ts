@@ -1,9 +1,11 @@
 import type { FontFaceRule } from '#fontFace/fontFaceRule'
 import type { PropertyRule } from '#property/propertyRule'
+import type { MediaRule } from '#rule/mediaRule'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from '#rule/ruleSet'
 import type { StyleRule } from '#rule/styleRule'
 import type { Selector } from '#selector/selector'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { StylesheetTypeId } from './stylesheet.internal.ts'
 import * as internal from './stylesheet.internal.ts'
 
@@ -18,46 +20,54 @@ import * as internal from './stylesheet.internal.ts'
  * monoid: sheets from independent emitters fold without duplicating the
  * rules they share.
  *
- * The `Refs` parameter unions the nodes' unbound reference names, as on
+ * The `Vars` parameter unions the nodes' unbound variable names, as on
  * `Calc` — read `Stylesheet<'depth'>` as "this sheet reads
- * `var(--depth)`": a dependency report, not an error state. `refs` is
+ * `var(--depth)`": a dependency report, not an error state. `vars` is
  * the runtime set.
  *
  * Construct via `make` (or `empty` and `append`).
  *
  * @since 0.1.0
  */
-export interface Stylesheet<out Refs extends string = string> extends Pipeable {
+export interface Stylesheet<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [StylesheetTypeId]: StylesheetTypeId
   /**
    * The sheet's nodes, in authored order, structurally distinct.
    */
-  readonly nodes: ReadonlyArray<Node<Refs>>
+  readonly nodes: ReadonlyArray<Node<Vars>>
 }
 
 /**
- * The forms a stylesheet may contain at its top level: style rules and
- * the declaration-block at-rules (`@font-face`, `@property`).
+ * The forms a stylesheet may contain at its top level: style rules,
+ * `@media` rules, and the declaration-block at-rules (`@font-face`,
+ * `@property`).
  *
- * Deliberately absent are `Declaration` — CSS has no top-level
- * declarations — and `MediaRule`: media enters the model nested inside a
- * style rule's block, and renders there. The full unrepresentability
- * scheme lives in `docs/design.md`.
+ * The rule arms require `never` — nothing above the sheet binds `&`, so
+ * a style rule's selector must be closed, and a `@media` rule's block
+ * must hold only closed style rules (a bare declaration in a top-level
+ * media block has no subject). Deliberately absent is `Declaration`:
+ * CSS has no top-level declarations. The full unrepresentability scheme
+ * lives in `docs/design.md`.
  *
  * @since 0.1.0
  */
-export type Node<Refs extends string = string> = StyleRule<Refs> | FontFaceRule | PropertyRule
+export type Node<Vars extends Var.Any = Var.Any> =
+  | StyleRule<Vars, never>
+  | MediaRule<Vars, never>
+  | FontFaceRule
+  | PropertyRule
 
 /**
- * The unbound reference names of a `Node`, or the union of them for a
- * union of nodes — the type-level counterpart of `refs`, used by the
- * constructors to thread node names into the result. Only style rules
- * carry references; the at-rule forms contribute `never`, since
- * `@property` initial values are closed by construction.
+ * The unbound variable names of a `Node`, or the union of them for a
+ * union of nodes — the type-level counterpart of `vars`, used by the
+ * constructors to thread node names into the result. Only style and
+ * media rules carry variables; the at-rule forms contribute `never`,
+ * since `@property` initial values are closed by construction.
  *
  * @since 0.1.0
  */
-export type NodeRefs<N extends Node<string>> = N extends StyleRule<infer R> ? R : never
+export type NodeVars<N extends Node<Var.Any>> =
+  N extends StyleRule<infer R, never> ? R : N extends MediaRule<infer R, never> ? R : never
 
 /**
  * Checks if a value is a `Stylesheet`.
@@ -69,7 +79,7 @@ export type NodeRefs<N extends Node<string>> = N extends StyleRule<infer R> ? R 
  * @returns `true` if the value is a `Stylesheet`, `false` otherwise.
  * @since 0.1.0
  */
-export const isStylesheet: (u: unknown) => u is Stylesheet<string> = internal.isStylesheet
+export const isStylesheet: (u: unknown) => u is Stylesheet<Var.Any> = internal.isStylesheet
 
 /**
  * The empty stylesheet — the identity for `merge`.
@@ -89,29 +99,34 @@ export const empty: Stylesheet<never> = internal.empty
  * @returns `true` if the sheet has no nodes.
  * @since 0.2.0
  */
-export const isEmpty: (sheet: Stylesheet<string>) => boolean = internal.isEmpty
+export const isEmpty: (sheet: Stylesheet<Var.Any>) => boolean = internal.isEmpty
 
 /**
  * Creates a stylesheet holding the given nodes, in the given order, with
  * structural duplicates dropped — the first occurrence wins.
  *
- * @param nodes - Style rules and at-rules, in authored order.
- * @returns A `Stylesheet` whose `Refs` unions the nodes' reference names.
+ * A top-level rule must be closed: nothing above the sheet binds `&`,
+ * so a style rule's selector must not reference the nesting selector,
+ * and a `@media` node's block must hold only closed style rules.
+ *
+ * @param nodes - Style rules, `@media` rules, and at-rules, in authored order.
+ * @returns A `Stylesheet` whose `Vars` unions the nodes' variable names.
+ * @throws `Error` when a node's selector references `&`, or when a `@media` node's block holds a bare declaration or an `&`-selector rule.
  * @example
  * ```ts
  * const sheet = Stylesheet.make(
  *   PropertyRule.make('--depth', PropertySyntax.number, 0),
  *   StyleRule.make(
  *     Selector.class('card'),
- *     RuleSet.make(Declaration.make('--indent', Calc.multiply(Calc.ref('depth'), 8))),
+ *     RuleSet.make(Declaration.make('--indent', Calc.multiply(Calc.var('depth'), 8))),
  *   ),
  * ) // Stylesheet<'depth'>
  * ```
  * @since 0.1.0
  */
-export const make: <Nodes extends ReadonlyArray<Node<string>>>(
+export const make: <Nodes extends ReadonlyArray<Node<Var.Any>>>(
   ...nodes: Nodes
-) => Stylesheet<NodeRefs<Nodes[number]>> = internal.make
+) => Stylesheet<NodeVars<Nodes[number]>> = internal.make
 
 export const append: {
   /**
@@ -121,22 +136,22 @@ export const append: {
    * @returns A function producing the extended sheet.
    * @since 0.1.0
    */
-  <N extends Node<string>>(
+  <N extends Node<Var.Any>>(
     node: N,
-  ): <Refs extends string>(self: Stylesheet<Refs>) => Stylesheet<Refs | NodeRefs<N>>
+  ): <Vars extends Var.Any>(self: Stylesheet<Vars>) => Stylesheet<Vars | NodeVars<N>>
   /**
    * Returns a function that appends the style rule `selector { block }`
    * to its argument's sheet.
    *
-   * @param selector - The rule's selector.
+   * @param selector - The rule's selector. Closed only — the parameter rejects `&`-bearing selectors at compile time.
    * @param block - The rule's block.
    * @returns A function producing the extended sheet.
    * @since 0.1.0
    */
-  <B extends string>(
+  <B extends Var.Any>(
     selector: Selector,
     block: RuleSet<B>,
-  ): <Refs extends string>(self: Stylesheet<Refs>) => Stylesheet<Refs | B>
+  ): <Vars extends Var.Any>(self: Stylesheet<Vars>) => Stylesheet<Vars | B>
   /**
    * Appends a node at the end of the sheet — unless a structurally equal
    * node is already present, in which case the same sheet comes back
@@ -144,14 +159,15 @@ export const append: {
    * sheet; the original is untouched.
    *
    * @param self - The sheet to extend.
-   * @param node - The node to append.
-   * @returns The extended sheet, with the node's reference names joined in.
+   * @param node - The node to append. Must be closed — nothing above the sheet binds `&`.
+   * @returns The extended sheet, with the node's variable names joined in.
+   * @throws `Error` when the node's selector references `&`, or when a `@media` node's block holds a bare declaration or an `&`-selector rule.
    * @since 0.1.0
    */
-  <Refs extends string, N extends Node<string>>(
-    self: Stylesheet<Refs>,
+  <Vars extends Var.Any, N extends Node<Var.Any>>(
+    self: Stylesheet<Vars>,
     node: N,
-  ): Stylesheet<Refs | NodeRefs<N>>
+  ): Stylesheet<Vars | NodeVars<N>>
   /**
    * Appends a style rule from its parts — sugar for
    * `append(self, StyleRule.make(selector, block))`, so sheets compose
@@ -162,7 +178,7 @@ export const append: {
    * @param self - The sheet to extend.
    * @param selector - The rule's selector.
    * @param block - The rule's block.
-   * @returns The extended sheet, with the block's reference names joined in.
+   * @returns The extended sheet, with the block's variable names joined in.
    * @example
    * ```ts
    * Stylesheet.empty.pipe(
@@ -171,11 +187,11 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Refs extends string, B extends string>(
-    self: Stylesheet<Refs>,
+  <Vars extends Var.Any, B extends Var.Any>(
+    self: Stylesheet<Vars>,
     selector: Selector,
     block: RuleSet<B>,
-  ): Stylesheet<Refs | B>
+  ): Stylesheet<Vars | B>
 } = internal.append
 
 export const merge: {
@@ -187,9 +203,9 @@ export const merge: {
    * @returns A function producing the merged sheet.
    * @since 0.1.0
    */
-  <B extends string>(
+  <B extends Var.Any>(
     that: Stylesheet<B>,
-  ): <A extends string>(self: Stylesheet<A>) => Stylesheet<A | B>
+  ): <A extends Var.Any>(self: Stylesheet<A>) => Stylesheet<A | B>
   /**
    * Merges two sheets: `self`'s nodes followed by the nodes of `that`
    * not already present, order preserved on both sides — structural
@@ -204,7 +220,7 @@ export const merge: {
    *
    * @param self - The sheet whose nodes come first.
    * @param that - The sheet whose novel nodes follow.
-   * @returns The merged sheet, with both sides' reference names unioned.
+   * @returns The merged sheet, with both sides' variable names unioned.
    * @example
    * ```ts
    * const contract = Stylesheet.make(PropertyRule.make('--depth', PropertySyntax.number, 0))
@@ -212,20 +228,27 @@ export const merge: {
    * ```
    * @since 0.1.0
    */
-  <A extends string, B extends string>(self: Stylesheet<A>, that: Stylesheet<B>): Stylesheet<A | B>
+  <A extends Var.Any, B extends Var.Any>(
+    self: Stylesheet<A>,
+    that: Stylesheet<B>,
+  ): Stylesheet<A | B>
 } = internal.merge
 
 /**
  * Folds any number of sheets with `merge`, left to right — `empty` when
  * given none.
  *
+ * The element type is inferred whole and its vars extracted, so a
+ * heterogeneous array unions every sheet's reads (inferring the phantom
+ * directly would pin it to the first element's).
+ *
  * @param sheets - The sheets to fold, in order.
- * @returns The merged sheet, with every sheet's reference names unioned.
+ * @returns The merged sheet, with every sheet's variable names unioned.
  * @since 0.1.0
  */
-export const mergeAll: <Refs extends string>(
-  sheets: ReadonlyArray<Stylesheet<Refs>>,
-) => Stylesheet<Refs> = internal.mergeAll
+export const mergeAll: <S extends Stylesheet<Var.Any>>(
+  sheets: ReadonlyArray<S>,
+) => Stylesheet<S extends Stylesheet<infer V> ? V : never> = internal.mergeAll
 
 /**
  * Options for `coalesce`.
@@ -282,21 +305,21 @@ export interface CoalesceOptions {
  * @throws `Error` in strict mode, when a pull crosses an intervening tying rule that does not provably shadow every moved declaration.
  * @since 0.1.0
  */
-export const coalesce: <Refs extends string>(
-  sheet: Stylesheet<Refs>,
+export const coalesce: <Vars extends Var.Any>(
+  sheet: Stylesheet<Vars>,
   options?: CoalesceOptions,
-) => Stylesheet<Refs> = internal.coalesce
+) => Stylesheet<Vars> = internal.coalesce
 
 /**
- * The sheet's unbound reference names, unioned across nodes — the custom
+ * The sheet's unbound variable names, unioned across nodes — the custom
  * properties the sheet reads via `var()`, including everything nested
  * rules contribute.
  *
  * @param sheet - The sheet to inspect.
- * @returns The set of unbound reference names.
+ * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(sheet: Stylesheet<Refs>) => ReadonlySet<Refs> =
+export const vars: <Vars extends Var.Any>(sheet: Stylesheet<Vars>) => ReadonlySet<Var.Name<Vars>> =
   internal.refs
 
 /**
@@ -314,19 +337,19 @@ export type RenderOptions = RuleSetRenderOptions
 
 /**
  * Renders the whole sheet as CSS text: at-rule nodes as their own
- * blocks, style rules in nested form with their `@media` blocks kept
- * inside, in member order.
+ * blocks, style rules in nested form with their `@media` blocks and
+ * nested style rules kept inside (`&` verbatim — native CSS nesting is
+ * the output shape), in member order.
  *
  * Empty blocks emit nothing, so a sheet whose every node renders empty —
  * `empty` itself, or style rules with empty blocks — renders the empty
  * string; composing renders into a larger file never needs to reach into
  * `nodes`. Top-level sections join with one blank line, without a
- * trailing newline. Unbound references render as `var(--name)`.
+ * trailing newline. Unbound variables render as `var(--name)`.
  *
  * @param sheet - The stylesheet to render.
  * @param options - Optional indentation unit, precision context, and media syntax.
  * @returns Deterministic CSS text.
- * @throws `Error` when a style rule nests inside another rule's block — selector composition (`&`) is a later extension, not part of v1 rendering.
  * @example
  * ```ts
  * const sheet = Stylesheet.empty.pipe(
@@ -342,7 +365,7 @@ export type RenderOptions = RuleSetRenderOptions
  * ```
  * @since 0.1.0
  */
-export const render: (sheet: Stylesheet<string>, options?: RenderOptions) => string =
+export const render: (sheet: Stylesheet<Var.Any>, options?: RenderOptions) => string =
   internal.render
 
 export const equals: {
@@ -353,7 +376,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: Stylesheet<string>): (self: Stylesheet<string>) => boolean
+  (that: Stylesheet<Var.Any>): (self: Stylesheet<Var.Any>) => boolean
   /**
    * Structural equality over nodes, in order. Order participates —
    * sheets holding the same nodes in different orders cascade
@@ -364,5 +387,5 @@ export const equals: {
    * @returns `true` if the sheets are structurally equal.
    * @since 0.1.0
    */
-  (self: Stylesheet<string>, that: Stylesheet<string>): boolean
+  (self: Stylesheet<Var.Any>, that: Stylesheet<Var.Any>): boolean
 } = internal.equals

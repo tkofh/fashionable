@@ -225,4 +225,160 @@ describe('selector', () => {
       expect(Specificity.isSpecificity(Selector.root)).toBe(false)
     })
   })
+
+  describe('combinators', () => {
+    test('renders each combinator', () => {
+      const a = Selector.class('a')
+      const b = Selector.class('b')
+      expect(Selector.render(Selector.descendant(a, b))).toBe('.a .b')
+      expect(Selector.render(Selector.child(a, b))).toBe('.a > .b')
+      expect(Selector.render(Selector.nextSibling(a, b))).toBe('.a + .b')
+      expect(Selector.render(Selector.subsequentSibling(a, b))).toBe('.a ~ .b')
+    })
+
+    test('sequences compose and preserve order', () => {
+      const selector = Selector.descendant(Selector.class('sidebar'), Selector.type('a')).pipe(
+        Selector.child(Selector.class('icon')),
+      )
+      expect(Selector.render(selector)).toBe('.sidebar a > .icon')
+      expect(
+        Selector.equals(
+          Selector.descendant(Selector.class('a'), Selector.class('b')),
+          Selector.descendant(Selector.class('b'), Selector.class('a')),
+        ),
+      ).toBe(false)
+    })
+
+    test('specificity sums across compounds', () => {
+      const selector = Selector.descendant(
+        Selector.id('app'),
+        Selector.and(Selector.type('a'), Selector.class('x')),
+      )
+      expect(Selector.specificity(selector)).toStructurallyEqual(Specificity.make(1, 1, 1))
+    })
+
+    test('rejects a combinator after a pseudo-element', () => {
+      expect(() =>
+        Selector.descendant(Selector.pseudoElement('before'), Selector.class('x')),
+      ).toThrow('pseudo-element cannot be followed')
+    })
+
+    test('and rejects complex operands', () => {
+      const complex = Selector.descendant(Selector.class('a'), Selector.class('b'))
+      expect(() => Selector.and(complex, Selector.class('c'))).toThrow(
+        'Only compound selectors merge',
+      )
+    })
+  })
+
+  describe('nesting selector', () => {
+    test('renders & and composes in a compound', () => {
+      expect(Selector.render(Selector.nest)).toBe('&')
+      expect(Selector.render(Selector.and(Selector.pseudoClass('hover'), Selector.nest))).toBe(
+        '&:hover',
+      )
+    })
+
+    // Pinned by css-nesting-1: a type selector must come first even
+    // beside the nesting selector — `&div` is illegal, `div&` is not.
+    test('sorts after the type slot, before ids', () => {
+      expect(Selector.render(Selector.and(Selector.nest, Selector.type('div')))).toBe('div&')
+      expect(Selector.render(Selector.and(Selector.id('app'), Selector.nest))).toBe('&#app')
+    })
+  })
+
+  describe('functional pseudo-classes', () => {
+    test('render as sorted selector lists', () => {
+      expect(Selector.render(Selector.is(Selector.class('b'), Selector.class('a')))).toBe(
+        ':is(.a, .b)',
+      )
+      expect(Selector.render(Selector.where(Selector.class('a')))).toBe(':where(.a)')
+      expect(Selector.render(Selector.has(Selector.class('a')))).toBe(':has(.a)')
+      expect(Selector.render(Selector.not(Selector.class('b'), Selector.class('a')))).toBe(
+        ':not(.a, .b)',
+      )
+    })
+
+    test('lists compare order-independently', () => {
+      const a = Selector.is(Selector.class('a'), Selector.class('b'))
+      const b = Selector.is(Selector.class('b'), Selector.class('a'))
+      expect(Selector.equals(a, b)).toBe(true)
+      expect(a).toStructurallyEqual(b)
+    })
+
+    test('lists admit complex and nesting arguments', () => {
+      const selector = Selector.is(
+        Selector.nest,
+        Selector.descendant(Selector.nest, Selector.universal),
+      )
+      expect(Selector.render(selector)).toBe(':is(&, & *)')
+    })
+
+    test('is/has/not score as their most specific argument; where scores zero', () => {
+      const app = Selector.id('app')
+      const a = Selector.class('a')
+      expect(Selector.specificity(Selector.is(app, a))).toStructurallyEqual(
+        Specificity.make(1, 0, 0),
+      )
+      expect(Selector.specificity(Selector.has(app, a))).toStructurallyEqual(
+        Specificity.make(1, 0, 0),
+      )
+      expect(Selector.specificity(Selector.not(app, a))).toStructurallyEqual(
+        Specificity.make(1, 0, 0),
+      )
+      expect(Selector.specificity(Selector.where(app, a))).toStructurallyEqual(
+        Specificity.make(0, 0, 0),
+      )
+    })
+
+    test('rejects an empty argument list', () => {
+      expect(() => Selector.is()).toThrow('at least one selector')
+    })
+  })
+
+  describe('under', () => {
+    test('a compound parent merges in place', () => {
+      const child = Selector.and(Selector.nest, Selector.pseudoClass('hover'))
+      const resolved = Selector.under(child, Selector.class('btn'))
+      expect(Selector.render(resolved)).toBe('.btn:hover')
+      expect(Selector.specificity(resolved)).toStructurallyEqual(Specificity.make(0, 2, 0))
+    })
+
+    test('a complex parent substitutes as :is(parent)', () => {
+      const parent = Selector.descendant(Selector.class('theme'), Selector.class('brand'))
+      const resolved = Selector.under(
+        Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+        parent,
+      )
+      expect(Selector.render(resolved)).toBe(':hover:is(.theme .brand)')
+      expect(Selector.specificity(resolved)).toStructurallyEqual(Specificity.make(0, 3, 0))
+    })
+
+    test('substitutes inside functional argument lists', () => {
+      const nested = Selector.is(
+        Selector.nest,
+        Selector.descendant(Selector.nest, Selector.universal),
+      )
+      const resolved = Selector.under(nested, Selector.class('red'))
+      expect(Selector.render(resolved)).toBe(':is(.red, .red *)')
+      expect(Selector.specificity(resolved)).toStructurallyEqual(Specificity.make(0, 1, 0))
+    })
+
+    test('a closed child returns unchanged', () => {
+      const closed = Selector.class('a')
+      expect(Selector.under(closed, Selector.class('b'))).toBe(closed)
+    })
+
+    test('chained nesting resolves innermost binder first', () => {
+      const grandchild = Selector.and(Selector.nest, Selector.pseudoClass('focus'))
+      const child = Selector.and(Selector.nest, Selector.pseudoClass('hover'))
+      const resolved = grandchild.pipe(Selector.under(child), Selector.under(Selector.class('btn')))
+      expect(Selector.render(resolved)).toBe('.btn:focus:hover')
+    })
+
+    test('validates the merged compound', () => {
+      const child = Selector.and(Selector.nest, Selector.type('a'))
+      expect(() => Selector.under(child, Selector.type('div'))).toThrow('at most one type')
+    })
+  })
 })

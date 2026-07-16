@@ -1,23 +1,35 @@
 import type { MediaQuery } from '#query/mediaQuery'
+import type { Requirement } from '#selector/selector'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { MediaRuleTypeId } from './mediaRule.internal.ts'
 import * as internal from './mediaRule.internal.ts'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.ts'
 
 /**
- * A nested `@media` rule: a media query and the block it gates.
+ * A `@media` rule: a media query and the block it gates.
  *
- * This is the nested form — a member of an enclosing style rule's block,
- * per the CSSNestedDeclarations grammar — not a top-level `@media`
- * statement. Media enters the model inside a style rule
- * (`:root { @media ... { ... } }`) and renders there, nested. The `Refs`
- * parameter is the block's.
+ * The usual position is nested — a member of an enclosing style rule's
+ * block, holding declarations that apply to that rule's selector, per
+ * the CSSNestedDeclarations grammar. A media rule whose block holds only
+ * closed style rules may instead sit at a stylesheet's top level, the
+ * authored `@media { selector { ... } }` grouping. The `Vars` parameter
+ * is the block's.
+ *
+ * `Requires` is the block's too — a media rule has no selector of its
+ * own, so it is transparent to the requirements channel. Bare
+ * declarations put `Parent` in the block's requirements, which is what
+ * confines a declaration-bearing media rule to nested position:
+ * `Stylesheet`'s node union takes `MediaRule<Vars, never>`.
  *
  * Construct via `make`.
  *
  * @since 0.1.0
  */
-export interface MediaRule<out Refs extends string = string> extends Pipeable {
+export interface MediaRule<
+  out Vars extends Var.Any = Var.Any,
+  out Requires extends Requirement = Requirement,
+> extends Pipeable {
   readonly [MediaRuleTypeId]: MediaRuleTypeId
   /**
    * The media query gating the block.
@@ -26,7 +38,7 @@ export interface MediaRule<out Refs extends string = string> extends Pipeable {
   /**
    * The rule's block.
    */
-  readonly block: RuleSet<Refs>
+  readonly block: RuleSet<Vars, Requires>
 }
 
 /**
@@ -39,14 +51,14 @@ export interface MediaRule<out Refs extends string = string> extends Pipeable {
  * @returns `true` if the value is a `MediaRule`, `false` otherwise.
  * @since 0.1.0
  */
-export const isMediaRule: (u: unknown) => u is MediaRule<string> = internal.isMediaRule
+export const isMediaRule: (u: unknown) => u is MediaRule<Var.Any> = internal.isMediaRule
 
 /**
- * Creates a nested `@media` rule.
+ * Creates a `@media` rule.
  *
  * @param query - The media query gating the block.
- * @param block - The rule's block.
- * @returns A `MediaRule` carrying the block's reference names.
+ * @param block - The rule's block. Declarations make the rule nested-only; a block of closed style rules makes it top-level-capable.
+ * @returns A `MediaRule` carrying the block's variable names and requirements.
  * @example
  * ```ts
  * MediaRule.make(
@@ -56,20 +68,21 @@ export const isMediaRule: (u: unknown) => u is MediaRule<string> = internal.isMe
  * ```
  * @since 0.1.0
  */
-export const make: <Refs extends string>(
+export const make: <Vars extends Var.Any, Requires extends Requirement>(
   query: MediaQuery,
-  block: RuleSet<Refs>,
-) => MediaRule<Refs> = internal.make
+  block: RuleSet<Vars, Requires>,
+) => MediaRule<Vars, Requires> = internal.make
 
 /**
- * The rule's unbound reference names — the block's, since a query
+ * The rule's unbound variable names — the block's, since a query
  * contributes none.
  *
  * @param rule - The rule to inspect.
- * @returns The set of unbound reference names.
+ * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(rule: MediaRule<Refs>) => ReadonlySet<Refs> = internal.refs
+export const vars: <Vars extends Var.Any>(rule: MediaRule<Vars>) => ReadonlySet<Var.Name<Vars>> =
+  internal.refs
 
 /**
  * Options for `render` — the block renderers' shared shape,
@@ -86,13 +99,15 @@ export type RenderOptions = RuleSetRenderOptions
  * style rule (CSSNestedDeclarations). A rule whose block is empty
  * renders as the empty string.
  *
+ * Nested style rules render as indented sub-blocks with `&` kept
+ * verbatim — native CSS nesting is the output shape.
+ *
  * A fragment renderer: whole sheets render via `Stylesheet.render`,
  * which emits each rule's media in this same nested shape.
  *
  * @param rule - The rule to render.
  * @param options - Optional indentation unit, precision context, and media syntax.
  * @returns Deterministic CSS text.
- * @throws `Error` when the block nests a style rule — selector composition (`&`) is a later extension, not part of v1 rendering.
  * @example
  * ```ts
  * MediaRule.render(
@@ -101,7 +116,7 @@ export type RenderOptions = RuleSetRenderOptions
  * ```
  * @since 0.1.0
  */
-export const render: (rule: MediaRule<string>, options?: RenderOptions) => string = internal.render
+export const render: (rule: MediaRule<Var.Any>, options?: RenderOptions) => string = internal.render
 
 export const equals: {
   /**
@@ -111,7 +126,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: MediaRule<string>): (self: MediaRule<string>) => boolean
+  (that: MediaRule<Var.Any>): (self: MediaRule<Var.Any>) => boolean
   /**
    * Structural equality: queries compare as in `MediaQuery.equals`
    * (canonically ordered features), blocks as in `RuleSet.equals`
@@ -122,5 +137,5 @@ export const equals: {
    * @returns `true` if the rules are structurally equal.
    * @since 0.1.0
    */
-  (self: MediaRule<string>, that: MediaRule<string>): boolean
+  (self: MediaRule<Var.Any>, that: MediaRule<Var.Any>): boolean
 } = internal.equals

@@ -9,8 +9,27 @@ import { refsOf as colorRefsOf, serialize as serializeColor } from '#data/color.
 import * as Equal from '#internal/equal'
 import { DEFAULT_INDENT, quote, renderBlock } from '#internal/render'
 import { dual, invariant, Pipeable } from '#util'
+import {
+  type AnyVar,
+  type DeclaredType,
+  declaredTypeOf,
+  fallbackOf,
+  isVar,
+  nameOf as varNameOf,
+} from '#var/var.internal'
 import type { PropertyRule, RenderOptions, Value } from './propertyRule.ts'
-import { isUniversal, render as renderSyntax, universal } from './propertySyntax.internal.ts'
+import {
+  angle as angleSyntax,
+  color as colorSyntax,
+  isPropertySyntax,
+  isUniversal,
+  length as lengthSyntax,
+  lengthPercentage as lengthPercentageSyntax,
+  number as numberSyntax,
+  percentage as percentageSyntax,
+  render as renderSyntax,
+  universal,
+} from './propertySyntax.internal.ts'
 import type { PropertySyntax } from './propertySyntax.ts'
 
 export const PropertyRuleTypeId = Symbol.for('fashionable/property/propertyRule')
@@ -97,12 +116,62 @@ class PropertyRuleImpl extends Pipeable implements PropertyRule, Equal.Equal {
 export const isPropertyRule = (u: unknown): u is PropertyRule =>
   typeof u === 'object' && u !== null && PropertyRuleTypeId in u
 
+// The canonical syntax each declared type derives — and the set the
+// consistency check compares an explicit syntax against: registering a
+// declared handle under a *different* canonical data type is certainly
+// wrong, while combinations and multiplied lists pass unchecked (whether
+// they cover the declared type would take grammar containment checking,
+// which this library does not do).
+const DERIVED_SYNTAX: Record<DeclaredType, PropertySyntax> = {
+  number: numberSyntax,
+  length: lengthSyntax,
+  'length-percentage': lengthPercentageSyntax,
+  angle: angleSyntax,
+  percentage: percentageSyntax,
+  color: colorSyntax,
+}
+
 /** @internal */
 export const make = (
-  name: `--${string}`,
-  syntax: PropertySyntax = universal,
-  initialValue?: Value | number,
+  nameOrHandle: `--${string}` | AnyVar,
+  syntaxOrInitial?: PropertySyntax | Value | number,
+  initialArg?: Value | number,
 ): PropertyRule => {
+  // the deriving form (`make(handle, initial)`) puts the initial value in
+  // the syntax slot; dispatch on what actually arrived
+  let syntax: PropertySyntax | undefined
+  let initialValue: Value | number | undefined
+  if (isPropertySyntax(syntaxOrInitial)) {
+    syntax = syntaxOrInitial
+    initialValue = initialArg
+  } else {
+    syntax = undefined
+    initialValue = syntaxOrInitial ?? initialArg
+  }
+  let name: `--${string}`
+  if (isVar(nameOrHandle)) {
+    invariant(
+      fallbackOf(nameOrHandle) === undefined,
+      'A registration takes the bare handle — a fallback belongs to a read site, not the property',
+    )
+    name = `--${varNameOf(nameOrHandle)}`
+    const declared = declaredTypeOf(nameOrHandle)
+    if (declared !== undefined) {
+      if (syntax === undefined) {
+        syntax = DERIVED_SYNTAX[declared]
+      } else {
+        for (const [type, canonical] of Object.entries(DERIVED_SYNTAX)) {
+          invariant(
+            type === declared || !Equal.equals(syntax, canonical),
+            `The explicit syntax contradicts the handle's declared type (${declared})`,
+          )
+        }
+      }
+    }
+  } else {
+    name = nameOrHandle
+  }
+  syntax ??= universal
   invariant(
     name.startsWith('--') && name.length > 2,
     'Property rule name must be a custom property name (--name)',

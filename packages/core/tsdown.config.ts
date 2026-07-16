@@ -12,6 +12,7 @@ export default defineConfig({
     'src/rule/index.ts',
     'src/selector/index.ts',
     'src/stylesheet/index.ts',
+    'src/var/index.ts',
   ],
   format: 'esm',
   dts: true,

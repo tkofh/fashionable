@@ -20,21 +20,39 @@ import {
 import { DEFAULT_INDENT } from '#internal/render'
 import type { MediaQuery } from '#query/mediaQuery'
 import { render as renderQuery } from '#query/mediaQuery.internal'
-import type { Selector } from '#selector/selector'
-import { render as renderSelector } from '#selector/selector.internal'
-import { invariant } from '#util'
+import type { Requirement, Selector } from '#selector/selector'
+import {
+  needsParent as selectorNeedsParent,
+  render as renderSelector,
+} from '#selector/selector.internal'
+import type { AnyVar } from '#var/var.internal'
 import type { MediaRule } from './mediaRule.ts'
 import type { Member, RuleSet } from './ruleSet.ts'
 import type { StyleRule } from './styleRule.ts'
 
 /** @internal */
 export const refSetOf = (
-  value: RuleSet<string> | StyleRule<string> | MediaRule<string>,
+  value: RuleSet<AnyVar> | StyleRule<AnyVar, Requirement> | MediaRule<AnyVar>,
 ): ReadonlySet<string> => (value as unknown as { readonly refSet: ReadonlySet<string> }).refSet
 
 /** @internal */
-export const memberRefs = (member: Member<string>): ReadonlySet<string> =>
+export const memberRefs = (member: Member<AnyVar>): ReadonlySet<string> =>
   isDeclaration(member) ? declarationRefsOf(member) : refSetOf(member)
+
+/** @internal */
+export const needsParentOf = (set: RuleSet<AnyVar>): boolean =>
+  (set as unknown as { readonly needsParent: boolean }).needsParent
+
+// The runtime mirror of `MemberRequires` (docs/selector-nesting.md
+// section 1): a bare declaration always needs a host selector, a media
+// rule is transparent, a style rule contributes its selector's need.
+/** @internal */
+export const memberNeedsParent = (member: Member<AnyVar>): boolean => {
+  if (isDeclaration(member)) {
+    return true
+  }
+  return 'query' in member ? needsParentOf(member.block) : selectorNeedsParent(member.selector)
+}
 
 /** @internal */
 export interface RenderContext {
@@ -54,26 +72,16 @@ export const resolveRenderOptions = (options?: {
   mediaSyntax: options?.mediaSyntax ?? 'prefix',
 })
 
-/** @internal */
-export const requireMediaRule = (
-  member: StyleRule<string> | MediaRule<string>,
-): MediaRule<string> => {
-  invariant(
-    'query' in member,
-    'A nested style rule has no v1 rendering — selector composition is a later extension; lift the rule to the top level of the stylesheet',
-  )
-  return member
-}
-
 /**
  * The nested-form body of a block: one line per declaration, nested
- * media rules as indented `@media` sub-blocks, in member order. Empty
- * blocks contribute nothing.
+ * media and style rules as indented sub-blocks, in member order. A
+ * nested style rule's selector renders verbatim, `&` included — native
+ * CSS nesting is the output shape. Empty blocks contribute nothing.
  *
  * @internal
  */
 export const blockBodyLines = (
-  block: RuleSet<string>,
+  block: RuleSet<AnyVar>,
   depth: number,
   context: RenderContext,
 ): Array<string> => {
@@ -84,11 +92,15 @@ export const blockBodyLines = (
       lines.push(`${pad}${renderDeclaration(member, context.precision)}`)
       continue
     }
-    const media = requireMediaRule(member)
-    const inner = blockBodyLines(media.block, depth + 1, context)
-    if (inner.length > 0) {
-      const prelude = renderQuery(media.query, { mediaSyntax: context.mediaSyntax })
+    const inner = blockBodyLines(member.block, depth + 1, context)
+    if (inner.length === 0) {
+      continue
+    }
+    if ('query' in member) {
+      const prelude = renderQuery(member.query, { mediaSyntax: context.mediaSyntax })
       lines.push(`${pad}@media ${prelude} {`, ...inner, `${pad}}`)
+    } else {
+      lines.push(`${pad}${renderSelector(member.selector)} {`, ...inner, `${pad}}`)
     }
   }
   return lines
@@ -96,8 +108,8 @@ export const blockBodyLines = (
 
 /** @internal */
 export const renderStyleRuleBlock = (
-  selector: Selector,
-  block: RuleSet<string>,
+  selector: Selector<Requirement>,
+  block: RuleSet<AnyVar>,
   context: RenderContext,
 ): string => {
   const lines = blockBodyLines(block, 1, context)
@@ -107,7 +119,7 @@ export const renderStyleRuleBlock = (
 /** @internal */
 export const renderMediaRuleBlock = (
   query: MediaQuery,
-  block: RuleSet<string>,
+  block: RuleSet<AnyVar>,
   context: RenderContext,
 ): string => {
   const lines = blockBodyLines(block, 1, context)

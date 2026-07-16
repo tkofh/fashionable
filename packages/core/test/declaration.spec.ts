@@ -24,30 +24,30 @@ describe('declaration', () => {
 
   describe('refs', () => {
     test('literal text carries no refs', () => {
-      expect(Declaration.refs(Declaration.make('color', 'red'))).toEqual(new Set())
+      expect(Declaration.vars(Declaration.make('color', 'red'))).toEqual(new Set())
     })
 
     test('calc values expose their refs', () => {
-      const declaration = Declaration.make('--fluid', Calc.add(Calc.ref('base'), Calc.ref('step')))
-      expect(Declaration.refs(declaration)).toEqual(new Set(['base', 'step']))
+      const declaration = Declaration.make('--fluid', Calc.add(Calc.var('base'), Calc.var('step')))
+      expect(Declaration.vars(declaration)).toEqual(new Set(['base', 'step']))
     })
 
     test('color values expose their channel refs', () => {
-      const declaration = Declaration.make('color', Color.oklch(Calc.ref('l'), 0.1, 250))
-      expect(Declaration.refs(declaration)).toEqual(new Set(['l']))
+      const declaration = Declaration.make('color', Color.oklch(Calc.var('l'), 0.1, 250))
+      expect(Declaration.vars(declaration)).toEqual(new Set(['l']))
     })
   })
 
   describe('bind', () => {
     test('binds calc values, folding to constants when closed', () => {
-      const declaration = Declaration.make('--fluid', Calc.add(Calc.ref('base'), 2))
+      const declaration = Declaration.make('--fluid', Calc.add(Calc.var('base'), 2))
       const bound = Declaration.bind(declaration, { base: 14 })
-      expect(Declaration.refs(bound)).toEqual(new Set())
+      expect(Declaration.vars(bound)).toEqual(new Set())
       expect(Declaration.equals(bound, Declaration.make('--fluid', Calc.of(16)))).toBe(true)
     })
 
     test('binds color values', () => {
-      const declaration = Declaration.make('color', Color.oklch(Calc.ref('l'), 0.1, 250))
+      const declaration = Declaration.make('color', Color.oklch(Calc.var('l'), 0.1, 250))
       const bound = Declaration.bind(declaration, { l: 0.7 })
       expect(Declaration.equals(bound, Declaration.make('color', Color.oklch(0.7, 0.1, 250)))).toBe(
         true,
@@ -60,8 +60,8 @@ describe('declaration', () => {
     })
 
     test('supports data-last binding through pipe', () => {
-      const bound = Declaration.make('--x', Calc.ref('u')).pipe(Declaration.bind({ u: 1 }))
-      expect(Declaration.refs(bound)).toEqual(new Set())
+      const bound = Declaration.make('--x', Calc.var('u')).pipe(Declaration.bind({ u: 1 }))
+      expect(Declaration.vars(bound)).toEqual(new Set())
     })
   })
 
@@ -74,8 +74,8 @@ describe('declaration', () => {
     })
 
     test('expression values compare structurally', () => {
-      const a = Declaration.make('--x', Calc.add(Calc.ref('u'), 1))
-      const b = Declaration.make('--x', Calc.add(Calc.ref('u'), 1))
+      const a = Declaration.make('--x', Calc.add(Calc.var('u'), 1))
+      const b = Declaration.make('--x', Calc.add(Calc.var('u'), 1))
       expect(Declaration.equals(a, b)).toBe(true)
       expect(a).toStructurallyEqual(b)
     })

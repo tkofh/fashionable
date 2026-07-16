@@ -8,6 +8,7 @@ import { MediaQuery } from '#query'
 import { RuleSet, StyleRule } from '#rule'
 import { Selector } from '#selector'
 import { Stylesheet } from '#stylesheet'
+import type { Var } from '#var'
 
 // The JS reference for the gamut tent below — the same closed form the
 // expression tree encodes, evaluated with Math directly.
@@ -29,36 +30,36 @@ describe('consumers', () => {
   // named references, bound per hue, solved in JS and serialized to CSS
   // from the same tree.
   describe('ok-apca: a computed @property color chain', () => {
-    const gate = Calc.max(0, Calc.sign(Calc.subtract(Calc.ref('lightness'), Calc.ref('apexL'))))
+    const gate = Calc.max(0, Calc.sign(Calc.subtract(Calc.var('lightness'), Calc.var('apexL'))))
     const rising = Calc.divide(
-      Calc.multiply(Calc.ref('apexC'), Calc.ref('lightness')),
-      Calc.ref('apexL'),
+      Calc.multiply(Calc.var('apexC'), Calc.var('lightness')),
+      Calc.var('apexL'),
     )
     const fallProgress = Calc.max(
       0,
       Calc.divide(
-        Calc.subtract(Calc.ref('lightness'), Calc.ref('apexL')),
-        Calc.subtract(1, Calc.ref('apexL')),
+        Calc.subtract(Calc.var('lightness'), Calc.var('apexL')),
+        Calc.subtract(1, Calc.var('apexL')),
       ),
     )
     const falling = Calc.add(
       Calc.divide(
-        Calc.multiply(Calc.ref('apexC'), Calc.subtract(1, Calc.ref('lightness'))),
-        Calc.subtract(1, Calc.ref('apexL')),
+        Calc.multiply(Calc.var('apexC'), Calc.subtract(1, Calc.var('lightness'))),
+        Calc.subtract(1, Calc.var('apexL')),
       ),
       Calc.multiply(
         Calc.multiply(
-          Calc.ref('tentK'),
+          Calc.var('tentK'),
           Calc.pow(Calc.sin(Calc.multiply(fallProgress, Math.PI)), 0.95),
         ),
-        Calc.ref('apexC'),
+        Calc.var('apexC'),
       ),
     )
     const tent = Calc.add(
       Calc.multiply(Calc.subtract(1, gate), rising),
       Calc.multiply(gate, falling),
     )
-    const redTent: Calc.Calc<'lightness'> = Calc.bind(tent, {
+    const redTent: Calc.Calc<Var.Var<'lightness'>> = Calc.bind(tent, {
       apexL: 0.654,
       apexC: 0.29307,
       tentK: -0.07636,
@@ -79,8 +80,8 @@ describe('consumers', () => {
           Declaration.make(
             '--color-fill',
             Color.oklch(
-              Calc.ref('lightness'),
-              Calc.multiply(Calc.ref('_fill-mc'), Calc.ref('chroma')),
+              Calc.var('lightness'),
+              Calc.multiply(Calc.var('_fill-mc'), Calc.var('chroma')),
               30,
             ),
           ),
@@ -102,12 +103,44 @@ describe('consumers', () => {
 
     test('the serialized expression and the solved expression are the same tree', () => {
       for (const lightness of [0.2, 0.4, 0.654, 0.7, 0.9]) {
-        expect(Calc.solve(redTent, { lightness })).toBeCloseTo(tentClosedForm(lightness), 12)
+        expect(Calc.solve(redTent, { bindings: { lightness } })).toBeCloseTo(
+          tentClosedForm(lightness),
+          12,
+        )
       }
     })
 
     test('the sheet reports the custom properties it reads', () => {
-      expect(Stylesheet.refs(sheet)).toEqual(new Set(['lightness', 'chroma', '_fill-mc']))
+      expect(Stylesheet.vars(sheet)).toEqual(new Set(['lightness', 'chroma', '_fill-mc']))
+    })
+
+    // The per-hue block (docs/selector-nesting.md section 5): geometry
+    // constants set once per hue, scoped to role elements in the hue's
+    // subtree. `:is(&, & *)` covers the hue element itself and anything
+    // beneath it; the role list keeps unscoped role elements on their
+    // @property initial values. Pinned byte-for-byte against the string
+    // ok-apca assembled by hand before the nesting extension.
+    test('the nested hue block renders byte-for-byte', () => {
+      const hueBlock = StyleRule.make(
+        Selector.class('red'),
+        RuleSet.make(
+          StyleRule.make(
+            Selector.and(
+              Selector.is(Selector.nest, Selector.descendant(Selector.nest, Selector.universal)),
+              Selector.is(Selector.class('fill'), Selector.class('text')),
+            ),
+            RuleSet.make(
+              Declaration.make('--_color-hue', 30),
+              Declaration.make('--_color-apexL', 0.654),
+              Declaration.make('--_color-apexC', 0.29307),
+              Declaration.make('--_color-tentK', -0.07636),
+            ),
+          ),
+        ),
+      )
+      expect(StyleRule.render(hueBlock)).toBe(
+        '.red {\n\t:is(&, & *):is(.fill, .text) {\n\t\t--_color-hue: 30;\n\t\t--_color-apexL: 0.654;\n\t\t--_color-apexC: 0.29307;\n\t\t--_color-tentK: -0.07636;\n\t}\n}',
+      )
     })
   })
 
@@ -147,7 +180,7 @@ describe('consumers', () => {
     // inverse, a cos(acos(...)) chain reading one unbound reference.
     const fluidT = Calc.cos(
       Calc.subtract(
-        Calc.divide(Calc.acos(Calc.clamp(-1, Calc.ref('type-fluid-u'), 1)), 3),
+        Calc.divide(Calc.acos(Calc.clamp(-1, Calc.var('type-fluid-u'), 1)), 3),
         Angle.rad(2.0943951),
       ),
     )
@@ -228,7 +261,7 @@ describe('consumers', () => {
     })
 
     test('the sheet reports its one unbound reference', () => {
-      expect(Stylesheet.refs(merged)).toEqual(new Set(['type-fluid-u']))
+      expect(Stylesheet.vars(merged)).toEqual(new Set(['type-fluid-u']))
     })
 
     test('coalesce folds same-selector rules into their first occurrence', () => {

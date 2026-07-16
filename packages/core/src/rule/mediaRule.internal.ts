@@ -1,7 +1,10 @@
 import * as Equal from '#internal/equal'
 import type { MediaQuery } from '#query/mediaQuery'
 import { render as renderQuery } from '#query/mediaQuery.internal'
+import type { Requirement } from '#selector/selector'
 import { dual, Pipeable } from '#util'
+import type { Name as VarName } from '#var/var'
+import type { AnyVar } from '#var/var.internal'
 import type { MediaRule, RenderOptions } from './mediaRule.ts'
 import { refSetOf, renderMediaRuleBlock, resolveRenderOptions } from './rule.internal.ts'
 import type { RuleSet } from './ruleSet.ts'
@@ -9,15 +12,15 @@ import type { RuleSet } from './ruleSet.ts'
 export const MediaRuleTypeId = Symbol.for('fashionable/rule/mediaRule')
 export type MediaRuleTypeId = typeof MediaRuleTypeId
 
-class MediaRuleImpl extends Pipeable implements MediaRule<string>, Equal.Equal {
+class MediaRuleImpl extends Pipeable implements MediaRule<AnyVar>, Equal.Equal {
   readonly [MediaRuleTypeId]: MediaRuleTypeId = MediaRuleTypeId
 
   readonly query: MediaQuery
-  readonly block: RuleSet<string>
+  readonly block: RuleSet<AnyVar>
   readonly refSet: ReadonlySet<string>
   #hash: number | undefined
 
-  constructor(query: MediaQuery, block: RuleSet<string>) {
+  constructor(query: MediaQuery, block: RuleSet<AnyVar>) {
     super()
     this.query = query
     this.block = block
@@ -52,28 +55,28 @@ class MediaRuleImpl extends Pipeable implements MediaRule<string>, Equal.Equal {
 }
 
 /** @internal */
-export const isMediaRule = (u: unknown): u is MediaRule<string> =>
+export const isMediaRule = (u: unknown): u is MediaRule<AnyVar> =>
   typeof u === 'object' && u !== null && MediaRuleTypeId in u
 
 /** @internal */
-export function make<Refs extends string>(
+export function make<Vars extends AnyVar, Requires extends Requirement>(
   query: MediaQuery,
-  block: RuleSet<Refs>,
-): MediaRule<Refs> {
-  return new MediaRuleImpl(query, block) as unknown as MediaRule<Refs>
+  block: RuleSet<Vars, Requires>,
+): MediaRule<Vars, Requires> {
+  return new MediaRuleImpl(query, block) as unknown as MediaRule<Vars, Requires>
 }
 
 /** @internal */
-export function refs<Refs extends string>(rule: MediaRule<Refs>): ReadonlySet<Refs> {
-  return refSetOf(rule) as ReadonlySet<Refs>
+export function refs<Vars extends AnyVar>(rule: MediaRule<Vars>): ReadonlySet<VarName<Vars>> {
+  return refSetOf(rule) as ReadonlySet<VarName<Vars>>
 }
 
 /** @internal */
-export const render = (rule: MediaRule<string>, options?: RenderOptions): string =>
+export const render = (rule: MediaRule<AnyVar>, options?: RenderOptions): string =>
   renderMediaRuleBlock(rule.query, rule.block, resolveRenderOptions(options))
 
 /** @internal */
 export const equals = dual<
-  (that: MediaRule<string>) => (self: MediaRule<string>) => boolean,
-  (self: MediaRule<string>, that: MediaRule<string>) => boolean
->(2, (self: MediaRule<string>, that: MediaRule<string>): boolean => Equal.equals(self, that))
+  (that: MediaRule<AnyVar>) => (self: MediaRule<AnyVar>) => boolean,
+  (self: MediaRule<AnyVar>, that: MediaRule<AnyVar>) => boolean
+>(2, (self: MediaRule<AnyVar>, that: MediaRule<AnyVar>): boolean => Equal.equals(self, that))

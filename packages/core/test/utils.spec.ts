@@ -46,7 +46,7 @@ describe('utils', () => {
 
   describe('Pipeable', () => {
     test('library values flow through data-last operations', () => {
-      expect(Calc.add(Calc.ref('x'), 1).pipe(Calc.bind({ x: 2 }), Calc.serialize)).toBe('3')
+      expect(Calc.add(Calc.var('x'), 1).pipe(Calc.bind({ x: 2 }), Calc.serialize)).toBe('3')
     })
   })
 

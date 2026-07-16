@@ -1,57 +1,79 @@
 import type { ApplyBindings, Bindings, Input } from '#calc/calc'
-import {
-  bind as bindCalc,
-  isCalc,
-  refsOf as calcRefsOf,
-  serialize as serializeCalc,
-  toCalc,
-} from '#calc/calc.internal'
+import { bind as bindCalc, isCalc, serialize as serializeCalc, toCalc } from '#calc/calc.internal'
 import type { Precision } from '#calc/precision'
-import {
-  bind as bindColor,
-  refsOf as colorRefsOf,
-  serialize as serializeColor,
-} from '#data/color.internal'
+import { bind as bindColor, isColor, serialize as serializeColor } from '#data/color.internal'
 import * as Equal from '#internal/equal'
-import { EMPTY_REFS } from '#internal/refs'
+import { EMPTY_REFS, refsOf as protocolRefsOf } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
+import type { Name as VarName } from '#var/var'
+import {
+  type AnyVar,
+  fallback as deriveRead,
+  fallbackOf,
+  isVar,
+  nameOf as varNameOf,
+} from '#var/var.internal'
 import type { Declaration, RenderOptions, Value } from './declaration.ts'
 
 export const DeclarationTypeId = Symbol.for('fashionable/declaration')
 export type DeclarationTypeId = typeof DeclarationTypeId
 
-const valueEquals = (a: Value<string>, b: Value<string>): boolean =>
+const valueEquals = (a: Value<AnyVar>, b: Value<AnyVar>): boolean =>
   typeof a === 'string' || typeof b === 'string' ? a === b : Equal.equals(a, b)
 
-const valueHash = (value: Value<string>): number =>
+const valueHash = (value: Value<AnyVar>): number =>
   typeof value === 'string' ? Equal.hashString(value) : Equal.hash(value)
 
-const serializeValue = (value: Value<string>, precision?: Precision): string => {
+// A declaration-level fallback renders by its own form: literal text
+// verbatim, numbers as constants under the precision context, expressions
+// through their serializers, nested reads recursively.
+const serializeFallback = (fb: unknown, precision?: Precision): string => {
+  if (typeof fb === 'string') {
+    return fb
+  }
+  const options = precision === undefined ? {} : { precision }
+  if (typeof fb === 'number' || isCalc(fb)) {
+    return serializeCalc(toCalc(fb as number), options)
+  }
+  if (isVar(fb)) {
+    return serializeRead(fb, precision)
+  }
+  return serializeColor(fb as Parameters<typeof serializeColor>[0], options)
+}
+
+const serializeRead = (read: AnyVar, precision?: Precision): string => {
+  const fb = fallbackOf(read)
+  return fb === undefined
+    ? `var(--${varNameOf(read)})`
+    : `var(--${varNameOf(read)}, ${serializeFallback(fb, precision)})`
+}
+
+const serializeValue = (value: Value<AnyVar>, precision?: Precision): string => {
   if (typeof value === 'string') {
     return value
+  }
+  if (isVar(value)) {
+    return serializeRead(value, precision)
   }
   const options = precision === undefined ? {} : { precision }
   return isCalc(value) ? serializeCalc(value, options) : serializeColor(value, options)
 }
 
-class DeclarationImpl extends Pipeable implements Declaration<string>, Equal.Equal {
+class DeclarationImpl extends Pipeable implements Declaration<AnyVar>, Equal.Equal {
   readonly [DeclarationTypeId]: DeclarationTypeId = DeclarationTypeId
 
   readonly name: string
-  readonly value: Value<string>
+  readonly value: Value<AnyVar>
   readonly refSet: ReadonlySet<string>
   #hash: number | undefined
 
-  constructor(name: string, value: Value<string>) {
+  constructor(name: string, value: Value<AnyVar>) {
     super()
     this.name = name
     this.value = value
-    this.refSet =
-      typeof value === 'string'
-        ? EMPTY_REFS
-        : isCalc(value)
-          ? calcRefsOf(value)
-          : colorRefsOf(value)
+    // the refs protocol covers every non-text form uniformly: Calc, Color,
+    // and Var values each expose their vars set behind the shared symbol
+    this.refSet = typeof value === 'string' ? EMPTY_REFS : protocolRefsOf(value)
   }
 
   [Equal.EqualTypeId](that: unknown): boolean {
@@ -78,43 +100,104 @@ class DeclarationImpl extends Pipeable implements Declaration<string>, Equal.Equ
 }
 
 /** @internal */
-export const isDeclaration = (u: unknown): u is Declaration<string> =>
+export const isDeclaration = (u: unknown): u is Declaration<AnyVar> =>
   typeof u === 'object' && u !== null && DeclarationTypeId in u
 
 /** @internal */
-export const refsOf = <R extends string>(declaration: Declaration<R>): ReadonlySet<R> =>
-  (declaration as unknown as DeclarationImpl).refSet as ReadonlySet<R>
+export const refsOf = (declaration: Declaration<AnyVar>): ReadonlySet<string> =>
+  (declaration as unknown as DeclarationImpl).refSet
+
+// A read's fallback chain must hold declaration-value forms only. The
+// public signatures enforce this; the walk backs them for untyped callers.
+const validateReadFallback = (fb: unknown): void => {
+  if (fb === undefined || typeof fb === 'string' || typeof fb === 'number') {
+    return
+  }
+  if (isVar(fb)) {
+    validateReadFallback(fallbackOf(fb))
+    return
+  }
+  invariant(
+    isCalc(fb) || isColor(fb),
+    'Declaration var fallback must be text, a number, an expression, or a Var read',
+  )
+}
 
 /** @internal */
-export function make<Refs extends string = never>(
-  name: string,
-  value: Value<Refs> | number,
-): Declaration<Refs> {
-  invariant(name.length > 0, 'Declaration name must be a non-empty string')
+export function make(name: string | AnyVar, value: Value<AnyVar> | number): Declaration<never> {
+  let resolved: string
+  if (isVar(name)) {
+    invariant(
+      fallbackOf(name) === undefined,
+      'A write takes the bare handle — a fallback belongs to a read site, not the property',
+    )
+    resolved = `--${varNameOf(name)}`
+  } else {
+    resolved = name
+  }
+  invariant(resolved.length > 0, 'Declaration name must be a non-empty string')
+  if (isVar(value)) {
+    validateReadFallback(fallbackOf(value))
+  }
   return new DeclarationImpl(
-    name,
+    resolved,
     typeof value === 'number' ? toCalc(value) : value,
-  ) as Declaration<Refs>
+  ) as Declaration<never>
+}
+
+// Binding a read: a bound name replaces the whole read (fallback
+// discarded, as in calc), an unbound one keeps the read and binds inside
+// its fallback chain instead.
+const bindRead = (read: AnyVar, bindings: Record<string, Input>): Value<AnyVar> => {
+  const bound = bindings[varNameOf(read)]
+  if (bound !== undefined) {
+    return toCalc(bound)
+  }
+  const fb = fallbackOf(read)
+  const rebound = bindFallback(fb, bindings)
+  return rebound === fb ? (read as Value<AnyVar>) : (deriveRead(read, rebound) as Value<AnyVar>)
+}
+
+const bindFallback = (fb: unknown, bindings: Record<string, Input>): unknown => {
+  if (fb === undefined || typeof fb === 'string' || typeof fb === 'number') {
+    return fb
+  }
+  if (isCalc(fb)) {
+    return bindCalc(fb, bindings)
+  }
+  if (isVar(fb)) {
+    return bindRead(fb, bindings)
+  }
+  return bindColor(fb as Parameters<typeof bindColor>[0], bindings)
 }
 
 /** @internal */
 export const bind: {
   <const B extends Bindings>(
     bindings: B,
-  ): <Refs extends string>(declaration: Declaration<Refs>) => Declaration<ApplyBindings<Refs, B>>
-  <Refs extends string, const B extends Bindings>(
-    declaration: Declaration<Refs>,
+  ): <Vars extends AnyVar>(declaration: Declaration<Vars>) => Declaration<ApplyBindings<Vars, B>>
+  <Vars extends AnyVar, const B extends Bindings>(
+    declaration: Declaration<Vars>,
     bindings: B,
-  ): Declaration<ApplyBindings<Refs, B>>
+  ): Declaration<ApplyBindings<Vars, B>>
 } = dual(
   2,
-  (
-    declaration: Declaration<string>,
-    bindings: Record<string, Input<string>>,
-  ): Declaration<string> => {
+  (declaration: Declaration<AnyVar>, bindings: Record<string, Input>): Declaration<AnyVar> => {
     const value = declaration.value
     if (typeof value === 'string') {
       return declaration
+    }
+    if (isVar(value)) {
+      let touchesRead = false
+      for (const name of protocolRefsOf(value)) {
+        if (bindings[name] !== undefined) {
+          touchesRead = true
+          break
+        }
+      }
+      return touchesRead
+        ? new DeclarationImpl(declaration.name, bindRead(value, bindings))
+        : declaration
     }
     return new DeclarationImpl(
       declaration.name,
@@ -124,20 +207,22 @@ export const bind: {
 )
 
 /** @internal */
-export function refs<Refs extends string>(declaration: Declaration<Refs>): ReadonlySet<Refs> {
-  return refsOf(declaration)
+export function refs<Vars extends AnyVar>(
+  declaration: Declaration<Vars>,
+): ReadonlySet<VarName<Vars>> {
+  return refsOf(declaration) as ReadonlySet<VarName<Vars>>
 }
 
 /** @internal */
-export const renderWith = (declaration: Declaration<string>, precision?: Precision): string =>
+export const renderWith = (declaration: Declaration<AnyVar>, precision?: Precision): string =>
   `${declaration.name}: ${serializeValue(declaration.value, precision)};`
 
 /** @internal */
-export const render = (declaration: Declaration<string>, options?: RenderOptions): string =>
+export const render = (declaration: Declaration<AnyVar>, options?: RenderOptions): string =>
   renderWith(declaration, options?.precision)
 
 /** @internal */
 export const equals = dual<
-  (that: Declaration<string>) => (self: Declaration<string>) => boolean,
-  (self: Declaration<string>, that: Declaration<string>) => boolean
->(2, (self: Declaration<string>, that: Declaration<string>): boolean => Equal.equals(self, that))
+  (that: Declaration<AnyVar>) => (self: Declaration<AnyVar>) => boolean,
+  (self: Declaration<AnyVar>, that: Declaration<AnyVar>) => boolean
+>(2, (self: Declaration<AnyVar>, that: Declaration<AnyVar>): boolean => Equal.equals(self, that))

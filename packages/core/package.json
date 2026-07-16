@@ -37,7 +37,9 @@
     "#selector": "./src/selector/index.ts",
     "#selector/*": "./src/selector/*.ts",
     "#stylesheet": "./src/stylesheet/index.ts",
-    "#stylesheet/*": "./src/stylesheet/*.ts"
+    "#stylesheet/*": "./src/stylesheet/*.ts",
+    "#var": "./src/var/index.ts",
+    "#var/*": "./src/var/*.ts"
   },
   "exports": {
     "./calc": {
@@ -79,6 +81,10 @@
     "./utils": {
       "types": "./dist/utils.d.mts",
       "import": "./dist/utils.mjs"
+    },
+    "./var": {
+      "types": "./dist/var/index.d.mts",
+      "import": "./dist/var/index.mjs"
     }
   },
   "publishConfig": {

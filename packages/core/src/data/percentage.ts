@@ -7,30 +7,34 @@
  * as `50%` by accident.
  *
  * There is one unit (`%`), so the module is a single `of` constructor rather
- * than a family. A percentage binds and serializes but does not `solve`: its
- * only consumer today is `Color.mix`, which serializes rather than solves, so
- * the `%` leaf carries no `solve`-context ratio. (Nothing in the model needs to
- * know what a `50%` is a percentage *of* — that would only ever be a context
- * ratio supplied at `solve`, the same leaf lowering a viewport unit uses.)
+ * than a family. A percentage solves like a relative length: nothing in the
+ * model knows what a `50%` is a percentage *of*, so the `%` leaf takes a
+ * required ratio in the `units` section of the solve options — `basis / 100`,
+ * per-hundred exactly as `vw` takes `sampleWidth / 100`.
  *
  * @since 0.2.0
  */
 
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
+import type { Var } from '#var'
 import * as internal from './percentage.internal.ts'
-import type { Percent, Percentage as PercentageUnit } from './units.ts'
+import type * as Unit from './unit.ts'
 
 /**
  * A `<percentage>` expression: a `Calc` of percentage kind. Names the dimension
- * without spelling `Calc<Refs, 'percentage', Unit.Percentage>` —
+ * without spelling `Calc<Vars, Unit.Percentage, unknown>` —
  * `Percentage.of(40)` produces one, and it composes with every `Calc`
  * combinator (adding two percentages is a percentage, one over another is a
- * number). `Refs` unions the unbound reference names, as on `Calc`.
+ * number). `Vars` unions the unbound variable names, as on `Calc`.
  *
  * @since 0.2.0
  */
-export type Percentage<Refs extends string = string> = Calc<Refs, 'percentage', PercentageUnit>
+export interface Percentage<out Vars extends Var.Any = Var.Any> extends Calc<
+  Vars,
+  Unit.Percentage,
+  unknown
+> {}
 
 /**
  * A percentage — a number rendered with a trailing `%`. `Percentage.of(40)`
@@ -44,8 +48,9 @@ export type Percentage<Refs extends string = string> = Calc<Refs, 'percentage', 
  * ```ts
  * Calc.serialize(Percentage.of(40)) // '40%'
  * Calc.serialize(Calc.add(Percentage.of(20), Percentage.of(5))) // '25%'
+ * Calc.solve(Percentage.of(50), { units: { '%': 320 / 100 } }) // 160
  * ```
  * @since 0.2.0
  */
-export const of: (value: number, precision?: Precision) => Calc<never, 'percentage', Percent> =
+export const of: (value: number, precision?: Precision) => Calc<never, Unit.Percent, Unit.Percent> =
   internal.of

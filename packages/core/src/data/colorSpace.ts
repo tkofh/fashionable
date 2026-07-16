@@ -18,9 +18,9 @@
  * @since 0.2.0
  */
 
+import type { ChannelIdent } from './channels.ts'
 import type { ColorSpaceTraits, ColorSpaceTypeId } from './colorSpace.internal.ts'
 import * as internal from './colorSpace.internal.ts'
-import type { ChannelLeaf } from './units.ts'
 
 declare const ColorSpaceChannels: unique symbol
 declare const PolarId: unique symbol
@@ -44,7 +44,7 @@ export type Polar = { readonly [PolarId]: 'polar' }
  *
  * @since 0.2.0
  */
-export interface ColorSpace<out Channels = ChannelLeaf<string>, out Trait = unknown> {
+export interface ColorSpace<out Channels = ChannelIdent<string>, out Trait = unknown> {
   readonly [ColorSpaceTypeId]: ColorSpaceTypeId
   readonly [ColorSpaceChannels]?: Channels
   readonly [ColorSpaceTraits]?: Trait
@@ -56,7 +56,7 @@ export interface ColorSpace<out Channels = ChannelLeaf<string>, out Trait = unkn
  *
  * @since 0.2.0
  */
-export type PolarSpace<Channels = ChannelLeaf<string>> = ColorSpace<Channels, Polar>
+export type PolarSpace<Channels = ChannelIdent<string>> = ColorSpace<Channels, Polar>
 
 /**
  * The `oklch` space: a polar interpolation space, and an `oklch(from ...)`
@@ -65,7 +65,7 @@ export type PolarSpace<Channels = ChannelLeaf<string>> = ColorSpace<Channels, Po
  * @since 0.2.0
  */
 export const oklch: ColorSpace<
-  ChannelLeaf<'l'> | ChannelLeaf<'c'> | ChannelLeaf<'h'> | ChannelLeaf<'alpha'>,
+  ChannelIdent<'l'> | ChannelIdent<'c'> | ChannelIdent<'h'> | ChannelIdent<'alpha'>,
   Polar
 > = internal.oklch
 
@@ -77,7 +77,7 @@ export const oklch: ColorSpace<
  * @since 0.2.0
  */
 export const srgb: ColorSpace<
-  ChannelLeaf<'r'> | ChannelLeaf<'g'> | ChannelLeaf<'b'> | ChannelLeaf<'alpha'>
+  ChannelIdent<'r'> | ChannelIdent<'g'> | ChannelIdent<'b'> | ChannelIdent<'alpha'>
 > = internal.srgb
 
 /**

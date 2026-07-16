@@ -7,7 +7,7 @@ import { Selector } from '#selector'
 
 describe('rule', () => {
   const color = Declaration.make('color', 'red')
-  const depth = Declaration.make('--depth', Calc.ref('depth'))
+  const depth = Declaration.make('--depth', Calc.var('depth'))
 
   describe('RuleSet', () => {
     test('isEmpty is structural member absence', () => {
@@ -111,13 +111,13 @@ describe('rule', () => {
     test('refs union across members and through nesting', () => {
       const nested = StyleRule.make(
         Selector.class('btn'),
-        RuleSet.make(Declaration.make('--a', Calc.ref('a'))),
+        RuleSet.make(Declaration.make('--a', Calc.var('a'))),
       )
       const media = MediaRule.make(
         MediaQuery.minWidth(768),
-        RuleSet.make(Declaration.make('--b', Calc.ref('b'))),
+        RuleSet.make(Declaration.make('--b', Calc.var('b'))),
       )
-      expect(RuleSet.refs(RuleSet.make(depth, nested, media))).toEqual(new Set(['depth', 'a', 'b']))
+      expect(RuleSet.vars(RuleSet.make(depth, nested, media))).toEqual(new Set(['depth', 'a', 'b']))
     })
   })
 
@@ -131,7 +131,7 @@ describe('rule', () => {
 
     test('refs are the block refs', () => {
       const rule = StyleRule.make(Selector.root, RuleSet.make(depth))
-      expect(StyleRule.refs(rule)).toEqual(new Set(['depth']))
+      expect(StyleRule.vars(rule)).toEqual(new Set(['depth']))
     })
 
     test('media rules nest inside a style rule block', () => {
@@ -158,7 +158,7 @@ describe('rule', () => {
 
     test('refs are the block refs', () => {
       const rule = MediaRule.make(MediaQuery.minWidth(768), RuleSet.make(depth))
-      expect(MediaRule.refs(rule)).toEqual(new Set(['depth']))
+      expect(MediaRule.vars(rule)).toEqual(new Set(['depth']))
     })
   })
 
@@ -168,8 +168,8 @@ describe('rule', () => {
     })
 
     test('nested structures compare structurally', () => {
-      const a = StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--x', Calc.ref('u'))))
-      const b = StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--x', Calc.ref('u'))))
+      const a = StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--x', Calc.var('u'))))
+      const b = StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--x', Calc.var('u'))))
       expect(StyleRule.equals(a, b)).toBe(true)
       expect(a).toStructurallyEqual(b)
     })
@@ -208,6 +208,62 @@ describe('rule', () => {
       expect(StyleRule.isStyleRule(media)).toBe(false)
       expect(MediaRule.isMediaRule(media)).toBe(true)
       expect(MediaRule.isMediaRule(color)).toBe(false)
+    })
+  })
+
+  describe('nesting binder', () => {
+    test('accepts nested rules whose selectors reference &', () => {
+      const rule = StyleRule.make(
+        Selector.class('red'),
+        RuleSet.make(
+          StyleRule.make(
+            Selector.and(Selector.nest, Selector.class('active')),
+            RuleSet.make(color),
+          ),
+        ),
+      )
+      expect(StyleRule.render(rule)).toBe('.red {\n\t&.active {\n\t\tcolor: red;\n\t}\n}')
+    })
+
+    test('rejects a nested rule whose selector does not reference &', () => {
+      expect(() =>
+        StyleRule.make(
+          Selector.class('red'),
+          RuleSet.make(StyleRule.make(Selector.class('active'), RuleSet.make(color))),
+        ),
+      ).toThrow('must reference its parent')
+    })
+
+    test('the walk descends through media rules', () => {
+      const media = MediaRule.make(
+        MediaQuery.minWidth(768),
+        RuleSet.make(StyleRule.make(Selector.class('active'), RuleSet.make(color))),
+      )
+      expect(() => StyleRule.make(Selector.class('red'), RuleSet.make(media))).toThrow(
+        'must reference its parent',
+      )
+    })
+
+    test('the walk stops at nested style rules — each binder checks its own block', () => {
+      const inner = StyleRule.make(
+        Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+        RuleSet.make(color),
+      )
+      const middle = StyleRule.make(
+        Selector.and(Selector.nest, Selector.class('mid')),
+        RuleSet.make(inner),
+      )
+      const outer = StyleRule.make(Selector.class('out'), RuleSet.make(middle))
+      expect(StyleRule.render(outer)).toBe(
+        '.out {\n\t&.mid {\n\t\t&:hover {\n\t\t\tcolor: red;\n\t\t}\n\t}\n}',
+      )
+    })
+
+    test('forSelector runs the binder check', () => {
+      const block = RuleSet.make(StyleRule.make(Selector.class('active'), RuleSet.make(color)))
+      expect(() => block.pipe(RuleSet.forSelector(Selector.class('red')))).toThrow(
+        'must reference its parent',
+      )
     })
   })
 })

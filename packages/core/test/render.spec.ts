@@ -14,7 +14,7 @@ describe('render', () => {
     test('a declaration renders as name: value;', () => {
       expect(Declaration.render(Declaration.make('--depth', 4))).toBe('--depth: 4;')
       expect(
-        Declaration.render(Declaration.make('--indent', Calc.multiply(Calc.ref('depth'), 8))),
+        Declaration.render(Declaration.make('--indent', Calc.multiply(Calc.var('depth'), 8))),
       ).toBe('--indent: calc(var(--depth) * 8);')
     })
 
@@ -134,7 +134,7 @@ describe('render', () => {
         StyleRule.make(
           Selector.root,
           RuleSet.make(
-            Declaration.make('--indent', Calc.multiply(Calc.ref('depth'), 8)),
+            Declaration.make('--indent', Calc.multiply(Calc.var('depth'), 8)),
             Declaration.make('--third', Calc.divide(1, 3)),
             Declaration.make('color', Color.oklch(0.7, 0.1, 250)),
           ),
@@ -174,16 +174,32 @@ describe('render', () => {
       expect(Stylesheet.render(Stylesheet.empty)).toBe('')
     })
 
-    test('throws on a nested style rule', () => {
+    test('renders a nested style rule as an indented sub-block, & verbatim', () => {
       const sheet = Stylesheet.make(
         StyleRule.make(
           Selector.root,
           RuleSet.make(
-            StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('color', 'red'))),
+            StyleRule.make(
+              Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+              RuleSet.make(Declaration.make('color', 'red')),
+            ),
           ),
         ),
       )
-      expect(() => Stylesheet.render(sheet)).toThrow('nested style rule')
+      expect(Stylesheet.render(sheet)).toBe(':root {\n\t&:hover {\n\t\tcolor: red;\n\t}\n}')
+    })
+
+    test('a nested style rule whose block is empty contributes nothing', () => {
+      const sheet = Stylesheet.make(
+        StyleRule.make(
+          Selector.root,
+          RuleSet.make(
+            Declaration.make('--depth', 4),
+            StyleRule.make(Selector.nest, RuleSet.make()),
+          ),
+        ),
+      )
+      expect(Stylesheet.render(sheet)).toBe(':root {\n\t--depth: 4;\n}')
     })
   })
 

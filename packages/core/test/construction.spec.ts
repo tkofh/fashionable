@@ -19,22 +19,22 @@ describe('construction', () => {
 
   describe('ref', () => {
     test('creates a reference expression', () => {
-      expect(Calc.solve(Calc.ref('x'), { x: 5 })).toBe(5)
+      expect(Calc.solve(Calc.var('x'), { bindings: { x: 5 } })).toBe(5)
     })
 
     test('returns the same instance per name', () => {
-      expect(Calc.ref('x')).toBe(Calc.ref('x'))
+      expect(Calc.var('x')).toBe(Calc.var('x'))
     })
 
     test('throws for empty string', () => {
-      expect(() => Calc.ref('')).toThrow('non-empty')
+      expect(() => Calc.var('')).toThrow('non-empty')
     })
   })
 
   describe('guards', () => {
     test('isCalc accepts expressions and rejects the rest', () => {
       expect(Calc.isCalc(Calc.of(1))).toBe(true)
-      expect(Calc.isCalc(Calc.ref('x'))).toBe(true)
+      expect(Calc.isCalc(Calc.var('x'))).toBe(true)
       expect(Calc.isCalc(1)).toBe(false)
       expect(Calc.isCalc({})).toBe(false)
       expect(Calc.isCalc(null)).toBe(false)
@@ -63,7 +63,7 @@ describe('construction', () => {
       // the result takes the divisor's sign, so a negative dividend wraps up
       expect(Calc.solve(Calc.mod(-30, 360))).toBe(330)
       // constant operands fold; a symbolic one serializes as CSS mod()
-      expect(Calc.serialize(Calc.mod(Calc.ref('h'), 360))).toBe('mod(var(--h), 360)')
+      expect(Calc.serialize(Calc.mod(Calc.var('h'), 360))).toBe('mod(var(--h), 360)')
     })
 
     test('creates pow expression', () => {
@@ -123,7 +123,9 @@ describe('construction', () => {
   describe('lerp', () => {
     test('interpolates linearly', () => {
       expect(Calc.solve(Calc.lerp(0, 10, 0.5))).toBe(5)
-      expect(Calc.solve(Calc.lerp(Calc.ref('a'), Calc.ref('b'), 0.25), { a: 0, b: 8 })).toBe(2)
+      expect(
+        Calc.solve(Calc.lerp(Calc.var('a'), Calc.var('b'), 0.25), { bindings: { a: 0, b: 8 } }),
+      ).toBe(2)
     })
   })
 
@@ -145,42 +147,42 @@ describe('construction', () => {
     })
 
     test('adds three expressions with references', () => {
-      const expr = Calc.add(Calc.ref('a'), Calc.ref('b'), Calc.ref('c'))
-      expect(Calc.solve(expr, { a: 10, b: 20, c: 30 })).toBe(60)
+      const expr = Calc.add(Calc.var('a'), Calc.var('b'), Calc.var('c'))
+      expect(Calc.solve(expr, { bindings: { a: 10, b: 20, c: 30 } })).toBe(60)
     })
 
     test('finds max with references', () => {
-      const expr = Calc.max(Calc.ref('x'), 0, Calc.ref('y'))
-      expect(Calc.solve(expr, { x: -5, y: 3 })).toBe(3)
+      const expr = Calc.max(Calc.var('x'), 0, Calc.var('y'))
+      expect(Calc.solve(expr, { bindings: { x: -5, y: 3 } })).toBe(3)
     })
 
     test('finds min with references', () => {
-      const expr = Calc.min(Calc.ref('x'), 100, Calc.ref('y'))
-      expect(Calc.solve(expr, { x: 50, y: 25 })).toBe(25)
+      const expr = Calc.min(Calc.var('x'), 100, Calc.var('y'))
+      expect(Calc.solve(expr, { bindings: { x: 50, y: 25 } })).toBe(25)
     })
   })
 
   describe('reference merging', () => {
     test('merges references from operations', () => {
-      const expr = Calc.add(Calc.ref('x'), Calc.ref('y'))
-      expect(Calc.refs(expr)).toEqual(new Set(['x', 'y']))
-      expect(Calc.solve(expr, { x: 1, y: 2 })).toBe(3)
+      const expr = Calc.add(Calc.var('x'), Calc.var('y'))
+      expect(Calc.vars(expr)).toEqual(new Set(['x', 'y']))
+      expect(Calc.solve(expr, { bindings: { x: 1, y: 2 } })).toBe(3)
     })
 
     test('deduplicates references', () => {
-      const x = Calc.ref('x')
+      const x = Calc.var('x')
       const expr = Calc.add(x, x)
-      expect(Calc.refs(expr)).toEqual(new Set(['x']))
-      expect(Calc.solve(expr, { x: 5 })).toBe(10)
+      expect(Calc.vars(expr)).toEqual(new Set(['x']))
+      expect(Calc.solve(expr, { bindings: { x: 5 } })).toBe(10)
     })
 
     test('merges references from nested operations', () => {
       const expr = Calc.add(
-        Calc.multiply(Calc.ref('a'), Calc.ref('b')),
-        Calc.subtract(Calc.ref('c'), Calc.ref('d')),
+        Calc.multiply(Calc.var('a'), Calc.var('b')),
+        Calc.subtract(Calc.var('c'), Calc.var('d')),
       )
-      expect(Calc.refs(expr)).toEqual(new Set(['a', 'b', 'c', 'd']))
-      expect(Calc.solve(expr, { a: 2, b: 3, c: 10, d: 4 })).toBe(12)
+      expect(Calc.vars(expr)).toEqual(new Set(['a', 'b', 'c', 'd']))
+      expect(Calc.solve(expr, { bindings: { a: 2, b: 3, c: 10, d: 4 } })).toBe(12)
     })
   })
 })

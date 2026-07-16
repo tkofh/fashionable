@@ -1,18 +1,27 @@
-import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from '#calc/calc'
+import type {
+  ApplyBindings,
+  Bindings,
+  Calc,
+  Input,
+  PartialBindings,
+  SerializeOptions,
+} from '#calc/calc'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { ColorTypeId } from './color.internal.ts'
 import * as internal from './color.internal.ts'
 import type { ColorSpace, PolarSpace } from './colorSpace.ts'
 import type { HueInterpolation } from './hueInterpolation.ts'
 import type { None } from './keywords.ts'
+import type * as Unit from './unit.ts'
 
-declare const ColorRefs: unique symbol
+declare const ColorVars: unique symbol
 
 /**
  * A CSS color expression whose channels are `Calc` number expressions.
  *
  * A color is not a number: it can be bound and serialized, but not
- * solved. The `Refs` parameter unions the channels' unbound reference
+ * solved. The `Vars` parameter unions the channels' unbound variable
  * names, exactly as on `Calc`.
  *
  * `oklch(...)`, `color(srgb ...)`, `light-dark(...)`, `color-mix(...)`,
@@ -22,13 +31,13 @@ declare const ColorRefs: unique symbol
  * missing-component value.
  *
  * Construct via `oklch`, `srgb`, `lightDark`, `mix`, `named`, `from`, and
- * `ref` (or the `transparent` constant).
+ * `var` (or the `transparent` constant).
  *
  * @since 0.1.0
  */
-export interface Color<out Refs extends string = string> extends Pipeable {
+export interface Color<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [ColorTypeId]: ColorTypeId
-  readonly [ColorRefs]?: Refs
+  readonly [ColorVars]?: Vars
 }
 
 /**
@@ -41,7 +50,7 @@ export interface Color<out Refs extends string = string> extends Pipeable {
  * @returns `true` if the value is a `Color`, `false` otherwise.
  * @since 0.1.0
  */
-export const isColor: (u: unknown) => u is Color<string> = internal.isColor
+export const isColor: (u: unknown) => u is Color<Var.Any> = internal.isColor
 
 /**
  * Creates an `oklch(...)` color from three channel expressions: lightness
@@ -55,15 +64,19 @@ export const isColor: (u: unknown) => u is Color<string> = internal.isColor
  * @param lightness - The lightness channel.
  * @param chroma - The chroma channel.
  * @param hue - The hue channel, in degrees.
- * @returns A `Color` with the channels' references unioned.
+ * @returns A `Color` with the channels' variables unioned.
  * @example
  * ```ts
- * const accent = Color.oklch(Calc.ref('lightness'), 0.15, 220)
+ * const accent = Color.oklch(Calc.var('lightness'), 0.15, 220)
  * Color.serialize(accent) // 'oklch(var(--lightness) 0.15 220)'
  * ```
  * @since 0.1.0
  */
-export const oklch: <L extends string = never, C extends string = never, H extends string = never>(
+export const oklch: <
+  L extends Var.Any = never,
+  C extends Var.Any = never,
+  H extends Var.Any = never,
+>(
   lightness: Input<L> | None,
   chroma: Input<C> | None,
   hue: Input<H> | None,
@@ -81,7 +94,7 @@ export const oklch: <L extends string = never, C extends string = never, H exten
  * @param red - The red channel.
  * @param green - The green channel.
  * @param blue - The blue channel.
- * @returns A `Color` with the channels' references unioned.
+ * @returns A `Color` with the channels' variables unioned.
  * @example
  * ```ts
  * const brand = Color.srgb(0.18, 0.34, 0.78)
@@ -89,7 +102,11 @@ export const oklch: <L extends string = never, C extends string = never, H exten
  * ```
  * @since 0.2.0
  */
-export const srgb: <R extends string = never, G extends string = never, B extends string = never>(
+export const srgb: <
+  R extends Var.Any = never,
+  G extends Var.Any = never,
+  B extends Var.Any = never,
+>(
   red: Input<R> | None,
   green: Input<G> | None,
   blue: Input<B> | None,
@@ -98,7 +115,7 @@ export const srgb: <R extends string = never, G extends string = never, B extend
 /**
  * Creates a named color, rendered bare: `named('rebeccapurple')`
  * serializes as `rebeccapurple`. The name is the whole value — a named
- * color has no channels, contributes no references, and binds nothing.
+ * color has no channels, contributes no variables, and binds nothing.
  *
  * That the name is one of the specification's named colors is not
  * checked, matching the library's posture on identifiers — with one
@@ -121,27 +138,98 @@ export const named: (name: string) => Color<never> = internal.named
  */
 export const transparent: Color<never> = internal.transparent
 
-/**
- * Creates a color-valued custom-property reference — `ref('accent')`
- * serializes as `var(--accent)`. Use it where a whole color is read from a
- * custom property: as a standalone value, or as the origin of a relative color
- * (`from`).
- *
- * The reference is the whole value, so it carries `name` as its one unbound
- * reference — a dependency, exactly as an unbound `Calc.ref` does — but has no
- * channels. `bind` substitutes channel expressions, not whole colors, so it
- * leaves a color reference in place; the browser resolves it from the cascade.
- *
- * @param name - The custom-property name, without the `--` prefix. Must be non-empty.
- * @returns A `Color` with `name` as its one unbound reference.
- * @throws `Error` when `name` is empty.
- * @example
- * ```ts
- * Color.serialize(Color.ref('accent')) // 'var(--accent)'
- * ```
- * @since 0.2.0
- */
-export const ref: <Name extends string>(name: Name) => Color<Name> = internal.ref
+// The identities a read contributes, flattened: the read's own, then its
+// fallback chain's — a Color fallback hands over its Vars, a nested read
+// recurses, literal text contributes nothing.
+type ReadVars<V> =
+  V extends Var.Var<infer N, infer T, infer F> ? Var.Var<N, T> | ReadFallbackVars<F> : never
+type ReadFallbackVars<F> = F extends Color<infer W> ? W : F extends Var.Any ? ReadVars<F> : never
+
+// The lift's admission rules, as a guard the read parameter intersects —
+// `unknown` for a valid read, a string-literal error type otherwise. The
+// `Type` slot's `unknown` top makes exclusion inexpressible as a
+// constraint (calc's `ReadGuard` carries the derivation pointer), so the
+// rules are checked here: undeclared and color-declared reads lift,
+// calc-declared ones do not, and every fallback in the chain must be
+// color-valued (literal text coerces through `named`, so CSS-wide
+// keywords are rejected at runtime).
+type ReadGuard<V> =
+  V extends Var.Var<string, infer T, infer F>
+    ? [unknown] extends [T]
+      ? FallbackGuard<F>
+      : T extends Color<Var.Any>
+        ? FallbackGuard<F>
+        : 'this read is declared inside calc: a numeric read lifts with Calc.var'
+    : never
+
+type FallbackGuard<F> = [F] extends [undefined]
+  ? unknown
+  : F extends string
+    ? unknown
+    : F extends Color<Var.Any>
+      ? unknown
+      : F extends Var.Var<string, infer T2, infer F2>
+        ? [unknown] extends [T2]
+          ? FallbackGuard<F2>
+          : T2 extends Color<Var.Any>
+            ? FallbackGuard<F2>
+            : 'a calc-declared read cannot fall back inside a color'
+        : 'a color fallback is a Color, color text, or a Var read'
+
+const _var: {
+  /**
+   * Creates a color-valued read of a CSS variable — `Color.var('accent')`
+   * serializes as `var(--accent)`. Use it where a whole color is read from
+   * a custom property: as a standalone value, or as the origin of a
+   * relative color (`from`). Exported as `var` (`Color.var('accent')`)
+   * because `var` is reserved in declaration position.
+   *
+   * The read is the whole value, so it carries `name` as its one unbound
+   * variable — a dependency, exactly as an unbound `Calc.var` is — but has
+   * no channels. `bind` substitutes channel expressions, not whole colors,
+   * so it leaves a color variable in place; the browser resolves it from
+   * the cascade.
+   *
+   * Sugar for the read overload: `Color.var('accent')` is
+   * `Color.var(Var.of('accent'))`.
+   *
+   * @param name - The variable name, without the `--` prefix. Must be non-empty.
+   * @returns A `Color` with `name` as its one unbound variable.
+   * @throws `Error` when `name` is empty.
+   * @example
+   * ```ts
+   * Color.serialize(Color.var('accent')) // 'var(--accent)'
+   * ```
+   * @since 0.2.0
+   */
+  <Name extends string>(name: Name): Color<Var.Var<Name>>
+  /**
+   * Lifts a `Var` read into a color-valued expression. A fallback-carrying
+   * read renders its fallback (`var(--accent, red)`), which must be
+   * color-valued here — a `Color`, literal color text, or another such
+   * read, recursively. Anything else is a type error at this lift, backed
+   * by a runtime check.
+   *
+   * The returned color's `Vars` unions the read's identity with its
+   * fallback chain's, flattened, and every name joins the dependency
+   * report. As with the bare form, `bind` leaves the read itself in place
+   * (channel substitution cannot produce a whole color), though it does
+   * substitute inside a fallback's channels.
+   *
+   * @param read - The read to lift, from `Var.of` or `Var.color` (optionally through `Var.fallback`).
+   * @returns A `Color` reading the read's name, with its fallback chain's reads unioned in.
+   * @throws `Error` when the read is calc-declared, or its fallback chain holds anything but colors, color text, and reads.
+   * @example
+   * ```ts
+   * const accent = Var.of('accent')
+   * Color.serialize(Color.var(accent.pipe(Var.fallback('rebeccapurple'))))
+   * // 'var(--accent, rebeccapurple)'
+   * ```
+   * @since 0.4.0
+   */
+  <V extends Var.Any>(read: V & ReadGuard<V>): Color<ReadVars<V>>
+} = internal.ref
+export { _var as var }
 
 /**
  * Creates a scheme-conditional `light-dark(...)` color: the browser uses
@@ -156,7 +244,7 @@ export const ref: <Name extends string>(name: Name) => Color<Name> = internal.re
  *
  * @param light - The color used under the light scheme.
  * @param dark - The color used under the dark scheme.
- * @returns A `Color` with both arms' references unioned.
+ * @returns A `Color` with both arms' variables unioned.
  * @example
  * ```ts
  * const accent = Color.lightDark(Color.srgb(0.85, 0.3, 0.4), Color.srgb(0.95, 0.5, 0.55))
@@ -164,7 +252,7 @@ export const ref: <Name extends string>(name: Name) => Color<Name> = internal.re
  * ```
  * @since 0.2.0
  */
-export const lightDark: <A extends string = never, B extends string = never>(
+export const lightDark: <A extends Var.Any = never, B extends Var.Any = never>(
   light: Color<A>,
   dark: Color<B>,
 ) => Color<A | B> = internal.lightDark
@@ -172,9 +260,9 @@ export const lightDark: <A extends string = never, B extends string = never>(
 // A mix arm: a bare color, or a [color, weight] tuple. A bare number weight
 // reads as a percent; a `Percentage` expression carries an annotated or
 // computed one, and a plain number-kind `Calc` is rejected.
-type MixArm<C extends string, P extends string> =
+type MixArm<C extends Var.Any, P extends Var.Any> =
   | Color<C>
-  | readonly [Color<C>, number | Calc<P, 'percentage', unknown>]
+  | readonly [Color<C>, number | Calc<P, Unit.Percentage, unknown>]
 
 /**
  * Creates a `color-mix(...)`: the browser mixes `color1` and `color2` in the
@@ -196,12 +284,12 @@ type MixArm<C extends string, P extends string> =
  * defaulting to `50%`, weights off `100%` rescaling with an alpha multiplier),
  * which is computed-value behavior the browser owns. Like every `Color`, a mix
  * binds and serializes but does not solve, and each arm and each percentage
- * contributes its references to the result.
+ * contributes its variables to the result.
  *
  * @param space - The interpolation `ColorSpace`; a polar one may be followed by a `HueInterpolation`.
  * @param color1 - The first color, or a `[color, percentage]` tuple weighting it.
  * @param color2 - The second color, or a `[color, percentage]` tuple weighting it.
- * @returns A `Color` unioning both arms' and both percentages' references.
+ * @returns A `Color` unioning both arms' and both percentages' variables.
  * @example
  * ```ts
  * Color.serialize(Color.mix(ColorSpace.oklch, Color.named('red'), Color.named('blue')))
@@ -215,20 +303,20 @@ type MixArm<C extends string, P extends string> =
  */
 export const mix: {
   <
-    C1 extends string = never,
-    P1 extends string = never,
-    C2 extends string = never,
-    P2 extends string = never,
+    C1 extends Var.Any = never,
+    P1 extends Var.Any = never,
+    C2 extends Var.Any = never,
+    P2 extends Var.Any = never,
   >(
     space: ColorSpace,
     color1: MixArm<C1, P1>,
     color2: MixArm<C2, P2>,
   ): Color<C1 | P1 | C2 | P2>
   <
-    C1 extends string = never,
-    P1 extends string = never,
-    C2 extends string = never,
-    P2 extends string = never,
+    C1 extends Var.Any = never,
+    P1 extends Var.Any = never,
+    C2 extends Var.Any = never,
+    P2 extends Var.Any = never,
   >(
     space: PolarSpace,
     hue: HueInterpolation,
@@ -240,17 +328,17 @@ export const mix: {
 /**
  * A channel slot of a relative color: a bare number, `Keyword.none`, or a
  * `Calc` number expression. `Channels` is the set of origin-channel keyword
- * brands (`Channel`) the expression may read — the space's own channels — so a
- * keyword from another color space (`Channel.R` in an `oklch` slot) is a
- * compile error. A plain expression (a constant, a `Calc.ref`, a `clamp`)
+ * brands (`ChannelIdent`) the expression may read — the space's own channels —
+ * so a keyword from another color space (`Channel.R` in an `oklch` slot) is a
+ * compile error. A plain expression (a constant, a `Calc.var`, a `clamp`)
  * carries no channel keyword and fits any slot.
  *
  * @since 0.2.0
  */
-export type RelativeChannel<Refs extends string, Channels> =
+export type RelativeChannel<Vars extends Var.Any, Channels> =
   | number
   | None
-  | Calc<Refs, 'number', Channels>
+  | Calc<Vars, Unit.None, Channels>
 
 // The channel-keyword brands a `ColorSpace` admits, extracted for scoping.
 type ChannelsOf<Space> = Space extends ColorSpace<infer Channels> ? Channels : never
@@ -270,32 +358,32 @@ type ChannelsOf<Space> = Space extends ColorSpace<infer Channels> ? Channels : n
  * `calc()` when arithmetic and bare when a lone keyword, and may be
  * `Keyword.none`. A supplied `alpha` renders after a slash
  * (`/ calc(alpha * 0.5)`); omitted, the origin's alpha carries through. The
- * origin's own references union into the result; the channel keywords
+ * origin's own variables union into the result; the channel keywords
  * contribute none, since the browser resolves them from the origin.
  *
- * @param origin - The color to derive from — any `Color`, commonly a `ref`.
+ * @param origin - The color to derive from — any `Color`, commonly a `var`.
  * @param space - The destination `ColorSpace`, fixing the function form and the channels in scope.
  * @param channel1 - The first channel (`l`/`r`), in the space's order.
  * @param channel2 - The second channel (`c`/`g`).
  * @param channel3 - The third channel (`h`/`b`).
  * @param alpha - The optional alpha channel; omitted, the origin's alpha is kept.
- * @returns A `Color` unioning the origin's and the channels' references.
+ * @returns A `Color` unioning the origin's and the channels' variables.
  * @example
  * ```ts
- * const hover = Color.from(Color.ref('accent'), ColorSpace.oklch, Calc.multiply(Channel.L, 0.8), Channel.C, Channel.H)
+ * const hover = Color.from(Color.var('accent'), ColorSpace.oklch, Calc.multiply(Channel.L, 0.8), Channel.C, Channel.H)
  * Color.serialize(hover) // 'oklch(from var(--accent) calc(l * 0.8) c h)'
- * const faded = Color.from(Color.ref('brand'), ColorSpace.srgb, Channel.R, Channel.G, Channel.B, Calc.multiply(Channel.Alpha, 0.5))
+ * const faded = Color.from(Color.var('brand'), ColorSpace.srgb, Channel.R, Channel.G, Channel.B, Calc.multiply(Channel.Alpha, 0.5))
  * Color.serialize(faded) // 'color(from var(--brand) srgb r g b / calc(alpha * 0.5))'
  * ```
  * @since 0.2.0
  */
 export const from: <
-  O extends string = never,
+  O extends Var.Any = never,
   Space extends ColorSpace = ColorSpace,
-  C1 extends string = never,
-  C2 extends string = never,
-  C3 extends string = never,
-  A extends string = never,
+  C1 extends Var.Any = never,
+  C2 extends Var.Any = never,
+  C3 extends Var.Any = never,
+  A extends Var.Any = never,
 >(
   origin: Color<O>,
   space: Space,
@@ -309,28 +397,28 @@ export const bind: {
   /**
    * Returns a function that binds the given names in a color's channels.
    *
-   * @param bindings - Reference names to values or expressions.
-   * @returns A function replacing bound references in its argument.
+   * @param bindings - Variable names to values or expressions.
+   * @returns A function replacing bound variables in its argument.
    * @since 0.1.0
    */
   <const B extends Bindings>(
     bindings: B,
-  ): <Refs extends string>(color: Color<Refs>) => Color<ApplyBindings<Refs, B>>
+  ): <Vars extends Var.Any>(color: Color<Vars>) => Color<ApplyBindings<Vars, B>>
   /**
-   * Replaces references in the color's channels with values or other
+   * Replaces variables in the color's channels with values or other
    * expressions, re-folding constant subtrees. Semantics match
-   * `Calc.bind`: unreferenced names and `undefined` values are ignored,
-   * and expression-valued bindings contribute their own references.
+   * `Calc.bind`: unread names and `undefined` values are ignored, and
+   * expression-valued bindings contribute their own variables.
    *
    * @param color - The color to bind.
-   * @param bindings - Reference names to values or expressions.
+   * @param bindings - Variable names to values or expressions.
    * @returns The bound color.
    * @since 0.1.0
    */
-  <Refs extends string, const B extends Bindings>(
-    color: Color<Refs>,
+  <Vars extends Var.Any, const B extends PartialBindings<Vars>>(
+    color: Color<Vars>,
     bindings: B,
-  ): Color<ApplyBindings<Refs, B>>
+  ): Color<ApplyBindings<Vars, B>>
 } = internal.bind
 
 /**
@@ -347,47 +435,48 @@ export const bind: {
  * @returns Deterministic CSS text.
  * @example
  * ```ts
- * const surface = Color.oklch(Calc.add(Calc.ref('l'), 0.1), 0.04, 250)
+ * const surface = Color.oklch(Calc.add(Calc.var('l'), 0.1), 0.04, 250)
  * Color.serialize(surface) // 'oklch(calc(var(--l) + 0.1) 0.04 250)'
  * ```
  * @since 0.1.0
  */
-export const serialize: <Refs extends string>(
-  color: Color<Refs>,
-  options?: SerializeOptions<Refs>,
+export const serialize: <Vars extends Var.Any>(
+  color: Color<Vars>,
+  options?: SerializeOptions<Vars>,
 ) => string = internal.serialize
 
 /**
- * The color's unbound reference names, unioned across channels.
+ * The color's unbound variable names, unioned across channels.
  *
  * @param color - The color to inspect.
- * @returns The set of unbound reference names.
+ * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const refs: <Refs extends string>(color: Color<Refs>) => ReadonlySet<Refs> = internal.refs
+export const vars: <Vars extends Var.Any>(color: Color<Vars>) => ReadonlySet<Var.Name<Vars>> =
+  internal.refs
 
 /**
  * The origin-channel keyword tokens the color reads — the `Channel` keywords a
  * relative color's channels reference (`l`, `c`, `h`, ...), gathered across its
  * channels and any nested colors. Empty for a color with no relative parts.
  *
- * The `Color` companion to `Calc.channels`, and the mirror of `refs`: where
- * `refs` reports the custom properties a color depends on, `channels` reports
+ * The `Color` companion to `Calc.idents`, and the mirror of `vars`: where
+ * `vars` reports the custom properties a color depends on, `channels` reports
  * the origin channels a relative color reads. They are disjoint — a channel
- * keyword is never a reference — so a channel token never appears in `refs` nor
+ * keyword is never a variable — so a channel token never appears in `vars` nor
  * reaches a `Stylesheet`'s dependency report.
  *
  * @param color - The color to inspect.
  * @returns The set of channel-keyword tokens the color reads.
  * @example
  * ```ts
- * const hover = Color.from(Color.ref('accent'), ColorSpace.oklch, Calc.multiply(Channel.L, 0.8), Channel.C, Channel.H)
+ * const hover = Color.from(Color.var('accent'), ColorSpace.oklch, Calc.multiply(Channel.L, 0.8), Channel.C, Channel.H)
  * Color.channels(hover) // Set { 'l', 'c', 'h' }
- * Color.refs(hover) // Set { 'accent' }
+ * Color.vars(hover) // Set { 'accent' }
  * ```
  * @since 0.2.0
  */
-export const channels: (color: Color<string>) => ReadonlySet<string> = internal.channels
+export const channels: (color: Color<Var.Any>) => ReadonlySet<string> = internal.channels
 
 export const equals: {
   /**
@@ -397,7 +486,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: Color<string>): (self: Color<string>) => boolean
+  (that: Color<Var.Any>): (self: Color<Var.Any>) => boolean
   /**
    * Structural equality over colors: channel trees compare node for node,
    * as in `Calc.equals`. Different color functions never compare equal,
@@ -408,5 +497,5 @@ export const equals: {
    * @returns `true` if the colors are structurally equal.
    * @since 0.1.0
    */
-  (self: Color<string>, that: Color<string>): boolean
+  (self: Color<Var.Any>, that: Color<Var.Any>): boolean
 } = internal.equals

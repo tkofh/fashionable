@@ -12,6 +12,7 @@
  */
 
 import type { Calc, Input } from '#calc/calc'
+import type { Var } from '#var'
 import type { HueInterpolationTypeId } from './hueInterpolation.internal.ts'
 import * as internal from './hueInterpolation.internal.ts'
 
@@ -73,25 +74,25 @@ export const decreasing: HueInterpolation<'decreasing'> = internal.decreasing
  * (at `to`). `shorter` and `longer` take the short or long arc between the hues;
  * `increasing`/`decreasing` force the direction. The result is unwrapped — it may
  * fall outside `[0, 360)`, which the browser resolves as a hue — and unions the
- * arguments' references. Drop it straight into a hue channel (`Color.oklch`).
+ * arguments' variables. Drop it straight into a hue channel (`Color.oklch`).
  *
  * @param strategy - The traversal strategy (`shorter`, `longer`, ...).
  * @param from - The start hue, in degrees: a number or a `Calc`.
  * @param to - The end hue, in degrees: a number or a `Calc`.
  * @param t - The interpolation parameter, `0` to `1`: a number or a `Calc`.
- * @returns The interpolated hue in degrees, a `Calc` unioning the arguments' references.
+ * @returns The interpolated hue in degrees, a `Calc` unioning the arguments' variables.
  * @example
  * ```ts
- * const hue = HueInterpolation.interpolate(HueInterpolation.shorter, 30, Calc.ref('to'), Calc.ref('t'))
+ * const hue = HueInterpolation.interpolate(HueInterpolation.shorter, 30, Calc.var('to'), Calc.var('t'))
  * Calc.serialize(hue) // 'calc(30 + (mod(var(--to) - 30 + 180, 360) - 180) * var(--t))'
  * Calc.serialize(HueInterpolation.interpolate(HueInterpolation.increasing, 20, 350, 0.5)) // '185'
  * ```
  * @since 0.2.0
  */
 export const interpolate: <
-  F extends string = never,
-  T extends string = never,
-  P extends string = never,
+  F extends Var.Any = never,
+  T extends Var.Any = never,
+  P extends Var.Any = never,
 >(
   strategy: HueInterpolation,
   from: Input<F>,

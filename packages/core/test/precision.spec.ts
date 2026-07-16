@@ -34,12 +34,12 @@ describe('precision', () => {
   describe('per-constant annotation', () => {
     test('an annotated constant overrides the context', () => {
       const k = Calc.of(0.8377580409572781, Precision.significant(10))
-      expect(Calc.serialize(Calc.multiply(k, Calc.ref('t')))).toBe('calc(0.837758041 * var(--t))')
+      expect(Calc.serialize(Calc.multiply(k, Calc.var('t')))).toBe('calc(0.837758041 * var(--t))')
     })
 
     test('annotated and unannotated constants coexist in one expression', () => {
       const k = Calc.of(1 / 3, Precision.significant(10))
-      const expr = Calc.add(Calc.multiply(k, Calc.ref('t')), 2 / 3)
+      const expr = Calc.add(Calc.multiply(k, Calc.var('t')), 2 / 3)
       expect(Calc.serialize(expr)).toBe('calc(0.3333333333 * var(--t) + 0.66667)')
     })
 
