@@ -852,9 +852,22 @@ export const bind: {
    */
   <const B extends Bindings>(
     bindings: B,
-  ): <A extends Top>(
-    expr: A,
-  ) => Calc<ApplyBindings<VarsOf<A>, B>, ResultOf<A>, RequiresOf<A> | BindingRequires<VarsOf<A>, B>>
+  ): // `[B] extends [unknown]` is always true (`B extends Bindings`); it wraps the
+  // return as a deferred conditional rather than a function type, so this curried
+  // overload fails TypeScript's `isGenericFunctionReturningFunction` predicate.
+  // Without the wrapper that predicate defers a data-first `bind` call sited
+  // inline in `solve`'s argument position, collapsing solve's type parameters to
+  // their constraints and rejecting a correct call. Always true — do not unwrap.
+  // The `docs/solve-inference.md` spike records the derivation.
+  [B] extends [unknown]
+    ? <A extends Top>(
+        expr: A,
+      ) => Calc<
+        ApplyBindings<VarsOf<A>, B>,
+        ResultOf<A>,
+        RequiresOf<A> | BindingRequires<VarsOf<A>, B>
+      >
+    : never
   /**
    * Replaces variables with values or other expressions. Binding is
    * partial evaluation: substituted subtrees re-fold, so binding every
