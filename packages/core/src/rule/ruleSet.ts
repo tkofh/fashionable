@@ -5,6 +5,7 @@ import type {
 import type { MediaQuery } from '#query/mediaQuery'
 import type { Selector } from '#selector/selector'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { MediaRule } from './mediaRule.ts'
 import type { RuleSetTypeId } from './ruleSet.internal.ts'
 import * as internal from './ruleSet.internal.ts'
@@ -26,7 +27,7 @@ import type { StyleRule } from './styleRule.ts'
  *
  * @since 0.1.0
  */
-export interface RuleSet<out Vars extends string = string> extends Pipeable {
+export interface RuleSet<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [RuleSetTypeId]: RuleSetTypeId
   /**
    * The block's members, in authored order.
@@ -44,7 +45,7 @@ export interface RuleSet<out Vars extends string = string> extends Pipeable {
  *
  * @since 0.1.0
  */
-export type Member<Vars extends string = string> =
+export type Member<Vars extends Var.Any = Var.Any> =
   | Declaration<Vars>
   | StyleRule<Vars>
   | MediaRule<Vars>
@@ -56,7 +57,7 @@ export type Member<Vars extends string = string> =
  *
  * @since 0.1.0
  */
-export type MemberVars<M extends Member<string>> =
+export type MemberVars<M extends Member<Var.Any>> =
   M extends Declaration<infer R>
     ? R
     : M extends StyleRule<infer R>
@@ -75,7 +76,7 @@ export type MemberVars<M extends Member<string>> =
  * @returns `true` if the value is a `RuleSet`, `false` otherwise.
  * @since 0.1.0
  */
-export const isRuleSet: (u: unknown) => u is RuleSet<string> = internal.isRuleSet
+export const isRuleSet: (u: unknown) => u is RuleSet<Var.Any> = internal.isRuleSet
 
 /**
  * The empty block — the identity for `concat`.
@@ -95,7 +96,7 @@ export const empty: RuleSet<never> = internal.empty
  * @returns `true` if the block has no members.
  * @since 0.2.0
  */
-export const isEmpty: (set: RuleSet<string>) => boolean = internal.isEmpty
+export const isEmpty: (set: RuleSet<Var.Any>) => boolean = internal.isEmpty
 
 /**
  * Creates a rule set holding the given members, in the given order.
@@ -111,7 +112,7 @@ export const isEmpty: (set: RuleSet<string>) => boolean = internal.isEmpty
  * ```
  * @since 0.1.0
  */
-export const make: <Members extends ReadonlyArray<Member<string>>>(
+export const make: <Members extends ReadonlyArray<Member<Var.Any>>>(
   ...members: Members
 ) => RuleSet<MemberVars<Members[number]>> = internal.make
 
@@ -123,9 +124,9 @@ export const append: {
    * @returns A function producing the extended block.
    * @since 0.1.0
    */
-  <M extends Member<string>>(
+  <M extends Member<Var.Any>>(
     member: M,
-  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | MemberVars<M>>
+  ): <Vars extends Var.Any>(self: RuleSet<Vars>) => RuleSet<Vars | MemberVars<M>>
   /**
    * Returns a function that appends the style rule `selector { block }`
    * to its argument's block.
@@ -135,10 +136,10 @@ export const append: {
    * @returns A function producing the extended block.
    * @since 0.1.0
    */
-  <B extends string>(
+  <B extends Var.Any>(
     selector: Selector,
     block: RuleSet<B>,
-  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | B>
+  ): <Vars extends Var.Any>(self: RuleSet<Vars>) => RuleSet<Vars | B>
   /**
    * Returns a function that appends the media rule `@media query { block }`
    * to its argument's block.
@@ -148,10 +149,10 @@ export const append: {
    * @returns A function producing the extended block.
    * @since 0.1.0
    */
-  <B extends string>(
+  <B extends Var.Any>(
     query: MediaQuery,
     block: RuleSet<B>,
-  ): <Vars extends string>(self: RuleSet<Vars>) => RuleSet<Vars | B>
+  ): <Vars extends Var.Any>(self: RuleSet<Vars>) => RuleSet<Vars | B>
   /**
    * Appends a member at the end of the block. The result is a new set;
    * the original is untouched.
@@ -168,7 +169,7 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends string, M extends Member<string>>(
+  <Vars extends Var.Any, M extends Member<Var.Any>>(
     self: RuleSet<Vars>,
     member: M,
   ): RuleSet<Vars | MemberVars<M>>
@@ -187,7 +188,7 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends string, B extends string>(
+  <Vars extends Var.Any, B extends Var.Any>(
     self: RuleSet<Vars>,
     selector: Selector,
     block: RuleSet<B>,
@@ -209,7 +210,7 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends string, B extends string>(
+  <Vars extends Var.Any, B extends Var.Any>(
     self: RuleSet<Vars>,
     query: MediaQuery,
     block: RuleSet<B>,
@@ -224,7 +225,7 @@ export const concat: {
    * @returns A function producing the concatenated block.
    * @since 0.1.0
    */
-  <B extends string>(that: RuleSet<B>): <A extends string>(self: RuleSet<A>) => RuleSet<A | B>
+  <B extends Var.Any>(that: RuleSet<B>): <A extends Var.Any>(self: RuleSet<A>) => RuleSet<A | B>
   /**
    * Concatenates two blocks: `self`'s members followed by `that`'s, order
    * preserved on both sides. No deduplication happens here — repeated
@@ -235,7 +236,7 @@ export const concat: {
    * @returns The concatenated block, with both sides' variable names unioned.
    * @since 0.1.0
    */
-  <A extends string, B extends string>(self: RuleSet<A>, that: RuleSet<B>): RuleSet<A | B>
+  <A extends Var.Any, B extends Var.Any>(self: RuleSet<A>, that: RuleSet<B>): RuleSet<A | B>
 } = internal.concat
 
 export const forSelector: {
@@ -247,7 +248,7 @@ export const forSelector: {
    * @returns A function that takes a block and returns the style rule applying it to `selector`.
    * @since 0.2.0
    */
-  (selector: Selector): <Vars extends string>(self: RuleSet<Vars>) => StyleRule<Vars>
+  (selector: Selector): <Vars extends Var.Any>(self: RuleSet<Vars>) => StyleRule<Vars>
   /**
    * Lifts a block into a style rule applying to `selector` — sugar for
    * `StyleRule.make(selector, self)` with the arguments flipped, so a
@@ -266,7 +267,7 @@ export const forSelector: {
    * ```
    * @since 0.2.0
    */
-  <Vars extends string>(self: RuleSet<Vars>, selector: Selector): StyleRule<Vars>
+  <Vars extends Var.Any>(self: RuleSet<Vars>, selector: Selector): StyleRule<Vars>
 } = internal.forSelector
 
 export const forMediaQuery: {
@@ -278,7 +279,7 @@ export const forMediaQuery: {
    * @returns A function that takes a block and returns the media rule gating it by `query`.
    * @since 0.2.0
    */
-  (query: MediaQuery): <Vars extends string>(self: RuleSet<Vars>) => MediaRule<Vars>
+  (query: MediaQuery): <Vars extends Var.Any>(self: RuleSet<Vars>) => MediaRule<Vars>
   /**
    * Lifts a block into a nested `@media` rule gated by `query` — sugar
    * for `MediaRule.make(query, self)` with the arguments flipped, so a
@@ -297,7 +298,7 @@ export const forMediaQuery: {
    * ```
    * @since 0.2.0
    */
-  <Vars extends string>(self: RuleSet<Vars>, query: MediaQuery): MediaRule<Vars>
+  <Vars extends Var.Any>(self: RuleSet<Vars>, query: MediaQuery): MediaRule<Vars>
 } = internal.forMediaQuery
 
 /**
@@ -308,7 +309,8 @@ export const forMediaQuery: {
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends string>(set: RuleSet<Vars>) => ReadonlySet<Vars> = internal.refs
+export const vars: <Vars extends Var.Any>(set: RuleSet<Vars>) => ReadonlySet<Var.Name<Vars>> =
+  internal.refs
 
 /**
  * Options for `render`, extending `Declaration.RenderOptions` (and
@@ -346,7 +348,7 @@ export interface RenderOptions extends DeclarationRenderOptions {
  * ```
  * @since 0.1.0
  */
-export const render: (set: RuleSet<string>, options?: RenderOptions) => string = internal.render
+export const render: (set: RuleSet<Var.Any>, options?: RenderOptions) => string = internal.render
 
 export const equals: {
   /**
@@ -356,7 +358,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: RuleSet<string>): (self: RuleSet<string>) => boolean
+  (that: RuleSet<Var.Any>): (self: RuleSet<Var.Any>) => boolean
   /**
    * Structural equality over members, in order. Order participates —
    * `make(a, b)` and `make(b, a)` are different blocks, because they
@@ -367,5 +369,5 @@ export const equals: {
    * @returns `true` if the blocks are structurally equal.
    * @since 0.1.0
    */
-  (self: RuleSet<string>, that: RuleSet<string>): boolean
+  (self: RuleSet<Var.Any>, that: RuleSet<Var.Any>): boolean
 } = internal.equals

@@ -1,5 +1,6 @@
 import type { MediaQuery } from '#query/mediaQuery'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { MediaRuleTypeId } from './mediaRule.internal.ts'
 import * as internal from './mediaRule.internal.ts'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.ts'
@@ -17,7 +18,7 @@ import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.t
  *
  * @since 0.1.0
  */
-export interface MediaRule<out Vars extends string = string> extends Pipeable {
+export interface MediaRule<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [MediaRuleTypeId]: MediaRuleTypeId
   /**
    * The media query gating the block.
@@ -39,7 +40,7 @@ export interface MediaRule<out Vars extends string = string> extends Pipeable {
  * @returns `true` if the value is a `MediaRule`, `false` otherwise.
  * @since 0.1.0
  */
-export const isMediaRule: (u: unknown) => u is MediaRule<string> = internal.isMediaRule
+export const isMediaRule: (u: unknown) => u is MediaRule<Var.Any> = internal.isMediaRule
 
 /**
  * Creates a nested `@media` rule.
@@ -56,7 +57,7 @@ export const isMediaRule: (u: unknown) => u is MediaRule<string> = internal.isMe
  * ```
  * @since 0.1.0
  */
-export const make: <Vars extends string>(
+export const make: <Vars extends Var.Any>(
   query: MediaQuery,
   block: RuleSet<Vars>,
 ) => MediaRule<Vars> = internal.make
@@ -69,7 +70,8 @@ export const make: <Vars extends string>(
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends string>(rule: MediaRule<Vars>) => ReadonlySet<Vars> = internal.refs
+export const vars: <Vars extends Var.Any>(rule: MediaRule<Vars>) => ReadonlySet<Var.Name<Vars>> =
+  internal.refs
 
 /**
  * Options for `render` — the block renderers' shared shape,
@@ -101,7 +103,7 @@ export type RenderOptions = RuleSetRenderOptions
  * ```
  * @since 0.1.0
  */
-export const render: (rule: MediaRule<string>, options?: RenderOptions) => string = internal.render
+export const render: (rule: MediaRule<Var.Any>, options?: RenderOptions) => string = internal.render
 
 export const equals: {
   /**
@@ -111,7 +113,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: MediaRule<string>): (self: MediaRule<string>) => boolean
+  (that: MediaRule<Var.Any>): (self: MediaRule<Var.Any>) => boolean
   /**
    * Structural equality: queries compare as in `MediaQuery.equals`
    * (canonically ordered features), blocks as in `RuleSet.equals`
@@ -122,5 +124,5 @@ export const equals: {
    * @returns `true` if the rules are structurally equal.
    * @since 0.1.0
    */
-  (self: MediaRule<string>, that: MediaRule<string>): boolean
+  (self: MediaRule<Var.Any>, that: MediaRule<Var.Any>): boolean
 } = internal.equals

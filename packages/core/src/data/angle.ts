@@ -13,6 +13,7 @@
 
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
+import type { Var } from '#var'
 import * as internal from './angle.internal.ts'
 import type * as Unit from './unit.ts'
 
@@ -28,7 +29,7 @@ import type * as Unit from './unit.ts'
  *
  * @since 0.2.0
  */
-export type Angle<Vars extends string = string> = Calc<Vars, Unit.Angle, unknown>
+export type Angle<Vars extends Var.Any = Var.Any> = Calc<Vars, Unit.Angle, unknown>
 
 /**
  * An angle in `rad` (radians). Radians are the numeric measure of an angle, so

@@ -4,6 +4,7 @@ import type { RenderOptions as RuleSetRenderOptions, RuleSet } from '#rule/ruleS
 import type { StyleRule } from '#rule/styleRule'
 import type { Selector } from '#selector/selector'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { StylesheetTypeId } from './stylesheet.internal.ts'
 import * as internal from './stylesheet.internal.ts'
 
@@ -27,7 +28,7 @@ import * as internal from './stylesheet.internal.ts'
  *
  * @since 0.1.0
  */
-export interface Stylesheet<out Vars extends string = string> extends Pipeable {
+export interface Stylesheet<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [StylesheetTypeId]: StylesheetTypeId
   /**
    * The sheet's nodes, in authored order, structurally distinct.
@@ -46,7 +47,7 @@ export interface Stylesheet<out Vars extends string = string> extends Pipeable {
  *
  * @since 0.1.0
  */
-export type Node<Vars extends string = string> = StyleRule<Vars> | FontFaceRule | PropertyRule
+export type Node<Vars extends Var.Any = Var.Any> = StyleRule<Vars> | FontFaceRule | PropertyRule
 
 /**
  * The unbound variable names of a `Node`, or the union of them for a
@@ -57,7 +58,7 @@ export type Node<Vars extends string = string> = StyleRule<Vars> | FontFaceRule 
  *
  * @since 0.1.0
  */
-export type NodeVars<N extends Node<string>> = N extends StyleRule<infer R> ? R : never
+export type NodeVars<N extends Node<Var.Any>> = N extends StyleRule<infer R> ? R : never
 
 /**
  * Checks if a value is a `Stylesheet`.
@@ -69,7 +70,7 @@ export type NodeVars<N extends Node<string>> = N extends StyleRule<infer R> ? R 
  * @returns `true` if the value is a `Stylesheet`, `false` otherwise.
  * @since 0.1.0
  */
-export const isStylesheet: (u: unknown) => u is Stylesheet<string> = internal.isStylesheet
+export const isStylesheet: (u: unknown) => u is Stylesheet<Var.Any> = internal.isStylesheet
 
 /**
  * The empty stylesheet — the identity for `merge`.
@@ -89,7 +90,7 @@ export const empty: Stylesheet<never> = internal.empty
  * @returns `true` if the sheet has no nodes.
  * @since 0.2.0
  */
-export const isEmpty: (sheet: Stylesheet<string>) => boolean = internal.isEmpty
+export const isEmpty: (sheet: Stylesheet<Var.Any>) => boolean = internal.isEmpty
 
 /**
  * Creates a stylesheet holding the given nodes, in the given order, with
@@ -109,7 +110,7 @@ export const isEmpty: (sheet: Stylesheet<string>) => boolean = internal.isEmpty
  * ```
  * @since 0.1.0
  */
-export const make: <Nodes extends ReadonlyArray<Node<string>>>(
+export const make: <Nodes extends ReadonlyArray<Node<Var.Any>>>(
   ...nodes: Nodes
 ) => Stylesheet<NodeVars<Nodes[number]>> = internal.make
 
@@ -121,9 +122,9 @@ export const append: {
    * @returns A function producing the extended sheet.
    * @since 0.1.0
    */
-  <N extends Node<string>>(
+  <N extends Node<Var.Any>>(
     node: N,
-  ): <Vars extends string>(self: Stylesheet<Vars>) => Stylesheet<Vars | NodeVars<N>>
+  ): <Vars extends Var.Any>(self: Stylesheet<Vars>) => Stylesheet<Vars | NodeVars<N>>
   /**
    * Returns a function that appends the style rule `selector { block }`
    * to its argument's sheet.
@@ -133,10 +134,10 @@ export const append: {
    * @returns A function producing the extended sheet.
    * @since 0.1.0
    */
-  <B extends string>(
+  <B extends Var.Any>(
     selector: Selector,
     block: RuleSet<B>,
-  ): <Vars extends string>(self: Stylesheet<Vars>) => Stylesheet<Vars | B>
+  ): <Vars extends Var.Any>(self: Stylesheet<Vars>) => Stylesheet<Vars | B>
   /**
    * Appends a node at the end of the sheet — unless a structurally equal
    * node is already present, in which case the same sheet comes back
@@ -148,7 +149,7 @@ export const append: {
    * @returns The extended sheet, with the node's variable names joined in.
    * @since 0.1.0
    */
-  <Vars extends string, N extends Node<string>>(
+  <Vars extends Var.Any, N extends Node<Var.Any>>(
     self: Stylesheet<Vars>,
     node: N,
   ): Stylesheet<Vars | NodeVars<N>>
@@ -171,7 +172,7 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends string, B extends string>(
+  <Vars extends Var.Any, B extends Var.Any>(
     self: Stylesheet<Vars>,
     selector: Selector,
     block: RuleSet<B>,
@@ -187,9 +188,9 @@ export const merge: {
    * @returns A function producing the merged sheet.
    * @since 0.1.0
    */
-  <B extends string>(
+  <B extends Var.Any>(
     that: Stylesheet<B>,
-  ): <A extends string>(self: Stylesheet<A>) => Stylesheet<A | B>
+  ): <A extends Var.Any>(self: Stylesheet<A>) => Stylesheet<A | B>
   /**
    * Merges two sheets: `self`'s nodes followed by the nodes of `that`
    * not already present, order preserved on both sides — structural
@@ -212,20 +213,27 @@ export const merge: {
    * ```
    * @since 0.1.0
    */
-  <A extends string, B extends string>(self: Stylesheet<A>, that: Stylesheet<B>): Stylesheet<A | B>
+  <A extends Var.Any, B extends Var.Any>(
+    self: Stylesheet<A>,
+    that: Stylesheet<B>,
+  ): Stylesheet<A | B>
 } = internal.merge
 
 /**
  * Folds any number of sheets with `merge`, left to right — `empty` when
  * given none.
  *
+ * The element type is inferred whole and its vars extracted, so a
+ * heterogeneous array unions every sheet's reads (inferring the phantom
+ * directly would pin it to the first element's).
+ *
  * @param sheets - The sheets to fold, in order.
  * @returns The merged sheet, with every sheet's variable names unioned.
  * @since 0.1.0
  */
-export const mergeAll: <Vars extends string>(
-  sheets: ReadonlyArray<Stylesheet<Vars>>,
-) => Stylesheet<Vars> = internal.mergeAll
+export const mergeAll: <S extends Stylesheet<Var.Any>>(
+  sheets: ReadonlyArray<S>,
+) => Stylesheet<S extends Stylesheet<infer V> ? V : never> = internal.mergeAll
 
 /**
  * Options for `coalesce`.
@@ -282,7 +290,7 @@ export interface CoalesceOptions {
  * @throws `Error` in strict mode, when a pull crosses an intervening tying rule that does not provably shadow every moved declaration.
  * @since 0.1.0
  */
-export const coalesce: <Vars extends string>(
+export const coalesce: <Vars extends Var.Any>(
   sheet: Stylesheet<Vars>,
   options?: CoalesceOptions,
 ) => Stylesheet<Vars> = internal.coalesce
@@ -296,7 +304,7 @@ export const coalesce: <Vars extends string>(
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends string>(sheet: Stylesheet<Vars>) => ReadonlySet<Vars> =
+export const vars: <Vars extends Var.Any>(sheet: Stylesheet<Vars>) => ReadonlySet<Var.Name<Vars>> =
   internal.refs
 
 /**
@@ -342,7 +350,7 @@ export type RenderOptions = RuleSetRenderOptions
  * ```
  * @since 0.1.0
  */
-export const render: (sheet: Stylesheet<string>, options?: RenderOptions) => string =
+export const render: (sheet: Stylesheet<Var.Any>, options?: RenderOptions) => string =
   internal.render
 
 export const equals: {
@@ -353,7 +361,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: Stylesheet<string>): (self: Stylesheet<string>) => boolean
+  (that: Stylesheet<Var.Any>): (self: Stylesheet<Var.Any>) => boolean
   /**
    * Structural equality over nodes, in order. Order participates —
    * sheets holding the same nodes in different orders cascade
@@ -364,5 +372,5 @@ export const equals: {
    * @returns `true` if the sheets are structurally equal.
    * @since 0.1.0
    */
-  (self: Stylesheet<string>, that: Stylesheet<string>): boolean
+  (self: Stylesheet<Var.Any>, that: Stylesheet<Var.Any>): boolean
 } = internal.equals

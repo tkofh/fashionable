@@ -23,17 +23,18 @@ import { render as renderQuery } from '#query/mediaQuery.internal'
 import type { Selector } from '#selector/selector'
 import { render as renderSelector } from '#selector/selector.internal'
 import { invariant } from '#util'
+import type { AnyVar } from '#var/var.internal'
 import type { MediaRule } from './mediaRule.ts'
 import type { Member, RuleSet } from './ruleSet.ts'
 import type { StyleRule } from './styleRule.ts'
 
 /** @internal */
 export const refSetOf = (
-  value: RuleSet<string> | StyleRule<string> | MediaRule<string>,
+  value: RuleSet<AnyVar> | StyleRule<AnyVar> | MediaRule<AnyVar>,
 ): ReadonlySet<string> => (value as unknown as { readonly refSet: ReadonlySet<string> }).refSet
 
 /** @internal */
-export const memberRefs = (member: Member<string>): ReadonlySet<string> =>
+export const memberRefs = (member: Member<AnyVar>): ReadonlySet<string> =>
   isDeclaration(member) ? declarationRefsOf(member) : refSetOf(member)
 
 /** @internal */
@@ -56,8 +57,8 @@ export const resolveRenderOptions = (options?: {
 
 /** @internal */
 export const requireMediaRule = (
-  member: StyleRule<string> | MediaRule<string>,
-): MediaRule<string> => {
+  member: StyleRule<AnyVar> | MediaRule<AnyVar>,
+): MediaRule<AnyVar> => {
   invariant(
     'query' in member,
     'A nested style rule has no v1 rendering — selector composition is a later extension; lift the rule to the top level of the stylesheet',
@@ -73,7 +74,7 @@ export const requireMediaRule = (
  * @internal
  */
 export const blockBodyLines = (
-  block: RuleSet<string>,
+  block: RuleSet<AnyVar>,
   depth: number,
   context: RenderContext,
 ): Array<string> => {
@@ -97,7 +98,7 @@ export const blockBodyLines = (
 /** @internal */
 export const renderStyleRuleBlock = (
   selector: Selector,
-  block: RuleSet<string>,
+  block: RuleSet<AnyVar>,
   context: RenderContext,
 ): string => {
   const lines = blockBodyLines(block, 1, context)
@@ -107,7 +108,7 @@ export const renderStyleRuleBlock = (
 /** @internal */
 export const renderMediaRuleBlock = (
   query: MediaQuery,
-  block: RuleSet<string>,
+  block: RuleSet<AnyVar>,
   context: RenderContext,
 ): string => {
   const lines = blockBodyLines(block, 1, context)

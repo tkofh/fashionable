@@ -8,6 +8,7 @@ import { MediaQuery } from '#query'
 import { RuleSet, StyleRule } from '#rule'
 import { Selector } from '#selector'
 import { Stylesheet } from '#stylesheet'
+import type { Var } from '#var'
 
 // The JS reference for the gamut tent below — the same closed form the
 // expression tree encodes, evaluated with Math directly.
@@ -58,7 +59,7 @@ describe('consumers', () => {
       Calc.multiply(Calc.subtract(1, gate), rising),
       Calc.multiply(gate, falling),
     )
-    const redTent: Calc.Calc<'lightness'> = Calc.bind(tent, {
+    const redTent: Calc.Calc<Var.Var<'lightness'>> = Calc.bind(tent, {
       apexL: 0.654,
       apexC: 0.29307,
       tentK: -0.07636,

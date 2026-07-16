@@ -22,22 +22,24 @@ import type { Selector } from '#selector/selector'
 import { render as renderSelector, specificity } from '#selector/selector.internal'
 import { compare as compareSpecificity } from '#selector/specificity.internal'
 import { dual, invariant, Pipeable } from '#util'
+import type { Name as VarName } from '#var/var'
+import type { AnyVar } from '#var/var.internal'
 import type { CoalesceOptions, Node, NodeVars, RenderOptions, Stylesheet } from './stylesheet.ts'
 
 export const StylesheetTypeId = Symbol.for('fashionable/stylesheet')
 export type StylesheetTypeId = typeof StylesheetTypeId
 
-const nodeRefs = (node: Node<string>): ReadonlySet<string> =>
+const nodeRefs = (node: Node<AnyVar>): ReadonlySet<string> =>
   isStyleRule(node) ? refSetOf(node) : EMPTY_REFS
 
-class StylesheetImpl extends Pipeable implements Stylesheet<string>, Equal.Equal {
+class StylesheetImpl extends Pipeable implements Stylesheet<AnyVar>, Equal.Equal {
   readonly [StylesheetTypeId]: StylesheetTypeId = StylesheetTypeId
 
-  readonly nodes: ReadonlyArray<Node<string>>
+  readonly nodes: ReadonlyArray<Node<AnyVar>>
   readonly refSet: ReadonlySet<string>
   #hash: number | undefined
 
-  constructor(nodes: ReadonlyArray<Node<string>>) {
+  constructor(nodes: ReadonlyArray<Node<AnyVar>>) {
     super()
     this.nodes = nodes
     this.refSet = unionRefs(...nodes.map(nodeRefs))
@@ -72,13 +74,13 @@ class StylesheetImpl extends Pipeable implements Stylesheet<string>, Equal.Equal
 }
 
 /** @internal */
-export const isStylesheet = (u: unknown): u is Stylesheet<string> =>
+export const isStylesheet = (u: unknown): u is Stylesheet<AnyVar> =>
   typeof u === 'object' && u !== null && StylesheetTypeId in u
 
 const appendDistinct = (
-  kept: Array<Node<string>>,
-  buckets: Map<number, Array<Node<string>>>,
-  node: Node<string>,
+  kept: Array<Node<AnyVar>>,
+  buckets: Map<number, Array<Node<AnyVar>>>,
+  node: Node<AnyVar>,
 ): boolean => {
   const hash = Equal.hash(node)
   const bucket = buckets.get(hash)
@@ -94,9 +96,9 @@ const appendDistinct = (
   return true
 }
 
-const distinct = (nodes: ReadonlyArray<Node<string>>): Array<Node<string>> => {
-  const kept: Array<Node<string>> = []
-  const buckets = new Map<number, Array<Node<string>>>()
+const distinct = (nodes: ReadonlyArray<Node<AnyVar>>): Array<Node<AnyVar>> => {
+  const kept: Array<Node<AnyVar>> = []
+  const buckets = new Map<number, Array<Node<AnyVar>>>()
   for (const node of nodes) {
     appendDistinct(kept, buckets, node)
   }
@@ -107,10 +109,10 @@ const distinct = (nodes: ReadonlyArray<Node<string>>): Array<Node<string>> => {
 export const empty: Stylesheet<never> = new StylesheetImpl([]) as unknown as Stylesheet<never>
 
 /** @internal */
-export const isEmpty = (sheet: Stylesheet<string>): boolean => sheet.nodes.length === 0
+export const isEmpty = (sheet: Stylesheet<AnyVar>): boolean => sheet.nodes.length === 0
 
 /** @internal */
-export function make<Nodes extends ReadonlyArray<Node<string>>>(
+export function make<Nodes extends ReadonlyArray<Node<AnyVar>>>(
   ...nodes: Nodes
 ): Stylesheet<NodeVars<Nodes[number]>> {
   const kept = distinct(nodes)
@@ -119,32 +121,32 @@ export function make<Nodes extends ReadonlyArray<Node<string>>>(
   >
 }
 
-const resolveNode = (head: unknown, block: unknown): Node<string> =>
+const resolveNode = (head: unknown, block: unknown): Node<AnyVar> =>
   block === undefined
-    ? (head as Node<string>)
-    : makeStyleRule(head as Selector, block as RuleSet<string>)
+    ? (head as Node<AnyVar>)
+    : makeStyleRule(head as Selector, block as RuleSet<AnyVar>)
 
 /** @internal */
 export const append: {
-  <N extends Node<string>>(
+  <N extends Node<AnyVar>>(
     node: N,
-  ): <Vars extends string>(self: Stylesheet<Vars>) => Stylesheet<Vars | NodeVars<N>>
-  <B extends string>(
+  ): <Vars extends AnyVar>(self: Stylesheet<Vars>) => Stylesheet<Vars | NodeVars<N>>
+  <B extends AnyVar>(
     selector: Selector,
     block: RuleSet<B>,
-  ): <Vars extends string>(self: Stylesheet<Vars>) => Stylesheet<Vars | B>
-  <Vars extends string, N extends Node<string>>(
+  ): <Vars extends AnyVar>(self: Stylesheet<Vars>) => Stylesheet<Vars | B>
+  <Vars extends AnyVar, N extends Node<AnyVar>>(
     self: Stylesheet<Vars>,
     node: N,
   ): Stylesheet<Vars | NodeVars<N>>
-  <Vars extends string, B extends string>(
+  <Vars extends AnyVar, B extends AnyVar>(
     self: Stylesheet<Vars>,
     selector: Selector,
     block: RuleSet<B>,
   ): Stylesheet<Vars | B>
 } = dual(
   (args: IArguments) => isStylesheet(args[0]),
-  (self: Stylesheet<string>, head: unknown, block?: unknown): Stylesheet<string> => {
+  (self: Stylesheet<AnyVar>, head: unknown, block?: unknown): Stylesheet<AnyVar> => {
     const node = resolveNode(head, block)
     if (self.nodes.some((existing) => Equal.equals(existing, node))) {
       return self
@@ -155,19 +157,19 @@ export const append: {
 
 /** @internal */
 export const merge: {
-  <B extends string>(
+  <B extends AnyVar>(
     that: Stylesheet<B>,
-  ): <A extends string>(self: Stylesheet<A>) => Stylesheet<A | B>
-  <A extends string, B extends string>(self: Stylesheet<A>, that: Stylesheet<B>): Stylesheet<A | B>
-} = dual(2, (self: Stylesheet<string>, that: Stylesheet<string>): Stylesheet<string> => {
+  ): <A extends AnyVar>(self: Stylesheet<A>) => Stylesheet<A | B>
+  <A extends AnyVar, B extends AnyVar>(self: Stylesheet<A>, that: Stylesheet<B>): Stylesheet<A | B>
+} = dual(2, (self: Stylesheet<AnyVar>, that: Stylesheet<AnyVar>): Stylesheet<AnyVar> => {
   if (that.nodes.length === 0) {
     return self
   }
   if (self.nodes.length === 0) {
     return that
   }
-  const kept: Array<Node<string>> = []
-  const buckets = new Map<number, Array<Node<string>>>()
+  const kept: Array<Node<AnyVar>> = []
+  const buckets = new Map<number, Array<Node<AnyVar>>>()
   for (const node of self.nodes) {
     appendDistinct(kept, buckets, node)
   }
@@ -181,24 +183,22 @@ export const merge: {
 })
 
 /** @internal */
-export function mergeAll<Vars extends string>(
-  sheets: ReadonlyArray<Stylesheet<Vars>>,
-): Stylesheet<Vars> {
-  let merged: Stylesheet<string> = empty
+export function mergeAll(sheets: ReadonlyArray<Stylesheet<AnyVar>>): Stylesheet<never> {
+  let merged: Stylesheet<AnyVar> = empty
   for (const sheet of sheets) {
     merged = merge(merged, sheet)
   }
-  return merged as Stylesheet<Vars>
+  return merged as Stylesheet<never>
 }
 
 interface PendingPull {
   readonly selector: Selector
-  readonly block: RuleSet<string>
+  readonly block: RuleSet<AnyVar>
   readonly crossedIndex: number
 }
 
 interface Setter {
-  readonly declaration: Declaration<string>
+  readonly declaration: Declaration<AnyVar>
   readonly query: MediaQuery | undefined
 }
 
@@ -206,7 +206,7 @@ interface Setter {
 // meaning the declaration applies in every state. `undefined` result: the
 // block nests beyond declarations and one-level `@media` blocks, which
 // the shadow check refuses rather than reasons through.
-const settersOf = (block: RuleSet<string>): Array<Setter> | undefined => {
+const settersOf = (block: RuleSet<AnyVar>): Array<Setter> | undefined => {
   const setters: Array<Setter> = []
   for (const member of block.members) {
     if (isDeclaration(member)) {
@@ -226,14 +226,14 @@ const settersOf = (block: RuleSet<string>): Array<Setter> | undefined => {
 }
 
 const collectCrossings = (
-  kept: ReadonlyArray<Node<string>>,
+  kept: ReadonlyArray<Node<AnyVar>>,
   anchor: number,
-  rule: StyleRule<string>,
+  rule: StyleRule<AnyVar>,
   pending: Array<PendingPull>,
 ): void => {
   const pulled = specificity(rule.selector)
   for (let index = anchor + 1; index < kept.length; index++) {
-    const node = kept[index] as Node<string>
+    const node = kept[index] as Node<AnyVar>
     if (!isStyleRule(node) || Equal.equals(node.selector, rule.selector)) {
       continue
     }
@@ -257,15 +257,15 @@ const collectCrossings = (
  * Crossings are collected during the fold but verified afterwards,
  * against each crossed rule's final member list: a re-establishing
  * setter can arrive from a node after the moved block (the scheme
- * mirror in docs/feedback-dtcg-resolver.md section 1), invisible to a
+ * mirror's toggle half in dtcg's sheets), invisible to a
  * check that fires at encounter time. The safety argument is therefore
  * global rather than per-move — coalescing preserves member order
  * within every selector family, so the shadow conditions over the final
  * list pin the crossed family's last applicable setter in every state
  * where the moved declaration applies.
  */
-const requireShadowedPull = (pull: PendingPull, nodes: ReadonlyArray<Node<string>>): void => {
-  const crossed = nodes[pull.crossedIndex] as StyleRule<string>
+const requireShadowedPull = (pull: PendingPull, nodes: ReadonlyArray<Node<AnyVar>>): void => {
+  const crossed = nodes[pull.crossedIndex] as StyleRule<AnyVar>
   const moved = settersOf(pull.block)
   const members = settersOf(crossed.block)
   invariant(
@@ -298,12 +298,12 @@ const requireShadowedPull = (pull: PendingPull, nodes: ReadonlyArray<Node<string
 }
 
 /** @internal */
-export function coalesce<Vars extends string>(
+export function coalesce<Vars extends AnyVar>(
   sheet: Stylesheet<Vars>,
   options?: CoalesceOptions,
 ): Stylesheet<Vars> {
   const strict = options?.strict === true
-  const nodes: Array<Node<string>> = []
+  const nodes: Array<Node<AnyVar>> = []
   const seen = new Map<number, Array<{ readonly selector: Selector; readonly index: number }>>()
   const pending: Array<PendingPull> = []
   let changed = false
@@ -328,7 +328,7 @@ export function coalesce<Vars extends string>(
     if (strict) {
       collectCrossings(nodes, first.index, node, pending)
     }
-    const target = nodes[first.index] as StyleRule<string>
+    const target = nodes[first.index] as StyleRule<AnyVar>
     nodes[first.index] = makeStyleRule(target.selector, concatBlocks(target.block, node.block))
     changed = true
   }
@@ -339,8 +339,8 @@ export function coalesce<Vars extends string>(
 }
 
 /** @internal */
-export function refs<Vars extends string>(sheet: Stylesheet<Vars>): ReadonlySet<Vars> {
-  return (sheet as unknown as StylesheetImpl).refSet as ReadonlySet<Vars>
+export function refs<Vars extends AnyVar>(sheet: Stylesheet<Vars>): ReadonlySet<VarName<Vars>> {
+  return (sheet as unknown as StylesheetImpl).refSet as ReadonlySet<VarName<Vars>>
 }
 
 const propertyRenderOptions = (context: RenderContext): PropertyRenderOptions =>
@@ -349,7 +349,7 @@ const propertyRenderOptions = (context: RenderContext): PropertyRenderOptions =>
     : { indent: context.indent, precision: context.precision }
 
 /** @internal */
-export const render = (sheet: Stylesheet<string>, options?: RenderOptions): string => {
+export const render = (sheet: Stylesheet<AnyVar>, options?: RenderOptions): string => {
   const context = resolveRenderOptions(options)
   const sections: Array<string> = []
   for (const node of sheet.nodes) {
@@ -369,6 +369,6 @@ export const render = (sheet: Stylesheet<string>, options?: RenderOptions): stri
 
 /** @internal */
 export const equals = dual<
-  (that: Stylesheet<string>) => (self: Stylesheet<string>) => boolean,
-  (self: Stylesheet<string>, that: Stylesheet<string>) => boolean
->(2, (self: Stylesheet<string>, that: Stylesheet<string>): boolean => Equal.equals(self, that))
+  (that: Stylesheet<AnyVar>) => (self: Stylesheet<AnyVar>) => boolean,
+  (self: Stylesheet<AnyVar>, that: Stylesheet<AnyVar>) => boolean
+>(2, (self: Stylesheet<AnyVar>, that: Stylesheet<AnyVar>): boolean => Equal.equals(self, that))

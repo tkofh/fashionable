@@ -17,6 +17,19 @@ import { MediaQuery } from '#query'
 import { MediaRule, RuleSet, StyleRule } from '#rule'
 import { Selector } from '#selector'
 import { Stylesheet } from '#stylesheet'
+import { Var } from '#var'
+
+// Compile-time assertions only — never invoked.
+const rejectsWorldMismatchedFallbacks = (): void => {
+  // @ts-expect-error a color fallback cannot lift into calc
+  Calc.var(Var.fallback(Var.of('accent'), Color.named('red')))
+  // @ts-expect-error a dimensioned fallback under an undeclared (number-result) read
+  Calc.var(Var.fallback(Var.of('gap'), Length.px(8)))
+  // @ts-expect-error a calc fallback cannot lift into color
+  Color.var(Var.fallback(Var.of('accent'), Calc.of(4)))
+  // @ts-expect-error a number fallback is not a color
+  Color.var(Var.fallback(Var.of('accent'), 4))
+}
 
 // Compile-time assertions only — never invoked.
 const rejectsNonMembers = (): void => {
@@ -44,11 +57,11 @@ const rejectsNonNodes = (): void => {
 
 // Compile-time assertions only — never invoked.
 const rejectsOpenInitialValues = (): void => {
-  // @ts-expect-error an initial value must be computationally independent — Calc.Calc<'u'> is not Calc.Calc<never>
+  // @ts-expect-error an initial value must be computationally independent — Calc.Calc<Var.Var<'u'>> is not Calc.Calc<never>
   PropertyRule.make('--depth', PropertySyntax.number, Calc.var('u'))
-  // @ts-expect-error an initial value must be computationally independent — Color.Color<'l'> is not Color.Color<never>
+  // @ts-expect-error an initial value must be computationally independent — Color.Color<Var.Var<'l'>> is not Color.Color<never>
   PropertyRule.make('--accent', PropertySyntax.color, Color.oklch(Calc.var('l'), 0.1, 250))
-  // @ts-expect-error a color reference reads a custom property — Color.Color<'accent'> is not Color.Color<never>
+  // @ts-expect-error a color reference reads a custom property — Color.Color<Var.Var<'accent'>> is not Color.Color<never>
   PropertyRule.make('--accent', PropertySyntax.color, Color.var('accent'))
   // @ts-expect-error a length reading a reference is not computationally independent
   PropertyRule.make('--gap', PropertySyntax.length, Calc.multiply(Length.px(10), Calc.var('scale')))
@@ -109,7 +122,41 @@ const rejectsCrossSpaceRelativeChannels = (): void => {
 
 describe('types', () => {
   test('ref infers its name', () => {
-    expectTypeOf(Calc.var('x')).toEqualTypeOf<Calc.Calc<'x'>>()
+    expectTypeOf(Calc.var('x')).toEqualTypeOf<Calc.Calc<Var.Var<'x'>>>()
+  })
+
+  test('lifting a bare read matches the name sugar', () => {
+    expectTypeOf(Calc.var(Var.of('x'))).toEqualTypeOf<Calc.Calc<Var.Var<'x'>>>()
+    expectTypeOf(Color.var(Var.of('accent'))).toEqualTypeOf<Color.Color<Var.Var<'accent'>>>()
+  })
+
+  test('fallback chains flatten into the phantom as identities', () => {
+    const read = Var.fallback(Var.of('x'), Calc.var('y'))
+    expectTypeOf(Calc.var(read)).toEqualTypeOf<Calc.Calc<Var.Var<'x'> | Var.Var<'y'>>>()
+    const nested = Var.fallback(Var.of('a'), Var.fallback(Var.of('b'), 4))
+    expectTypeOf(Calc.var(nested)).toEqualTypeOf<Calc.Calc<Var.Var<'a'> | Var.Var<'b'>>>()
+  })
+
+  test('vars reports names, not identities', () => {
+    const expr = Calc.add(Calc.var('x'), Calc.var('y'))
+    expectTypeOf(Calc.vars(expr)).toEqualTypeOf<ReadonlySet<'x' | 'y'>>()
+  })
+
+  test('a read as a declaration value carries its names', () => {
+    const declaration = Declaration.make(
+      'font-family',
+      Var.fallback(Var.of('stack'), Var.of('base')),
+    )
+    expectTypeOf(declaration).toEqualTypeOf<
+      Declaration.Declaration<Var.Var<'stack'> | Var.Var<'base'>>
+    >()
+  })
+
+  test('typed reads flow anywhere the untyped handle is expected', () => {
+    const typed = {} as Var.Var<'gap', Unit.Length>
+    expectTypeOf(typed).toMatchTypeOf<Var.Var<'gap'>>()
+    const lifted = {} as Calc.Calc<Var.Var<'gap', Unit.Length>>
+    expectTypeOf(lifted).toMatchTypeOf<Calc.Calc<Var.Var<'gap'>>>()
   })
 
   test('constants are closed', () => {
@@ -118,22 +165,26 @@ describe('types', () => {
   })
 
   test('combinators union refs', () => {
-    expectTypeOf(Calc.add(Calc.var('x'), Calc.var('y'))).toEqualTypeOf<Calc.Calc<'x' | 'y'>>()
-    expectTypeOf(Calc.add(Calc.var('x'), 1)).toEqualTypeOf<Calc.Calc<'x'>>()
-    expectTypeOf(Calc.clamp(0, Calc.var('u'), 1)).toEqualTypeOf<Calc.Calc<'u'>>()
+    expectTypeOf(Calc.add(Calc.var('x'), Calc.var('y'))).toEqualTypeOf<
+      Calc.Calc<Var.Var<'x'> | Var.Var<'y'>>
+    >()
+    expectTypeOf(Calc.add(Calc.var('x'), 1)).toEqualTypeOf<Calc.Calc<Var.Var<'x'>>>()
+    expectTypeOf(Calc.clamp(0, Calc.var('u'), 1)).toEqualTypeOf<Calc.Calc<Var.Var<'u'>>>()
     expectTypeOf(Calc.lerp(Calc.var('a'), Calc.var('b'), Calc.var('t'))).toEqualTypeOf<
-      Calc.Calc<'a' | 'b' | 't'>
+      Calc.Calc<Var.Var<'a'> | Var.Var<'b'> | Var.Var<'t'>>
     >()
   })
 
   test('bind subtracts bound names', () => {
     const expr = Calc.add(Calc.var('x'), Calc.var('y'))
-    expectTypeOf(Calc.bind(expr, { x: 1 })).toEqualTypeOf<Calc.Calc<'y'>>()
+    expectTypeOf(Calc.bind(expr, { x: 1 })).toEqualTypeOf<Calc.Calc<Var.Var<'y'>>>()
     expectTypeOf(Calc.bind(expr, { x: 1, y: 2 })).toEqualTypeOf<Calc.Calc<never>>()
   })
 
   test('binding to an expression adds its refs', () => {
-    expectTypeOf(Calc.bind(Calc.var('x'), { x: Calc.var('a') })).toEqualTypeOf<Calc.Calc<'a'>>()
+    expectTypeOf(Calc.bind(Calc.var('x'), { x: Calc.var('a') })).toEqualTypeOf<
+      Calc.Calc<Var.Var<'a'>>
+    >()
   })
 
   test('data-last bind composes through pipe', () => {
@@ -152,17 +203,17 @@ describe('types', () => {
 
   test('color channels union refs', () => {
     expectTypeOf(Color.oklch(Calc.var('l'), 0.1, Calc.var('h'))).toEqualTypeOf<
-      Color.Color<'l' | 'h'>
+      Color.Color<Var.Var<'l'> | Var.Var<'h'>>
     >()
   })
 
   test('color bind subtracts bound names', () => {
     const color = Color.oklch(Calc.var('l'), Calc.var('c'), 250)
-    expectTypeOf(Color.bind(color, { l: 0.5 })).toEqualTypeOf<Color.Color<'c'>>()
+    expectTypeOf(Color.bind(color, { l: 0.5 })).toEqualTypeOf<Color.Color<Var.Var<'c'>>>()
   })
 
   test('color ref carries its name', () => {
-    expectTypeOf(Color.var('accent')).toEqualTypeOf<Color.Color<'accent'>>()
+    expectTypeOf(Color.var('accent')).toEqualTypeOf<Color.Color<Var.Var<'accent'>>>()
   })
 
   test('relative color unions the origin and channel refs', () => {
@@ -173,7 +224,7 @@ describe('types', () => {
       Channel.C,
       Channel.H,
     )
-    expectTypeOf(color).toEqualTypeOf<Color.Color<'accent' | 'k'>>()
+    expectTypeOf(color).toEqualTypeOf<Color.Color<Var.Var<'accent'> | Var.Var<'k'>>>()
   })
 
   test('relative alpha contributes its refs', () => {
@@ -185,7 +236,7 @@ describe('types', () => {
       Channel.B,
       Calc.multiply(Channel.Alpha, Calc.var('a')),
     )
-    expectTypeOf(color).toEqualTypeOf<Color.Color<'x' | 'a'>>()
+    expectTypeOf(color).toEqualTypeOf<Color.Color<Var.Var<'x'> | Var.Var<'a'>>>()
   })
 
   test('channel keywords carry their leaf brand', () => {
@@ -226,7 +277,7 @@ describe('types', () => {
       [Color.oklch(Calc.var('l'), 0.1, 250), Calc.multiply(Percentage.of(50), Calc.var('t'))],
       Color.srgb(Calc.var('r'), 0.2, 0.3),
     )
-    expectTypeOf(color).toEqualTypeOf<Color.Color<'l' | 't' | 'r'>>()
+    expectTypeOf(color).toEqualTypeOf<Color.Color<Var.Var<'l'> | Var.Var<'t'> | Var.Var<'r'>>>()
   })
 
   test('mixing in a polar space takes a hue and unions arm refs', () => {
@@ -236,24 +287,24 @@ describe('types', () => {
       Color.var('a'),
       Color.var('b'),
     )
-    expectTypeOf(color).toEqualTypeOf<Color.Color<'a' | 'b'>>()
+    expectTypeOf(color).toEqualTypeOf<Color.Color<Var.Var<'a'> | Var.Var<'b'>>>()
   })
 
   test('declarations carry their value refs', () => {
     expectTypeOf(Declaration.make('color', 'red')).toEqualTypeOf<Declaration.Declaration<never>>()
     expectTypeOf(Declaration.make('--depth', 4)).toEqualTypeOf<Declaration.Declaration<never>>()
     expectTypeOf(Declaration.make('--x', Calc.var('u'))).toEqualTypeOf<
-      Declaration.Declaration<'u'>
+      Declaration.Declaration<Var.Var<'u'>>
     >()
     expectTypeOf(Declaration.make('color', Color.oklch(Calc.var('l'), 0.1, 250))).toEqualTypeOf<
-      Declaration.Declaration<'l'>
+      Declaration.Declaration<Var.Var<'l'>>
     >()
   })
 
   test('declaration bind subtracts bound names', () => {
     const declaration = Declaration.make('--x', Calc.add(Calc.var('u'), Calc.var('v')))
     expectTypeOf(Declaration.bind(declaration, { u: 1 })).toEqualTypeOf<
-      Declaration.Declaration<'v'>
+      Declaration.Declaration<Var.Var<'v'>>
     >()
     expectTypeOf(declaration.pipe(Declaration.bind({ u: 1, v: 2 }))).toEqualTypeOf<
       Declaration.Declaration<never>
@@ -315,7 +366,7 @@ describe('types', () => {
         RuleSet.make(Declaration.make('--c', Calc.var('c'))),
       ),
     )
-    expectTypeOf(set).toEqualTypeOf<RuleSet.RuleSet<'a' | 'b' | 'c'>>()
+    expectTypeOf(set).toEqualTypeOf<RuleSet.RuleSet<Var.Var<'a'> | Var.Var<'b'> | Var.Var<'c'>>>()
   })
 
   test('empty rule sets are closed', () => {
@@ -326,46 +377,46 @@ describe('types', () => {
   test('append and concat union refs', () => {
     const set = RuleSet.make(Declaration.make('--a', Calc.var('a')))
     expectTypeOf(RuleSet.append(set, Declaration.make('--b', Calc.var('b')))).toEqualTypeOf<
-      RuleSet.RuleSet<'a' | 'b'>
+      RuleSet.RuleSet<Var.Var<'a'> | Var.Var<'b'>>
     >()
     expectTypeOf(
       RuleSet.concat(set, RuleSet.make(Declaration.make('--c', Calc.var('c')))),
-    ).toEqualTypeOf<RuleSet.RuleSet<'a' | 'c'>>()
+    ).toEqualTypeOf<RuleSet.RuleSet<Var.Var<'a'> | Var.Var<'c'>>>()
   })
 
   test('pair-form appends union the block refs', () => {
     const set = RuleSet.make(Declaration.make('--a', Calc.var('a')))
     const block = RuleSet.make(Declaration.make('--b', Calc.var('b')))
     expectTypeOf(RuleSet.append(set, Selector.class('btn'), block)).toEqualTypeOf<
-      RuleSet.RuleSet<'a' | 'b'>
+      RuleSet.RuleSet<Var.Var<'a'> | Var.Var<'b'>>
     >()
     expectTypeOf(RuleSet.append(set, MediaQuery.minWidth(768), block)).toEqualTypeOf<
-      RuleSet.RuleSet<'a' | 'b'>
+      RuleSet.RuleSet<Var.Var<'a'> | Var.Var<'b'>>
     >()
     expectTypeOf(set.pipe(RuleSet.append(MediaQuery.minWidth(768), block))).toEqualTypeOf<
-      RuleSet.RuleSet<'a' | 'b'>
+      RuleSet.RuleSet<Var.Var<'a'> | Var.Var<'b'>>
     >()
     const sheet = Stylesheet.make(
       StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--a', Calc.var('a')))),
     )
     expectTypeOf(Stylesheet.append(sheet, Selector.class('btn'), block)).toEqualTypeOf<
-      Stylesheet.Stylesheet<'a' | 'b'>
+      Stylesheet.Stylesheet<Var.Var<'a'> | Var.Var<'b'>>
     >()
   })
 
   test('forSelector and forMediaQuery thread the block refs', () => {
     const block = RuleSet.make(Declaration.make('--a', Calc.var('a')))
     expectTypeOf(RuleSet.forSelector(block, Selector.class('btn'))).toEqualTypeOf<
-      StyleRule.StyleRule<'a'>
+      StyleRule.StyleRule<Var.Var<'a'>>
     >()
     expectTypeOf(block.pipe(RuleSet.forSelector(Selector.root))).toEqualTypeOf<
-      StyleRule.StyleRule<'a'>
+      StyleRule.StyleRule<Var.Var<'a'>>
     >()
     expectTypeOf(RuleSet.forMediaQuery(block, MediaQuery.minWidth(768))).toEqualTypeOf<
-      MediaRule.MediaRule<'a'>
+      MediaRule.MediaRule<Var.Var<'a'>>
     >()
     expectTypeOf(block.pipe(RuleSet.forMediaQuery(MediaQuery.minWidth(768)))).toEqualTypeOf<
-      MediaRule.MediaRule<'a'>
+      MediaRule.MediaRule<Var.Var<'a'>>
     >()
   })
 
@@ -375,7 +426,7 @@ describe('types', () => {
       StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('--b', Calc.var('b')))),
       PropertyRule.make('--a', PropertySyntax.number, 0),
     )
-    expectTypeOf(sheet).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'b'>>()
+    expectTypeOf(sheet).toEqualTypeOf<Stylesheet.Stylesheet<Var.Var<'a'> | Var.Var<'b'>>>()
   })
 
   test('empty stylesheets are closed', () => {
@@ -400,9 +451,17 @@ describe('types', () => {
       a,
       StyleRule.make(Selector.class('card'), RuleSet.make(Declaration.make('--c', Calc.var('c')))),
     )
-    expectTypeOf(appended).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'c'>>()
-    expectTypeOf(Stylesheet.merge(a, b)).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'b'>>()
-    expectTypeOf(Stylesheet.mergeAll([a, b])).toEqualTypeOf<Stylesheet.Stylesheet<'a' | 'b'>>()
+    expectTypeOf(appended).toEqualTypeOf<Stylesheet.Stylesheet<Var.Var<'a'> | Var.Var<'c'>>>()
+    expectTypeOf(Stylesheet.merge(a, b)).toEqualTypeOf<
+      Stylesheet.Stylesheet<Var.Var<'a'> | Var.Var<'b'>>
+    >()
+    expectTypeOf(Stylesheet.mergeAll([a, b])).toEqualTypeOf<
+      Stylesheet.Stylesheet<Var.Var<'a'> | Var.Var<'b'>>
+    >()
+  })
+
+  test('world-mismatched fallbacks are rejected at compile time', () => {
+    expect(rejectsWorldMismatchedFallbacks).toBeTypeOf('function')
   })
 
   test('non-members are rejected at compile time', () => {

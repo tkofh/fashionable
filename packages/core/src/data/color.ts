@@ -1,5 +1,6 @@
 import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from '#calc/calc'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { ColorTypeId } from './color.internal.ts'
 import * as internal from './color.internal.ts'
 import type { ColorSpace, PolarSpace } from './colorSpace.ts'
@@ -27,7 +28,7 @@ declare const ColorVars: unique symbol
  *
  * @since 0.1.0
  */
-export interface Color<out Vars extends string = string> extends Pipeable {
+export interface Color<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [ColorTypeId]: ColorTypeId
   readonly [ColorVars]?: Vars
 }
@@ -42,7 +43,7 @@ export interface Color<out Vars extends string = string> extends Pipeable {
  * @returns `true` if the value is a `Color`, `false` otherwise.
  * @since 0.1.0
  */
-export const isColor: (u: unknown) => u is Color<string> = internal.isColor
+export const isColor: (u: unknown) => u is Color<Var.Any> = internal.isColor
 
 /**
  * Creates an `oklch(...)` color from three channel expressions: lightness
@@ -64,7 +65,11 @@ export const isColor: (u: unknown) => u is Color<string> = internal.isColor
  * ```
  * @since 0.1.0
  */
-export const oklch: <L extends string = never, C extends string = never, H extends string = never>(
+export const oklch: <
+  L extends Var.Any = never,
+  C extends Var.Any = never,
+  H extends Var.Any = never,
+>(
   lightness: Input<L> | None,
   chroma: Input<C> | None,
   hue: Input<H> | None,
@@ -90,7 +95,11 @@ export const oklch: <L extends string = never, C extends string = never, H exten
  * ```
  * @since 0.2.0
  */
-export const srgb: <R extends string = never, G extends string = never, B extends string = never>(
+export const srgb: <
+  R extends Var.Any = never,
+  G extends Var.Any = never,
+  B extends Var.Any = never,
+>(
   red: Input<R> | None,
   green: Input<G> | None,
   blue: Input<B> | None,
@@ -123,27 +132,82 @@ export const named: (name: string) => Color<never> = internal.named
 export const transparent: Color<never> = internal.transparent
 
 /**
- * Creates a color-valued read of a CSS variable — `Color.var('accent')`
- * serializes as `var(--accent)`. Use it where a whole color is read from a
- * custom property: as a standalone value, or as the origin of a relative
- * color (`from`). Exported as `var` (`Color.var('accent')`) because `var` is
- * reserved in declaration position.
+ * The fallbacks a color-valued read admits: a whole `Color`, a color as
+ * literal text (coerced through `named`, so CSS-wide keywords are
+ * rejected), or another read whose own fallback satisfies the same
+ * constraint, recursively — the color projection of the generic fallback
+ * slot on `Var`.
  *
- * The read is the whole value, so it carries `name` as its one unbound
- * variable — a dependency, exactly as an unbound `Calc.var` is — but has no
- * channels. `bind` substitutes channel expressions, not whole colors, so it
- * leaves a color variable in place; the browser resolves it from the cascade.
- *
- * @param name - The variable name, without the `--` prefix. Must be non-empty.
- * @returns A `Color` with `name` as its one unbound variable.
- * @throws `Error` when `name` is empty.
- * @example
- * ```ts
- * Color.serialize(Color.var('accent')) // 'var(--accent)'
- * ```
- * @since 0.2.0
+ * @since 0.4.0
  */
-const _var: <Name extends string>(name: Name) => Color<Name> = internal.ref
+export type VarFallback =
+  | string
+  | Color<Var.Any>
+  | Var.Var<string, unknown, VarFallback | undefined>
+
+/** A read `var` accepts: fallback-free, or carrying a color-valued fallback chain. */
+type ReadIn = Var.Var<string, unknown, VarFallback | undefined>
+
+// The identities a read contributes, flattened: the read's own, then its
+// fallback chain's — a Color fallback hands over its Vars, a nested read
+// recurses, literal text contributes nothing.
+type ReadVars<V> =
+  V extends Var.Var<infer N, infer T, infer F> ? Var.Var<N, T> | ReadFallbackVars<F> : never
+type ReadFallbackVars<F> = F extends Color<infer W> ? W : F extends Var.Any ? ReadVars<F> : never
+
+const _var: {
+  /**
+   * Creates a color-valued read of a CSS variable — `Color.var('accent')`
+   * serializes as `var(--accent)`. Use it where a whole color is read from
+   * a custom property: as a standalone value, or as the origin of a
+   * relative color (`from`). Exported as `var` (`Color.var('accent')`)
+   * because `var` is reserved in declaration position.
+   *
+   * The read is the whole value, so it carries `name` as its one unbound
+   * variable — a dependency, exactly as an unbound `Calc.var` is — but has
+   * no channels. `bind` substitutes channel expressions, not whole colors,
+   * so it leaves a color variable in place; the browser resolves it from
+   * the cascade.
+   *
+   * Sugar for the read overload: `Color.var('accent')` is
+   * `Color.var(Var.of('accent'))`.
+   *
+   * @param name - The variable name, without the `--` prefix. Must be non-empty.
+   * @returns A `Color` with `name` as its one unbound variable.
+   * @throws `Error` when `name` is empty.
+   * @example
+   * ```ts
+   * Color.serialize(Color.var('accent')) // 'var(--accent)'
+   * ```
+   * @since 0.2.0
+   */
+  <Name extends string>(name: Name): Color<Var.Var<Name>>
+  /**
+   * Lifts a `Var` read into a color-valued expression. A fallback-carrying
+   * read renders its fallback (`var(--accent, red)`), which must be
+   * color-valued here — a `Color`, literal color text, or another such
+   * read, recursively. Anything else is a type error at this lift, backed
+   * by a runtime check.
+   *
+   * The returned color's `Vars` unions the read's identity with its
+   * fallback chain's, flattened, and every name joins the dependency
+   * report. As with the bare form, `bind` leaves the read itself in place
+   * (channel substitution cannot produce a whole color), though it does
+   * substitute inside a fallback's channels.
+   *
+   * @param read - The read to lift, from `Var.of` (optionally through `Var.fallback`).
+   * @returns A `Color` reading the read's name, with its fallback chain's reads unioned in.
+   * @throws `Error` when the read's fallback chain holds anything but colors, color text, and reads.
+   * @example
+   * ```ts
+   * const accent = Var.of('accent')
+   * Color.serialize(Color.var(accent.pipe(Var.fallback('rebeccapurple'))))
+   * // 'var(--accent, rebeccapurple)'
+   * ```
+   * @since 0.4.0
+   */
+  <V extends ReadIn>(read: V): Color<ReadVars<V>>
+} = internal.ref
 export { _var as var }
 
 /**
@@ -167,7 +231,7 @@ export { _var as var }
  * ```
  * @since 0.2.0
  */
-export const lightDark: <A extends string = never, B extends string = never>(
+export const lightDark: <A extends Var.Any = never, B extends Var.Any = never>(
   light: Color<A>,
   dark: Color<B>,
 ) => Color<A | B> = internal.lightDark
@@ -175,7 +239,7 @@ export const lightDark: <A extends string = never, B extends string = never>(
 // A mix arm: a bare color, or a [color, weight] tuple. A bare number weight
 // reads as a percent; a `Percentage` expression carries an annotated or
 // computed one, and a plain number-kind `Calc` is rejected.
-type MixArm<C extends string, P extends string> =
+type MixArm<C extends Var.Any, P extends Var.Any> =
   | Color<C>
   | readonly [Color<C>, number | Calc<P, Unit.Percentage, unknown>]
 
@@ -218,20 +282,20 @@ type MixArm<C extends string, P extends string> =
  */
 export const mix: {
   <
-    C1 extends string = never,
-    P1 extends string = never,
-    C2 extends string = never,
-    P2 extends string = never,
+    C1 extends Var.Any = never,
+    P1 extends Var.Any = never,
+    C2 extends Var.Any = never,
+    P2 extends Var.Any = never,
   >(
     space: ColorSpace,
     color1: MixArm<C1, P1>,
     color2: MixArm<C2, P2>,
   ): Color<C1 | P1 | C2 | P2>
   <
-    C1 extends string = never,
-    P1 extends string = never,
-    C2 extends string = never,
-    P2 extends string = never,
+    C1 extends Var.Any = never,
+    P1 extends Var.Any = never,
+    C2 extends Var.Any = never,
+    P2 extends Var.Any = never,
   >(
     space: PolarSpace,
     hue: HueInterpolation,
@@ -250,7 +314,7 @@ export const mix: {
  *
  * @since 0.2.0
  */
-export type RelativeChannel<Vars extends string, Channels> =
+export type RelativeChannel<Vars extends Var.Any, Channels> =
   | number
   | None
   | Calc<Vars, Unit.None, Channels>
@@ -293,12 +357,12 @@ type ChannelsOf<Space> = Space extends ColorSpace<infer Channels> ? Channels : n
  * @since 0.2.0
  */
 export const from: <
-  O extends string = never,
+  O extends Var.Any = never,
   Space extends ColorSpace = ColorSpace,
-  C1 extends string = never,
-  C2 extends string = never,
-  C3 extends string = never,
-  A extends string = never,
+  C1 extends Var.Any = never,
+  C2 extends Var.Any = never,
+  C3 extends Var.Any = never,
+  A extends Var.Any = never,
 >(
   origin: Color<O>,
   space: Space,
@@ -318,7 +382,7 @@ export const bind: {
    */
   <const B extends Bindings>(
     bindings: B,
-  ): <Vars extends string>(color: Color<Vars>) => Color<ApplyBindings<Vars, B>>
+  ): <Vars extends Var.Any>(color: Color<Vars>) => Color<ApplyBindings<Vars, B>>
   /**
    * Replaces variables in the color's channels with values or other
    * expressions, re-folding constant subtrees. Semantics match
@@ -330,7 +394,7 @@ export const bind: {
    * @returns The bound color.
    * @since 0.1.0
    */
-  <Vars extends string, const B extends Bindings>(
+  <Vars extends Var.Any, const B extends Bindings>(
     color: Color<Vars>,
     bindings: B,
   ): Color<ApplyBindings<Vars, B>>
@@ -355,7 +419,7 @@ export const bind: {
  * ```
  * @since 0.1.0
  */
-export const serialize: <Vars extends string>(
+export const serialize: <Vars extends Var.Any>(
   color: Color<Vars>,
   options?: SerializeOptions<Vars>,
 ) => string = internal.serialize
@@ -367,7 +431,8 @@ export const serialize: <Vars extends string>(
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends string>(color: Color<Vars>) => ReadonlySet<Vars> = internal.refs
+export const vars: <Vars extends Var.Any>(color: Color<Vars>) => ReadonlySet<Var.Name<Vars>> =
+  internal.refs
 
 /**
  * The origin-channel keyword tokens the color reads — the `Channel` keywords a
@@ -390,7 +455,7 @@ export const vars: <Vars extends string>(color: Color<Vars>) => ReadonlySet<Vars
  * ```
  * @since 0.2.0
  */
-export const channels: (color: Color<string>) => ReadonlySet<string> = internal.channels
+export const channels: (color: Color<Var.Any>) => ReadonlySet<string> = internal.channels
 
 export const equals: {
   /**
@@ -400,7 +465,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: Color<string>): (self: Color<string>) => boolean
+  (that: Color<Var.Any>): (self: Color<Var.Any>) => boolean
   /**
    * Structural equality over colors: channel trees compare node for node,
    * as in `Calc.equals`. Different color functions never compare equal,
@@ -411,5 +476,5 @@ export const equals: {
    * @returns `true` if the colors are structurally equal.
    * @since 0.1.0
    */
-  (self: Color<string>, that: Color<string>): boolean
+  (self: Color<Var.Any>, that: Color<Var.Any>): boolean
 } = internal.equals

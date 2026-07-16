@@ -1,5 +1,6 @@
 import type { Selector } from '#selector/selector'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.ts'
 import type { StyleRuleTypeId } from './styleRule.internal.ts'
 import * as internal from './styleRule.internal.ts'
@@ -15,7 +16,7 @@ import * as internal from './styleRule.internal.ts'
  *
  * @since 0.1.0
  */
-export interface StyleRule<out Vars extends string = string> extends Pipeable {
+export interface StyleRule<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [StyleRuleTypeId]: StyleRuleTypeId
   /**
    * The compound selector the block applies to.
@@ -37,7 +38,7 @@ export interface StyleRule<out Vars extends string = string> extends Pipeable {
  * @returns `true` if the value is a `StyleRule`, `false` otherwise.
  * @since 0.1.0
  */
-export const isStyleRule: (u: unknown) => u is StyleRule<string> = internal.isStyleRule
+export const isStyleRule: (u: unknown) => u is StyleRule<Var.Any> = internal.isStyleRule
 
 /**
  * Creates a style rule.
@@ -54,7 +55,7 @@ export const isStyleRule: (u: unknown) => u is StyleRule<string> = internal.isSt
  * ```
  * @since 0.1.0
  */
-export const make: <Vars extends string>(
+export const make: <Vars extends Var.Any>(
   selector: Selector,
   block: RuleSet<Vars>,
 ) => StyleRule<Vars> = internal.make
@@ -67,7 +68,8 @@ export const make: <Vars extends string>(
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends string>(rule: StyleRule<Vars>) => ReadonlySet<Vars> = internal.refs
+export const vars: <Vars extends Var.Any>(rule: StyleRule<Vars>) => ReadonlySet<Var.Name<Vars>> =
+  internal.refs
 
 /**
  * Options for `render` — the block renderers' shared shape,
@@ -96,7 +98,7 @@ export type RenderOptions = RuleSetRenderOptions
  * ```
  * @since 0.1.0
  */
-export const render: (rule: StyleRule<string>, options?: RenderOptions) => string = internal.render
+export const render: (rule: StyleRule<Var.Any>, options?: RenderOptions) => string = internal.render
 
 export const equals: {
   /**
@@ -106,7 +108,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: StyleRule<string>): (self: StyleRule<string>) => boolean
+  (that: StyleRule<Var.Any>): (self: StyleRule<Var.Any>) => boolean
   /**
    * Structural equality: selectors compare as in `Selector.equals`
    * (canonically ordered parts), blocks as in `RuleSet.equals` (members
@@ -117,5 +119,5 @@ export const equals: {
    * @returns `true` if the rules are structurally equal.
    * @since 0.1.0
    */
-  (self: StyleRule<string>, that: StyleRule<string>): boolean
+  (self: StyleRule<Var.Any>, that: StyleRule<Var.Any>): boolean
 } = internal.equals

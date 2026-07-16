@@ -1,5 +1,6 @@
 import type { Unit } from '#data'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { CalcTypeId } from './calc.internal.ts'
 import * as internal from './calc.internal.ts'
 import type { Precision } from './precision.ts'
@@ -47,10 +48,13 @@ export interface Ident<Name extends string = string> {
  *
  * Three type parameters track the expression structurally:
  *
- * - `Vars` — the unbound variable names. `var('u')` is a `Calc<'u'>`;
- *   combining expressions unions their variables; `bind` subtracts the
- *   names it binds. A fully bound (or constant) expression is a
- *   `Calc<never>`.
+ * - `Vars` — the identities of the custom-property reads still unbound,
+ *   as `Var` values from `fashionable/var`: `var('u')` is a
+ *   `Calc<Var<'u'>>`. Combining expressions unions their reads; `bind`
+ *   subtracts the names it binds. A fully bound (or constant) expression
+ *   is a `Calc<never>`. Names stay the value-level currency — binding
+ *   records are keyed by bare name, and `vars` reports names — while the
+ *   phantom carries the identities.
  * - `Result` — what the expression produces, as a set of `Unit` brands:
  *   `Unit.Px` for a pure pixel length, `Unit.Px | Unit.Vw` for a mixed sum
  *   (a composition, not an uncertainty), `Unit.None` for a `<number>`. The
@@ -76,7 +80,7 @@ export interface Ident<Name extends string = string> {
  * @since 0.1.0
  */
 export interface Calc<
-  out Vars extends string = string,
+  out Vars extends Var.Any = Var.Any,
   out Result = Unit.None,
   out Requires = never,
 > extends Pipeable {
@@ -94,7 +98,7 @@ export interface Calc<
  *
  * @since 0.2.0
  */
-export type Top = Calc<string, Unit.Any, unknown>
+export type Top = Calc<Var.Any, Unit.Any, unknown>
 
 // ---------------------------------------------------------------------------
 // combinator type machinery (internal): facet extractors and the family/
@@ -106,14 +110,14 @@ export type Top = Calc<string, Unit.Any, unknown>
 type In = Top | number
 
 type VarsOf<A> = A extends Calc<infer X, Unit.Any, unknown> ? X : never
-type ResultOf<A> = A extends Calc<string, infer R, unknown> ? R : Unit.None
-type RequiresOf<A> = A extends Calc<string, Unit.Any, infer Q> ? Q : never
+type ResultOf<A> = A extends Calc<Var.Any, infer R, unknown> ? R : Unit.None
+type RequiresOf<A> = A extends Calc<Var.Any, Unit.Any, infer Q> ? Q : never
 
 /** An operand constrained to number-result (or a bare number). */
-type NumberIn = number | Calc<string, Unit.None, unknown>
+type NumberIn = number | Calc<Var.Any, Unit.None, unknown>
 
 /** An operand accepted by `sin`/`cos`: a plain number (radians) or an angle. */
-type NumberOrAngleIn = number | Calc<string, Unit.None | Unit.Angle, unknown>
+type NumberOrAngleIn = number | Calc<Var.Any, Unit.None | Unit.Angle, unknown>
 
 /**
  * An operand constrained to `A`'s dimension family — a bare number only when
@@ -121,7 +125,7 @@ type NumberOrAngleIn = number | Calc<string, Unit.None | Unit.Angle, unknown>
  * `add(length, length)` holds.
  */
 type SameKindIn<A> =
-  | Calc<string, Unit.Family<ResultOf<A>>, unknown>
+  | Calc<Var.Any, Unit.Family<ResultOf<A>>, unknown>
   | (Unit.Family<ResultOf<A>> extends Unit.None ? number : never)
 
 type VarsOfAll<T extends ReadonlyArray<unknown>> = { [K in keyof T]: VarsOf<T[K]> }[number]
@@ -162,37 +166,43 @@ type DivRequires<A, B> =
  *
  * @since 0.1.0
  */
-export type Input<Vars extends string = string> = Calc<Vars> | number
+export type Input<Vars extends Var.Any = Var.Any> = Calc<Vars> | number
 
 /**
- * A bindings record: variable names to the values that replace them. A
- * value may itself be an expression, whose own variables join the result.
+ * A bindings record: bare variable names to the values that replace them.
+ * A value may itself be an expression, whose own reads join the result.
+ *
+ * Keys are names, not `Var` values — names are the value-level currency
+ * of the variables channel; the identities live in the `Vars` phantom the
+ * record is derived from (mapped over `Var.Name<Vars>`).
  *
  * @since 0.1.0
  */
-export type Bindings<Vars extends string = string> = Record<Vars, Input>
+export type Bindings<Vars extends Var.Any = Var.Any> = {
+  readonly [N in Var.Name<Vars>]: Input
+}
 
 type ValueVars<V> = V extends Calc<infer R> ? R : never
 
 type BindingVars<T> = T extends Record<string, infer V> ? ValueVars<V> : never
 
 /**
- * The variable names remaining after applying the bindings `B` to an
- * expression with variables `Vars`: bound names are removed, and the
- * variables of any expression-valued bindings are added.
+ * The read identities remaining after applying the bindings `B` to an
+ * expression with reads `Vars`: identities whose names are bound are
+ * removed, and the reads of any expression-valued bindings are added.
  *
  * @since 0.1.0
  */
-export type ApplyBindings<Vars extends string, B> =
-  | Exclude<Vars, keyof B & string>
-  | BindingVars<Pick<B, Extract<keyof B, Vars>>>
+export type ApplyBindings<Vars extends Var.Any, B> =
+  | (Vars extends unknown ? (Var.Name<Vars> extends keyof B ? never : Vars) : never)
+  | BindingVars<Pick<B, Extract<keyof B, Var.Name<Vars>>>>
 
 /**
  * Options for `serialize`.
  *
  * @since 0.1.0
  */
-export interface SerializeOptions<Vars extends string = string> {
+export interface SerializeOptions<Vars extends Var.Any = Var.Any> {
   /**
    * Bindings applied before rendering. May be partial: variables left
    * unbound render as `var(--name)`.
@@ -239,9 +249,9 @@ export type IdentValues<R> = {
  *
  * @since 0.4.0
  */
-export type SolveOptions<Vars extends string, R> = ([Vars] extends [never]
+export type SolveOptions<Vars extends Var.Any, R> = ([Vars] extends [never]
   ? { readonly bindings?: Record<string, Input<never>> }
-  : { readonly bindings: Record<Vars, Input<never>> }) &
+  : { readonly bindings: { readonly [N in Var.Name<Vars>]: Input<never> } }) &
   ([Exclude<R, Unit.ContextFree | Ident<string>>] extends [never]
     ? { readonly units?: Unit.UnitContext<R> }
     : { readonly units: Unit.UnitContext<R> }) &
@@ -259,7 +269,7 @@ export type SolveOptions<Vars extends string, R> = ([Vars] extends [never]
  * @returns `true` if the value is a `Calc`, `false` otherwise.
  * @since 0.1.0
  */
-export const isCalc: (u: unknown) => u is Calc<string, Unit.Any, unknown> = internal.isCalc
+export const isCalc: (u: unknown) => u is Calc<Var.Any, Unit.Any, unknown> = internal.isCalc
 
 /**
  * Creates a constant expression, optionally annotated with a serialization
@@ -284,25 +294,81 @@ export const isCalc: (u: unknown) => u is Calc<string, Unit.Any, unknown> = inte
 export const of: (value: number, precision?: Precision) => Calc<never> = internal.of
 
 /**
- * Creates a read of a CSS variable (custom property): `var('width')`
- * serializes as `var(--width)`. Variables are the substitutable dependency
- * channel — `bind` replaces them with values or other expressions, and an
- * expression's `Vars` parameter tracks the names still unbound. Exported as
- * `var` (`Calc.var('width')`) because `var` is reserved in declaration
- * position.
+ * The fallbacks a lifted read admits: a bare number, a number-result
+ * expression, or another read whose own fallback satisfies the same
+ * constraint, recursively. This is the numeric projection of the generic
+ * fallback slot on `Var` — the read is number-result while its variable is
+ * undeclared, so anything else in fallback position would substitute a
+ * differently-dimensioned value into the surrounding tree.
  *
- * Repeated calls with the same name return the same instance.
- *
- * @param name - The variable name, without the `--` prefix. Must be non-empty.
- * @returns A `Calc` with `name` as its one unbound variable.
- * @throws `Error` when `name` is empty.
- * @example
- * ```ts
- * Calc.serialize(Calc.var('width')) // 'var(--width)'
- * ```
- * @since 0.1.0
+ * @since 0.4.0
  */
-const _var: <Name extends string>(name: Name) => Calc<Name> = internal.ref
+export type VarFallback =
+  | number
+  | Calc<Var.Any, Unit.None, unknown>
+  | Var.Var<string, unknown, VarFallback | undefined>
+
+/** A read `var` accepts: fallback-free, or carrying a numeric fallback chain. */
+type ReadIn = Var.Var<string, unknown, VarFallback | undefined>
+
+// The identities a read contributes to the phantom, flattened: the read's
+// own name-and-type pair, then its fallback chain's — a Calc fallback hands
+// over its Vars, a nested read recurses, a number contributes nothing.
+type ReadVars<V> =
+  V extends Var.Var<infer N, infer T, infer F> ? Var.Var<N, T> | ReadFallbackVars<F> : never
+type ReadFallbackVars<F> =
+  F extends Calc<infer W, Unit.Any, unknown> ? W : F extends Var.Any ? ReadVars<F> : never
+
+const _var: {
+  /**
+   * Creates a read of a CSS variable (custom property): `var('width')`
+   * serializes as `var(--width)`. Variables are the substitutable
+   * dependency channel — `bind` replaces them with values or other
+   * expressions, and an expression's `Vars` parameter tracks the reads
+   * still unbound. Exported as `var` (`Calc.var('width')`) because `var`
+   * is reserved in declaration position.
+   *
+   * Sugar for the read overload: `Calc.var('width')` is
+   * `Calc.var(Var.of('width'))`. Repeated calls with the same name return
+   * the same instance.
+   *
+   * @param name - The variable name, without the `--` prefix. Must be non-empty.
+   * @returns A `Calc` reading `name`, its one unbound variable.
+   * @throws `Error` when `name` is empty.
+   * @example
+   * ```ts
+   * Calc.serialize(Calc.var('width')) // 'var(--width)'
+   * ```
+   * @since 0.1.0
+   */
+  <Name extends string>(name: Name): Calc<Var.Var<Name>>
+  /**
+   * Lifts a `Var` read into an expression. A fallback-carrying read
+   * renders its fallback (`var(--gap, 8)`), which must be numeric here —
+   * a number, a number-result `Calc` (rendered under the normal rules, so
+   * arithmetic gets a nested `calc()` wrapper), or another such read,
+   * recursively. Anything else is a type error at this lift, backed by a
+   * runtime check.
+   *
+   * The returned expression's `Vars` unions the read's identity with its
+   * fallback chain's, flattened — `var(--x, var(--y))` is a
+   * `Calc<Var<'x'> | Var<'y'>>`, and both names join the dependency
+   * report. Binding the read's own name replaces the whole read and
+   * discards the fallback; a fallback never reduces what `solve`
+   * requires (see `docs/vars.md`).
+   *
+   * @param read - The read to lift, from `Var.of` (optionally through `Var.fallback`).
+   * @returns A `Calc` reading the read's name, with its fallback chain's reads unioned in.
+   * @throws `Error` when the read's fallback chain holds anything but numbers, `Calc` expressions, and reads.
+   * @example
+   * ```ts
+   * const gap = Var.of('gap')
+   * Calc.serialize(Calc.var(gap.pipe(Var.fallback(8)))) // 'var(--gap, 8)'
+   * ```
+   * @since 0.4.0
+   */
+  <V extends ReadIn>(read: V): Calc<ReadVars<V>>
+} = internal.ref
 export { _var as var }
 
 /**
@@ -728,7 +794,7 @@ export const solve: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends string, R>(expr: Calc<Vars, Unit.Any, R>, options: SolveOptions<Vars, R>): number
+  <Vars extends Var.Any, R>(expr: Calc<Vars, Unit.Any, R>, options: SolveOptions<Vars, R>): number
 } = internal.solve
 
 /**
@@ -754,20 +820,23 @@ export const solve: {
  * ```
  * @since 0.1.0
  */
-export const serialize: <Vars extends string>(
+export const serialize: <Vars extends Var.Any>(
   expr: Calc<Vars, Unit.Any, unknown>,
   options?: SerializeOptions<Vars>,
 ) => string = internal.serialize
 
 /**
- * The expression's unbound variable names.
+ * The expression's unbound variable names — bare names, the value-level
+ * mirror of the read identities in `Vars`. A fallback chain's names are
+ * included: `var(--x, var(--y))` reads both.
  *
  * @param expr - The expression to inspect.
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends string>(expr: Calc<Vars, Unit.Any, unknown>) => ReadonlySet<Vars> =
-  internal.refs
+export const vars: <Vars extends Var.Any>(
+  expr: Calc<Vars, Unit.Any, unknown>,
+) => ReadonlySet<Var.Name<Vars>> = internal.refs
 
 /**
  * The bare-identifier tokens the expression reads — leaves that serialize
@@ -791,7 +860,7 @@ export const vars: <Vars extends string>(expr: Calc<Vars, Unit.Any, unknown>) =>
  * ```
  * @since 0.2.0
  */
-export const idents: (expr: Calc<string, Unit.Any, unknown>) => ReadonlySet<string> =
+export const idents: (expr: Calc<Var.Any, Unit.Any, unknown>) => ReadonlySet<string> =
   internal.idents
 
 /**
@@ -812,7 +881,7 @@ export const idents: (expr: Calc<string, Unit.Any, unknown>) => ReadonlySet<stri
  * ```
  * @since 0.4.0
  */
-export const units: (expr: Calc<string, Unit.Any, unknown>) => ReadonlySet<string> = internal.units
+export const units: (expr: Calc<Var.Any, Unit.Any, unknown>) => ReadonlySet<string> = internal.units
 
 export const equals: {
   /**
@@ -822,7 +891,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: Calc<string, Unit.Any, unknown>): (self: Calc<string, Unit.Any, unknown>) => boolean
+  (that: Calc<Var.Any, Unit.Any, unknown>): (self: Calc<Var.Any, Unit.Any, unknown>) => boolean
   /**
    * Structural equality over expression trees. Two expressions are equal
    * when their trees match node for node — including constant units and
@@ -834,5 +903,5 @@ export const equals: {
    * @returns `true` if the expressions are structurally equal.
    * @since 0.1.0
    */
-  (self: Calc<string, Unit.Any, unknown>, that: Calc<string, Unit.Any, unknown>): boolean
+  (self: Calc<Var.Any, Unit.Any, unknown>, that: Calc<Var.Any, Unit.Any, unknown>): boolean
 } = internal.equals

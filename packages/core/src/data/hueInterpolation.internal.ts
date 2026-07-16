@@ -41,9 +41,9 @@ export const strategyOf = (hue: HueInterpolation<string>): string =>
 /** @internal */
 export const interpolate = (
   strategy: HueInterpolation<string>,
-  from: Input<string>,
-  to: Input<string>,
-  t: Input<string>,
+  from: Input,
+  to: Input,
+  t: Input,
 ): Calc.Calc<never> => {
   // CSS Color 4 hue fixup, branchless in degree-space (`mod` handles the
   // normalization): each strategy is a signed delta the browser adds to `from`

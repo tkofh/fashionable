@@ -7,8 +7,10 @@ import {
   specEquals,
   specFidelity,
 } from '#internal/format'
-import { EMPTY_REFS } from '#internal/refs'
+import { EMPTY_REFS, RefsTypeId } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
+import type { Name as VarName } from '#var/var'
+import { type AnyVar, fallbackOf, isVar, nameOf as varNameOf, refsOfVar } from '#var/var.internal'
 import type { Bindings, Calc, Input, Kind, SerializeOptions, Top } from './calc.ts'
 import { toSpec } from './precision.internal.ts'
 import type { Precision } from './precision.ts'
@@ -31,10 +33,21 @@ export interface ConstantNode {
   readonly kind: Kind
 }
 
-/** @internal */
+/**
+ * A custom-property read. `fallback`, when present, is the read's rendered
+ * second argument — a whole calc tree, with nested reads lowered to nested
+ * `Ref` nodes. It participates in the vars set and in `bind` substitution,
+ * but never in `units`/`idents` collection (those mirror `Requires`, and a
+ * fallback is unreachable in every projection that consumes requirements)
+ * and never in evaluation (`solve` substitutes the mandatory binding, which
+ * discards it).
+ *
+ * @internal
+ */
 export interface RefNode {
   readonly _tag: 'Ref'
   readonly name: string
+  readonly fallback?: CalcNode
 }
 
 /**
@@ -331,8 +344,19 @@ export const substituteNode = (node: CalcNode, bindings: Record<string, CalcNode
   switch (node._tag) {
     case 'Constant':
       return node
-    case 'Ref':
-      return bindings[node.name] ?? node
+    case 'Ref': {
+      const bound = bindings[node.name]
+      if (bound !== undefined) {
+        // author substitution wins over cascade defaulting: the whole read
+        // is replaced and the fallback discarded
+        return bound
+      }
+      if (node.fallback === undefined) {
+        return node
+      }
+      const fallback = substituteNode(node.fallback, bindings)
+      return fallback === node.fallback ? node : { _tag: 'Ref', name: node.name, fallback }
+    }
     case 'Ident':
       return node
     case 'Add':
@@ -513,6 +537,17 @@ const formatConstant = (
 const wrapOperand = (node: CalcNode, serialized: string): string =>
   node._tag === 'Add' || node._tag === 'Subtract' ? `(${serialized})` : serialized
 
+/**
+ * A fallback renders under the normal top-level rules — `var()`
+ * substitution is token-level, so an arithmetic fallback carries its own
+ * nested `calc()` wrapper rather than leaning on the surrounding context.
+ */
+const serializeFallback = (node: CalcNode, context: SerializeContext): string => {
+  const wrap = needsCalcWrap(node)
+  const body = serializeNode(node, wrap, context)
+  return wrap ? `calc(${body})` : body
+}
+
 const hasNegativeCoefficient = (node: CalcNode): boolean => {
   if (isConstant(node)) {
     return node.value < 0
@@ -559,7 +594,9 @@ export const serializeNode = (
     case 'Constant':
       return formatConstant(node, insideMath, context)
     case 'Ref':
-      return `var(--${node.name})`
+      return node.fallback === undefined
+        ? `var(--${node.name})`
+        : `var(--${node.name}, ${serializeFallback(node.fallback, context)})`
     case 'Ident':
       return node.name
     case 'Add': {
@@ -648,8 +685,15 @@ export const nodeEquals = (a: CalcNode, b: CalcNode): boolean => {
         a.value === other.value && a.unit === other.unit && specEquals(a.precision, other.precision)
       )
     }
-    case 'Ref':
-      return a.name === (b as RefNode).name
+    case 'Ref': {
+      const other = b as RefNode
+      if (a.name !== other.name) {
+        return false
+      }
+      return a.fallback === undefined || other.fallback === undefined
+        ? a.fallback === other.fallback
+        : nodeEquals(a.fallback, other.fallback)
+    }
     case 'Ident':
       return a.name === (b as IdentNode).name
     case 'Add':
@@ -714,7 +758,10 @@ export const nodeHash = (node: CalcNode): number => {
       )
     }
     case 'Ref':
-      return Equal.combine(Equal.hashString('Ref'), Equal.hashString(node.name))
+      return Equal.combine(
+        Equal.combine(Equal.hashString('Ref'), Equal.hashString(node.name)),
+        node.fallback === undefined ? 0 : nodeHash(node.fallback),
+      )
     case 'Ident':
       return Equal.combine(Equal.hashString('Ident'), Equal.hashString(node.name))
     case 'Add':
@@ -748,7 +795,7 @@ export const nodeHash = (node: CalcNode): number => {
 // the public value
 // ---------------------------------------------------------------------------
 
-class CalcImpl extends Pipeable implements Calc<string>, Equal.Equal {
+class CalcImpl extends Pipeable implements Calc<AnyVar>, Equal.Equal {
   readonly [CalcTypeId]: CalcTypeId = CalcTypeId
 
   readonly node: CalcNode
@@ -759,6 +806,10 @@ class CalcImpl extends Pipeable implements Calc<string>, Equal.Equal {
     super()
     this.node = node
     this.refSet = refSet
+  }
+
+  get [RefsTypeId](): ReadonlySet<string> {
+    return this.refSet
   }
 
   [Equal.EqualTypeId](that: unknown): boolean {
@@ -780,19 +831,18 @@ class CalcImpl extends Pipeable implements Calc<string>, Equal.Equal {
 }
 
 /** @internal */
-export const isCalc = (u: unknown): u is Calc<string, Unit.Any, unknown> =>
+export const isCalc = (u: unknown): u is Calc<AnyVar, Unit.Any, unknown> =>
   typeof u === 'object' && u !== null && CalcTypeId in u
 
 /** @internal */
 export const nodeOf = (expr: Top): CalcNode => (expr as CalcImpl).node
 
 /** @internal */
-export const refsOf = <R extends string>(expr: Calc<R, Unit.Any, unknown>): ReadonlySet<R> =>
-  (expr as unknown as CalcImpl).refSet as ReadonlySet<R>
+export const refsOf = (expr: Top): ReadonlySet<string> => (expr as unknown as CalcImpl).refSet
 
 // Neither leaf token kind is tracked in the ref set (they are not custom
 // properties), so both are gathered by walking the tree on demand — the
-// runtime counterpart to the `Leaves`-level typing, one pass collecting into
+// runtime counterpart to the `Requires`-level typing, one pass collecting into
 // whichever sets are supplied.
 const collectTokens = (
   node: CalcNode,
@@ -867,7 +917,7 @@ export const unitsOf = (node: CalcNode): ReadonlySet<string> => {
   return set
 }
 
-const makeCalc = (node: CalcNode, refSet: ReadonlySet<string>): Calc<string> =>
+const makeCalc = (node: CalcNode, refSet: ReadonlySet<string>): Calc<AnyVar> =>
   new CalcImpl(node, refSet)
 
 /**
@@ -889,10 +939,10 @@ export type AnyInput = Top | number
 export type Bottom = Calc<never, never, never>
 
 /** @internal */
-export const toCalc = (input: AnyInput): Calc<string> =>
-  typeof input === 'number' ? of(input) : (input as Calc<string>)
+export const toCalc = (input: AnyInput): Calc<AnyVar> =>
+  typeof input === 'number' ? of(input) : (input as Calc<AnyVar>)
 
-const mergeRefs = (exprs: ReadonlyArray<Calc<string>>): ReadonlySet<string> => {
+const mergeRefs = (exprs: ReadonlyArray<Calc<AnyVar>>): ReadonlySet<string> => {
   const merged = new Set<string>()
   for (const expr of exprs) {
     for (const name of refsOf(expr)) {
@@ -928,18 +978,46 @@ export function dimension(value: number, unit: string, kind: Kind, precision?: P
   ) as Bottom
 }
 
-const refCache = new Map<string, Calc<string>>()
+const refCache = new Map<string, Bottom>()
+
+// Lowers a read's fallback into calc's node vocabulary: numbers become
+// unannotated constants, nested reads become nested `Ref` nodes, and a
+// `Calc` hands over its tree. The rejection is structural — anything else
+// (a `Color`, say) fails the invariant without this module naming it.
+const lowerFallback = (fb: unknown): CalcNode => {
+  if (typeof fb === 'number') {
+    return constantNode(fb, undefined)
+  }
+  if (isVar(fb)) {
+    return lowerRead(fb)
+  }
+  invariant(isCalc(fb), 'Calc var fallback must be a number, a Calc expression, or a Var read')
+  return nodeOf(fb)
+}
+
+const lowerRead = (read: AnyVar): RefNode => {
+  const fb = fallbackOf(read)
+  return fb === undefined
+    ? { _tag: 'Ref', name: varNameOf(read) }
+    : { _tag: 'Ref', name: varNameOf(read), fallback: lowerFallback(fb) }
+}
 
 /** @internal */
-export function ref<Name extends string>(name: Name): Calc<Name> {
-  const cached = refCache.get(name)
-  if (cached) {
-    return cached as Calc<Name>
+export function ref(read: string | AnyVar): Bottom {
+  if (typeof read !== 'string') {
+    if (fallbackOf(read) === undefined) {
+      return ref(varNameOf(read))
+    }
+    return makeCalc(lowerRead(read), refsOfVar(read)) as Bottom
   }
-  invariant(name.length > 0, 'Reference name must be a non-empty string')
-  const expr = makeCalc({ _tag: 'Ref', name }, new Set([name]))
-  refCache.set(name, expr)
-  return expr as Calc<Name>
+  const cached = refCache.get(read)
+  if (cached) {
+    return cached
+  }
+  invariant(read.length > 0, 'Reference name must be a non-empty string')
+  const expr = makeCalc({ _tag: 'Ref', name: read }, new Set([read])) as Bottom
+  refCache.set(read, expr)
+  return expr
 }
 
 /**
@@ -961,7 +1039,7 @@ export function ident(name: string): Calc<never> {
 
 const liftNary =
   (construct: (nodes: ReadonlyArray<CalcNode>) => CalcNode) =>
-  (args: ReadonlyArray<Input<string>>): Calc<string> => {
+  (args: ReadonlyArray<Input>): Calc<AnyVar> => {
     const exprs = args.map(toCalc)
     return makeCalc(construct(exprs.map(nodeOf)), mergeRefs(exprs))
   }
@@ -977,32 +1055,31 @@ const maxImpl = liftNary(maxNode)
  * `calc.ts`; these internal arms track only references.
  */
 interface NaryCombinator {
-  <A extends string = never, B extends string = never>(a: Input<A>, b: Input<B>): Calc<A | B>
-  <A extends string = never, B extends string = never, C extends string = never>(
+  <A extends AnyVar = never, B extends AnyVar = never>(a: Input<A>, b: Input<B>): Calc<A | B>
+  <A extends AnyVar = never, B extends AnyVar = never, C extends AnyVar = never>(
     a: Input<A>,
     b: Input<B>,
     c: Input<C>,
   ): Calc<A | B | C>
   <
-    A extends string = never,
-    B extends string = never,
-    C extends string = never,
-    D extends string = never,
+    A extends AnyVar = never,
+    B extends AnyVar = never,
+    C extends AnyVar = never,
+    D extends AnyVar = never,
   >(
     a: Input<A>,
     b: Input<B>,
     c: Input<C>,
     d: Input<D>,
   ): Calc<A | B | C | D>
-  (...args: readonly [Input<string>, Input<string>, ...ReadonlyArray<Input<string>>]): Calc<string>
+  (...args: readonly [Input, Input, ...ReadonlyArray<Input>]): Calc<AnyVar>
 }
 
 // The precise arms widen the loose runtime impl (every arity returns
 // `Calc<string>`); the function-overload form these three replace hid the same
 // widening behind lenient overload checking, so the cast loses no safety.
-const naryCombinator = (
-  impl: (args: ReadonlyArray<Input<string>>) => Calc<string>,
-): NaryCombinator => ((...args: ReadonlyArray<Input<string>>) => impl(args)) as NaryCombinator
+const naryCombinator = (impl: (args: ReadonlyArray<Input>) => Calc<AnyVar>): NaryCombinator =>
+  ((...args: ReadonlyArray<Input>) => impl(args)) as NaryCombinator
 
 /** @internal */
 export const add: NaryCombinator = naryCombinator(addImpl)
@@ -1015,7 +1092,7 @@ export const max: NaryCombinator = naryCombinator(maxImpl)
 
 const liftBinary =
   (construct: (left: CalcNode, right: CalcNode) => CalcNode) =>
-  (left: AnyInput, right: AnyInput): Calc<string> => {
+  (left: AnyInput, right: AnyInput): Calc<AnyVar> => {
     const l = toCalc(left)
     const r = toCalc(right)
     return makeCalc(construct(nodeOf(l), nodeOf(r)), mergeRefs([l, r]))
@@ -1045,7 +1122,7 @@ export function mod(left: AnyInput, right: AnyInput): Bottom {
 }
 
 /** @internal */
-export function divide<A extends string = never, B extends string = never>(
+export function divide<A extends AnyVar = never, B extends AnyVar = never>(
   left: Input<A>,
   right: Input<B>,
 ): Calc<A | B> {
@@ -1064,7 +1141,7 @@ export function signedPow(base: AnyInput, exponent: AnyInput): Bottom {
 
 const liftUnary =
   (construct: (argument: CalcNode) => CalcNode) =>
-  (argument: AnyInput): Calc<string> => {
+  (argument: AnyInput): Calc<AnyVar> => {
     const arg = toCalc(argument)
     return makeCalc(construct(nodeOf(arg)), refsOf(arg))
   }
@@ -1134,7 +1211,7 @@ export function lerp(a: AnyInput, b: AnyInput, t: AnyInput): Bottom {
 /** @internal */
 export const collectBindings = (
   refSet: ReadonlySet<string>,
-  bindings: Record<string, Input<string> | undefined>,
+  bindings: Record<string, Input | undefined>,
 ): { readonly nodeBindings: Record<string, CalcNode>; readonly refSet: Set<string> } => {
   const nodeBindings: Record<string, CalcNode> = {}
   const newRefs = new Set<string>(refSet)
@@ -1156,7 +1233,7 @@ export const collectBindings = (
 export const bind: {
   <const B extends Bindings>(bindings: B): (expr: Top) => Bottom
   (expr: Top, bindings: Bindings): Bottom
-} = dual(2, (expr: Top, bindings: Record<string, Input<string>>): Bottom => {
+} = dual(2, (expr: Top, bindings: Record<string, Input>): Bottom => {
   const collected = collectBindings(refsOf(expr), bindings)
   return makeCalc(substituteNode(nodeOf(expr), collected.nodeBindings), collected.refSet) as Bottom
 })
@@ -1168,7 +1245,7 @@ export const bind: {
  * @internal
  */
 export interface AnySolveOptions {
-  readonly bindings?: Record<string, Input<string> | undefined>
+  readonly bindings?: Record<string, Input | undefined>
   readonly units?: Record<string, number>
   readonly idents?: Record<string, number>
 }
@@ -1187,7 +1264,7 @@ export function solve(expr: Top, options?: AnySolveOptions): number {
 }
 
 /** @internal */
-export function serialize<Vars extends string>(
+export function serialize<Vars extends AnyVar>(
   expr: Calc<Vars, Unit.Any, unknown>,
   options?: SerializeOptions<Vars>,
 ): string {
@@ -1195,7 +1272,7 @@ export function serialize<Vars extends string>(
   if (options?.bindings !== undefined) {
     const collected = collectBindings(
       refsOf(expr),
-      options.bindings as Record<string, Input<string> | undefined>,
+      options.bindings as Record<string, Input | undefined>,
     )
     node = substituteNode(node, collected.nodeBindings)
   }
@@ -1204,8 +1281,10 @@ export function serialize<Vars extends string>(
 }
 
 /** @internal */
-export function refs<Vars extends string>(expr: Calc<Vars, Unit.Any, unknown>): ReadonlySet<Vars> {
-  return refsOf(expr)
+export function refs<Vars extends AnyVar>(
+  expr: Calc<Vars, Unit.Any, unknown>,
+): ReadonlySet<VarName<Vars>> {
+  return refsOf(expr) as ReadonlySet<VarName<Vars>>
 }
 
 /** @internal */

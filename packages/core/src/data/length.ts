@@ -14,6 +14,7 @@
 
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
+import type { Var } from '#var'
 import * as internal from './length.internal.ts'
 import type * as Unit from './unit.ts'
 
@@ -30,7 +31,7 @@ import type * as Unit from './unit.ts'
  *
  * @since 0.2.0
  */
-export type Length<Vars extends string = string> = Calc<Vars, Unit.Length, unknown>
+export type Length<Vars extends Var.Any = Var.Any> = Calc<Vars, Unit.Length, unknown>
 
 /**
  * A length in `px` (absolute pixels).

@@ -4,6 +4,7 @@ import type { Unit } from '#data'
 import type { Color } from '#data/color'
 import type { RenderOptions as MediaQueryRenderOptions } from '#query/mediaQuery'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { DeclarationTypeId } from './declaration.internal.ts'
 import * as internal from './declaration.internal.ts'
 
@@ -16,15 +17,17 @@ import * as internal from './declaration.internal.ts'
  * A `Calc` of any dimension is accepted: a `<number>`, or a `<length>` /
  * `<angle>` built from `fashionable/data`, which carries its own units.
  *
- * The `Vars` parameter carries the value's unbound variable names, as on
- * `Calc`; literal text binds nothing and a text-valued declaration is a
- * `Declaration<never>`.
+ * The `Vars` parameter carries the value's unbound reads, as on `Calc`;
+ * literal text binds nothing and a text-valued declaration is a
+ * `Declaration<never>`. A whole-value custom-property read is spelled as a
+ * `Var` value, not literal text, so it joins the report:
+ * `make('font-family', Var.of('stack'))` is a `Declaration<Var<'stack'>>`.
  *
  * Construct via `make`.
  *
  * @since 0.1.0
  */
-export interface Declaration<out Vars extends string = string> extends Pipeable {
+export interface Declaration<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [DeclarationTypeId]: DeclarationTypeId
   /**
    * The property name, exactly as it renders — `font-size`, or `--depth`
@@ -38,15 +41,55 @@ export interface Declaration<out Vars extends string = string> extends Pipeable 
 }
 
 /**
+ * The fallbacks a declaration-level read admits: any declaration value —
+ * literal text, a number, an expression of either world, or another read,
+ * recursively. This is the widest projection of the generic fallback slot
+ * on `Var`: at the declaration level a fallback is an arbitrary token
+ * sequence, so every value form qualifies.
+ *
+ * @since 0.4.0
+ */
+export type ValueFallback =
+  | string
+  | number
+  | Calc<Var.Any, Unit.Any, unknown>
+  | Color<Var.Any>
+  | Var.Var<string, unknown, ValueFallback | undefined>
+
+/**
+ * A custom-property read usable as a whole declaration value: bare, or
+ * carrying any declaration value as its fallback.
+ *
+ * @since 0.4.0
+ */
+export type Read = Var.Var<string, unknown, ValueFallback | undefined>
+
+/**
  * The value forms a declaration can hold: literal CSS text, a `Calc`
- * expression of any dimension, or a `Color` expression.
+ * expression of any dimension, a `Color` expression, or a whole-value
+ * custom-property read (`font-family: var(--stack, sans-serif)`), whose
+ * fallback may be any declaration value.
  *
  * @since 0.1.0
  */
-export type Value<Vars extends string = string> =
+export type Value<Vars extends Var.Any = Var.Any> =
   | string
   | Calc<Vars, Unit.Any, unknown>
   | Color<Vars>
+  | Var.Var<Var.Name<Vars>, unknown, ValueFallback | undefined>
+
+// The identities a read contributes, flattened: its own name-and-type
+// pair, then its fallback chain's across both expression worlds.
+type ReadVars<V> =
+  V extends Var.Var<infer N, infer T, infer F> ? Var.Var<N, T> | ReadFallbackVars<F> : never
+type ReadFallbackVars<F> =
+  F extends Calc<infer W, Unit.Any, unknown>
+    ? W
+    : F extends Color<infer W>
+      ? W
+      : F extends Var.Any
+        ? ReadVars<F>
+        : never
 
 /**
  * Checks if a value is a `Declaration`.
@@ -58,31 +101,49 @@ export type Value<Vars extends string = string> =
  * @returns `true` if the value is a `Declaration`, `false` otherwise.
  * @since 0.1.0
  */
-export const isDeclaration: (u: unknown) => u is Declaration<string> = internal.isDeclaration
+export const isDeclaration: (u: unknown) => u is Declaration<Var.Any> = internal.isDeclaration
 
-/**
- * Creates a declaration.
- *
- * Literal text is stored verbatim — no parsing, no escaping. A bare
- * number is coerced to an unannotated constant expression, as anywhere
- * else an expression is accepted, so it serializes under the precision
- * context rather than as raw text.
- *
- * @param name - The property name, exactly as it renders (`--x` keeps its dashes). Must be non-empty.
- * @param value - Literal CSS text, a number, or a `Calc`/`Color` expression.
- * @returns A `Declaration` carrying the value's variable names — `Declaration<never>` for text and numbers.
- * @throws `Error` when `name` is empty, or `value` is a non-finite number.
- * @example
- * ```ts
- * Declaration.make('color', 'red')
- * Declaration.make('--fluid', Calc.add(14, Calc.multiply(Calc.var('vw'), 0.01)))
- * ```
- * @since 0.1.0
- */
-export const make: <Vars extends string = never>(
-  name: string,
-  value: Value<Vars> | number,
-) => Declaration<Vars> = internal.make
+export const make: {
+  /**
+   * Creates a declaration whose value is a whole custom-property read —
+   * the honest spelling of `font-family: var(--stack, sans-serif)`, which
+   * as literal text would drop the read from the dependency report. The
+   * declaration's `Vars` unions the read's identity with its fallback
+   * chain's, flattened.
+   *
+   * @param name - The property name, exactly as it renders. Must be non-empty.
+   * @param value - The read, from `Var.of` (optionally through `Var.fallback`).
+   * @returns A `Declaration` carrying the read's names.
+   * @throws `Error` when `name` is empty, or the read's fallback chain holds a value no declaration can (anything but text, numbers, expressions, and reads).
+   * @example
+   * ```ts
+   * Declaration.make('font-family', Var.of('stack').pipe(Var.fallback('sans-serif')))
+   * // renders 'font-family: var(--stack, sans-serif);'
+   * ```
+   * @since 0.4.0
+   */
+  <V extends Read>(name: string, value: V): Declaration<ReadVars<V>>
+  /**
+   * Creates a declaration.
+   *
+   * Literal text is stored verbatim — no parsing, no escaping. A bare
+   * number is coerced to an unannotated constant expression, as anywhere
+   * else an expression is accepted, so it serializes under the precision
+   * context rather than as raw text.
+   *
+   * @param name - The property name, exactly as it renders (`--x` keeps its dashes). Must be non-empty.
+   * @param value - Literal CSS text, a number, or a `Calc`/`Color` expression.
+   * @returns A `Declaration` carrying the value's variable names — `Declaration<never>` for text and numbers.
+   * @throws `Error` when `name` is empty, or `value` is a non-finite number.
+   * @example
+   * ```ts
+   * Declaration.make('color', 'red')
+   * Declaration.make('--fluid', Calc.add(14, Calc.multiply(Calc.var('vw'), 0.01)))
+   * ```
+   * @since 0.1.0
+   */
+  <Vars extends Var.Any = never>(name: string, value: Value<Vars> | number): Declaration<Vars>
+} = internal.make
 
 export const bind: {
   /**
@@ -95,7 +156,7 @@ export const bind: {
    */
   <const B extends Bindings>(
     bindings: B,
-  ): <Vars extends string>(declaration: Declaration<Vars>) => Declaration<ApplyBindings<Vars, B>>
+  ): <Vars extends Var.Any>(declaration: Declaration<Vars>) => Declaration<ApplyBindings<Vars, B>>
   /**
    * Replaces variables in the declaration's value with values or other
    * expressions, re-folding constant subtrees. Semantics match
@@ -108,7 +169,7 @@ export const bind: {
    * @returns The bound declaration.
    * @since 0.1.0
    */
-  <Vars extends string, const B extends Bindings>(
+  <Vars extends Var.Any, const B extends Bindings>(
     declaration: Declaration<Vars>,
     bindings: B,
   ): Declaration<ApplyBindings<Vars, B>>
@@ -122,8 +183,9 @@ export const bind: {
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends string>(declaration: Declaration<Vars>) => ReadonlySet<Vars> =
-  internal.refs
+export const vars: <Vars extends Var.Any>(
+  declaration: Declaration<Vars>,
+) => ReadonlySet<Var.Name<Vars>> = internal.refs
 
 /**
  * Options for `render`, extending `MediaQuery.RenderOptions` — the
@@ -156,7 +218,7 @@ export interface RenderOptions extends MediaQueryRenderOptions {
  * ```
  * @since 0.1.0
  */
-export const render: (declaration: Declaration<string>, options?: RenderOptions) => string =
+export const render: (declaration: Declaration<Var.Any>, options?: RenderOptions) => string =
   internal.render
 
 export const equals: {
@@ -167,7 +229,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: Declaration<string>): (self: Declaration<string>) => boolean
+  (that: Declaration<Var.Any>): (self: Declaration<Var.Any>) => boolean
   /**
    * Structural equality: names compare as text, expression values as
    * expression trees (`Calc.equals` semantics, precision annotations
@@ -179,5 +241,5 @@ export const equals: {
    * @returns `true` if the declarations are structurally equal.
    * @since 0.1.0
    */
-  (self: Declaration<string>, that: Declaration<string>): boolean
+  (self: Declaration<Var.Any>, that: Declaration<Var.Any>): boolean
 } = internal.equals

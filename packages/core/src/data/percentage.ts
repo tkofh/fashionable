@@ -17,6 +17,7 @@
 
 import type { Calc } from '#calc/calc'
 import type { Precision } from '#calc/precision'
+import type { Var } from '#var'
 import * as internal from './percentage.internal.ts'
 import type * as Unit from './unit.ts'
 
@@ -29,7 +30,7 @@ import type * as Unit from './unit.ts'
  *
  * @since 0.2.0
  */
-export type Percentage<Vars extends string = string> = Calc<Vars, Unit.Percentage, unknown>
+export type Percentage<Vars extends Var.Any = Var.Any> = Calc<Vars, Unit.Percentage, unknown>
 
 /**
  * A percentage — a number rendered with a trailing `%`. `Percentage.of(40)`

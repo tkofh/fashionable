@@ -15,8 +15,10 @@ import {
 import { toSpec } from '#calc/precision.internal'
 import * as Equal from '#internal/equal'
 import { DEFAULT_FORMAT, type FormatSpec } from '#internal/format'
-import { EMPTY_REFS, unionRefs } from '#internal/refs'
+import { EMPTY_REFS, RefsTypeId, unionRefs } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
+import type { Name as VarName } from '#var/var'
+import { type AnyVar, fallbackOf, isVar, nameOf as varNameOf, refsOfVar } from '#var/var.internal'
 import type { ChannelIdent } from './channels.ts'
 import type { Color, RelativeChannel } from './color.ts'
 import { dataOf as spaceDataOf, type Wrap } from './colorSpace.internal.ts'
@@ -154,6 +156,7 @@ export interface RelativeNode {
 export interface ColorRefNode {
   readonly _tag: 'ColorRef'
   readonly name: string
+  readonly fallback?: ColorNode
 }
 
 /** @internal */
@@ -221,6 +224,9 @@ const mapColorNode = (node: ColorNode, f: (channel: CalcNode) => CalcNode): Colo
         alpha: node.alpha === undefined ? undefined : mapChannel(node.alpha, f),
       }
     case 'ColorRef':
+      return node.fallback === undefined
+        ? node
+        : { _tag: 'ColorRef', name: node.name, fallback: mapColorNode(node.fallback, f) }
     case 'Named':
       return node
   }
@@ -262,7 +268,9 @@ const serializeColorNode = (node: ColorNode, precision: FormatSpec): string => {
     return `color-mix(${serializeMethod(node.method)}, ${serializeMixArm(node.color1, node.percentage1, precision)}, ${serializeMixArm(node.color2, node.percentage2, precision)})`
   }
   if (node._tag === 'ColorRef') {
-    return `var(--${node.name})`
+    return node.fallback === undefined
+      ? `var(--${node.name})`
+      : `var(--${node.name}, ${serializeColorNode(node.fallback, precision)})`
   }
   if (node._tag === 'Relative') {
     const origin = serializeColorNode(node.origin, precision)
@@ -316,7 +324,13 @@ const colorNodeEquals = (a: ColorNode, b: ColorNode): boolean => {
     )
   }
   if (a._tag === 'ColorRef') {
-    return a.name === (b as ColorRefNode).name
+    const other = b as ColorRefNode
+    if (a.name !== other.name) {
+      return false
+    }
+    return a.fallback === undefined || other.fallback === undefined
+      ? a.fallback === other.fallback
+      : colorNodeEquals(a.fallback, other.fallback)
   }
   if (a._tag === 'Relative') {
     const other = b as RelativeNode
@@ -345,7 +359,8 @@ const colorNodeHash = (node: ColorNode): number => {
     return Equal.combine(h, Equal.hashString(node.name))
   }
   if (node._tag === 'ColorRef') {
-    return Equal.combine(h, Equal.hashString(node.name))
+    h = Equal.combine(h, Equal.hashString(node.name))
+    return Equal.combine(h, node.fallback === undefined ? 0 : colorNodeHash(node.fallback))
   }
   if (node._tag === 'LightDark') {
     h = Equal.combine(h, colorNodeHash(node.light))
@@ -374,7 +389,7 @@ const colorNodeHash = (node: ColorNode): number => {
   return h
 }
 
-class ColorImpl extends Pipeable implements Color<string>, Equal.Equal {
+class ColorImpl extends Pipeable implements Color<AnyVar>, Equal.Equal {
   readonly [ColorTypeId]: ColorTypeId = ColorTypeId
 
   readonly node: ColorNode
@@ -385,6 +400,10 @@ class ColorImpl extends Pipeable implements Color<string>, Equal.Equal {
     super()
     this.node = node
     this.refSet = refSet
+  }
+
+  get [RefsTypeId](): ReadonlySet<string> {
+    return this.refSet
   }
 
   [Equal.EqualTypeId](that: unknown): boolean {
@@ -406,15 +425,15 @@ class ColorImpl extends Pipeable implements Color<string>, Equal.Equal {
 }
 
 /** @internal */
-export const isColor = (u: unknown): u is Color<string> =>
+export const isColor = (u: unknown): u is Color<AnyVar> =>
   typeof u === 'object' && u !== null && ColorTypeId in u
 
 /** @internal */
-export const nodeOfColor = (color: Color<string>): ColorNode => (color as ColorImpl).node
+export const nodeOfColor = (color: Color<AnyVar>): ColorNode => (color as ColorImpl).node
 
 /** @internal */
-export const refsOf = <R extends string>(color: Color<R>): ReadonlySet<R> =>
-  (color as unknown as ColorImpl).refSet as ReadonlySet<R>
+export const refsOf = (color: Color<AnyVar>): ReadonlySet<string> =>
+  (color as unknown as ColorImpl).refSet
 
 interface ResolvedChannel {
   readonly node: ChannelNode
@@ -425,7 +444,7 @@ interface ResolvedChannel {
 // number, `none`, or any number-kind expression — including one branded with a
 // relative-color channel keyword. The public signatures pin the precise vars
 // and scope the keywords to the space; this stays wide enough to accept all.
-type RelativeChannelInput = RelativeChannel<string, ChannelIdent<string>>
+type RelativeChannelInput = RelativeChannel<AnyVar, ChannelIdent<string>>
 
 const toChannel = (input: RelativeChannelInput): ResolvedChannel => {
   if (isNone(input)) {
@@ -436,7 +455,7 @@ const toChannel = (input: RelativeChannelInput): ResolvedChannel => {
 }
 
 /** @internal */
-export function oklch<L extends string = never, C extends string = never, H extends string = never>(
+export function oklch<L extends AnyVar = never, C extends AnyVar = never, H extends AnyVar = never>(
   lightness: Input<L> | None,
   chroma: Input<C> | None,
   hue: Input<H> | None,
@@ -451,7 +470,7 @@ export function oklch<L extends string = never, C extends string = never, H exte
 }
 
 /** @internal */
-export function srgb<R extends string = never, G extends string = never, B extends string = never>(
+export function srgb<R extends AnyVar = never, G extends AnyVar = never, B extends AnyVar = never>(
   red: Input<R> | None,
   green: Input<G> | None,
   blue: Input<B> | None,
@@ -490,14 +509,39 @@ export const named = (name: string): Color<never> => {
 /** @internal */
 export const transparent: Color<never> = named('transparent')
 
-/** @internal */
-export const ref = <Name extends string>(name: Name): Color<Name> => {
-  invariant(name.length > 0, 'Color reference name must be a non-empty string')
-  return new ColorImpl({ _tag: 'ColorRef', name }, new Set([name])) as Color<Name>
+// Lowers a read's fallback into color's node vocabulary: literal text is
+// coerced through `named` (so its guards apply), nested reads become nested
+// `ColorRef` nodes, and a `Color` hands over its node. The rejection is
+// structural — a `Calc`, say, fails the invariant without naming it here.
+const lowerFallback = (fb: unknown): ColorNode => {
+  if (typeof fb === 'string') {
+    return nodeOfColor(named(fb))
+  }
+  if (isVar(fb)) {
+    return lowerRead(fb)
+  }
+  invariant(isColor(fb), 'Color var fallback must be a Color, color text, or a Var read')
+  return nodeOfColor(fb)
+}
+
+const lowerRead = (read: AnyVar): ColorRefNode => {
+  const fb = fallbackOf(read)
+  return fb === undefined
+    ? { _tag: 'ColorRef', name: varNameOf(read) }
+    : { _tag: 'ColorRef', name: varNameOf(read), fallback: lowerFallback(fb) }
 }
 
 /** @internal */
-export function lightDark<A extends string = never, B extends string = never>(
+export const ref = (read: string | AnyVar): Color<never> => {
+  if (typeof read !== 'string') {
+    return new ColorImpl(lowerRead(read), refsOfVar(read)) as Color<never>
+  }
+  invariant(read.length > 0, 'Color reference name must be a non-empty string')
+  return new ColorImpl({ _tag: 'ColorRef', name: read }, new Set([read])) as Color<never>
+}
+
+/** @internal */
+export function lightDark<A extends AnyVar = never, B extends AnyVar = never>(
   light: Color<A>,
   dark: Color<B>,
 ): Color<A | B> {
@@ -510,8 +554,8 @@ export function lightDark<A extends string = never, B extends string = never>(
 // The erased mix arm: a whole color, or a [color, weight] tuple whose weight is
 // a percentage-kind expression (a bare number reads as a percent).
 type MixArmInput =
-  | Color<string>
-  | readonly [Color<string>, number | Calc<string, Unit.Percentage, unknown>]
+  | Color<AnyVar>
+  | readonly [Color<AnyVar>, number | Calc<AnyVar, Unit.Percentage, unknown>]
 
 interface ResolvedArm {
   readonly color: ColorNode
@@ -561,12 +605,12 @@ export function mix(
 const relative = (
   token: string,
   wrap: Wrap,
-  origin: Color<string>,
+  origin: Color<AnyVar>,
   channel1: RelativeChannelInput,
   channel2: RelativeChannelInput,
   channel3: RelativeChannelInput,
   alpha: RelativeChannelInput | undefined,
-): Color<string> => {
+): Color<AnyVar> => {
   const c1 = toChannel(channel1)
   const c2 = toChannel(channel2)
   const c3 = toChannel(channel3)
@@ -586,7 +630,7 @@ const relative = (
 
 /** @internal */
 export function from(
-  origin: Color<string>,
+  origin: Color<AnyVar>,
   space: ColorSpace<unknown>,
   channel1: RelativeChannelInput,
   channel2: RelativeChannelInput,
@@ -604,7 +648,9 @@ export function from(
 const colorRefNames = (node: ColorNode): ReadonlySet<string> => {
   switch (node._tag) {
     case 'ColorRef':
-      return new Set([node.name])
+      return node.fallback === undefined
+        ? new Set([node.name])
+        : unionRefs(new Set([node.name]), colorRefNames(node.fallback))
     case 'LightDark':
       return unionRefs(colorRefNames(node.light), colorRefNames(node.dark))
     case 'ColorMix':
@@ -666,12 +712,12 @@ const colorChannels = (node: ColorNode): ReadonlySet<string> => {
 export const bind: {
   <const B extends Bindings>(
     bindings: B,
-  ): <Vars extends string>(color: Color<Vars>) => Color<ApplyBindings<Vars, B>>
-  <Vars extends string, const B extends Bindings>(
+  ): <Vars extends AnyVar>(color: Color<Vars>) => Color<ApplyBindings<Vars, B>>
+  <Vars extends AnyVar, const B extends Bindings>(
     color: Color<Vars>,
     bindings: B,
   ): Color<ApplyBindings<Vars, B>>
-} = dual(2, (color: Color<string>, bindings: Record<string, Input<string>>): Color<string> => {
+} = dual(2, (color: Color<AnyVar>, bindings: Record<string, Input>): Color<AnyVar> => {
   const collected = collectBindings(refsOf(color), bindings)
   const node = mapColorNode(nodeOfColor(color), (channel) =>
     substituteNode(channel, collected.nodeBindings),
@@ -680,7 +726,7 @@ export const bind: {
 })
 
 /** @internal */
-export function serialize<Vars extends string>(
+export function serialize<Vars extends AnyVar>(
   color: Color<Vars>,
   options?: SerializeOptions<Vars>,
 ): string {
@@ -688,7 +734,7 @@ export function serialize<Vars extends string>(
   if (options?.bindings !== undefined) {
     const collected = collectBindings(
       refsOf(color),
-      options.bindings as Record<string, Input<string> | undefined>,
+      options.bindings as Record<string, Input | undefined>,
     )
     node = mapColorNode(node, (channel) => substituteNode(channel, collected.nodeBindings))
   }
@@ -697,17 +743,17 @@ export function serialize<Vars extends string>(
 }
 
 /** @internal */
-export function refs<Vars extends string>(color: Color<Vars>): ReadonlySet<Vars> {
-  return refsOf(color)
+export function refs<Vars extends AnyVar>(color: Color<Vars>): ReadonlySet<VarName<Vars>> {
+  return refsOf(color) as ReadonlySet<VarName<Vars>>
 }
 
 /** @internal */
-export function channels(color: Color<string>): ReadonlySet<string> {
+export function channels(color: Color<AnyVar>): ReadonlySet<string> {
   return colorChannels(nodeOfColor(color))
 }
 
 /** @internal */
 export const equals = dual<
-  (that: Color<string>) => (self: Color<string>) => boolean,
-  (self: Color<string>, that: Color<string>) => boolean
->(2, (self: Color<string>, that: Color<string>): boolean => Equal.equals(self, that))
+  (that: Color<AnyVar>) => (self: Color<AnyVar>) => boolean,
+  (self: Color<AnyVar>, that: Color<AnyVar>) => boolean
+>(2, (self: Color<AnyVar>, that: Color<AnyVar>): boolean => Equal.equals(self, that))

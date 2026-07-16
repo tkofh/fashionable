@@ -12,6 +12,7 @@
  */
 
 import type { Calc, Input } from '#calc/calc'
+import type { Var } from '#var'
 import type { HueInterpolationTypeId } from './hueInterpolation.internal.ts'
 import * as internal from './hueInterpolation.internal.ts'
 
@@ -89,9 +90,9 @@ export const decreasing: HueInterpolation<'decreasing'> = internal.decreasing
  * @since 0.2.0
  */
 export const interpolate: <
-  F extends string = never,
-  T extends string = never,
-  P extends string = never,
+  F extends Var.Any = never,
+  T extends Var.Any = never,
+  P extends Var.Any = never,
 >(
   strategy: HueInterpolation,
   from: Input<F>,
