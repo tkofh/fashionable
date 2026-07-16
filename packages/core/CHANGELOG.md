@@ -1,5 +1,73 @@
 # fashionable
 
+## 0.4.0
+
+### Minor Changes
+
+- d166b8f: `<length-percentage>`: anchored mixing, declared reads, and registration.
+
+  **New: `LengthPercentage`.** `fashionable/data` gains `LengthPercentage`, the mixed dimension: a `Calc` whose `Result` is `Unit.LengthPercentage` (`Unit.Length | Unit.Percentage`). `LengthPercentage.of` widens a length or percentage expression to it — identity at runtime, an anchor at the type level.
+
+  **Mixing is anchored, never ambient.** An expression led by a length-percentage value admits length and percentage operands through the existing same-family constraints: `Calc.subtract(LengthPercentage.of(Percentage.of(100)), Length.px(24))` builds `calc(100% - 24px)`, and the sum stays a `<length-percentage>`. An unanchored `px + %` sum remains a cross-family type error — mixing is only legal where a destination accepts a `<length-percentage>`, and the anchor names that destination.
+
+  **`Var.lengthPercentage` declares the channel.** The read lifts spanning both families, anchoring mixing at the read site; bindings accept either family or a mix; fallbacks are family-checked against the widened family; `PropertyRule.make` derives `syntax: '<length-percentage>'`; and `Declaration.make` writes accept both families.
+
+- d166b8f: Re-partition `Calc`'s type parameters: `Calc<Vars, Kind, Leaves>` is now `Calc<Vars, Result, Requires>`.
+
+  **`Result` replaces `Kind` (breaking).** The second parameter now carries the output's unit composition instead of the four kind strings: `Unit.Px` for a pure pixel length, `Unit.Px | Unit.Vw` for a mixed sum, `Unit.None` for a `<number>`, `Unit.Rad` for `acos`/`atan2`. The dimension rules are unchanged: cross-dimension addition is still a type error, `multiply` still passes the dimensioned side through, and same-dimension `divide` produces `Unit.None` unconditionally. `Kind` itself survives as the four-string vocabulary. New in `Unit`: `Unit.None`, `Unit.Any` (the top, replacing `Kind` in the widest positions), and `Unit.Family`.
+
+  **`Leaves` is renamed `Requires` (breaking in name only).** The third parameter is the requirements channel — what stands between the expression and a number, satisfied by the `units` and `idents` sections of `Calc.SolveOptions` — union-accumulated with a `never` default. Absolute units stay on the channel as pre-satisfied requirements that never demand a solve section. Same-single-unit division discharges the unit's requirement; ident requirements never discharge.
+
+  **`bind` preserves `Result` and `Requires` (fix).** Previously `Calc.bind` accepted only number-kind, requirement-free expressions: binding a dimensioned or ident-carrying tree was a type error. It now takes any expression and preserves both facets — `Calc.bind(Calc.multiply(Calc.var('t'), Length.vw(1)), { t: 2 })` is a `Calc<never, Unit.Vw, Unit.Vw>`.
+
+  **Alias fix.** `Length<Vars>`, `Angle<Vars>`, and `Percentage<Vars>` now widen to `Calc<Vars, Unit.Length, unknown>` (and siblings), so ident-carrying dimensioned expressions like `Calc.multiply(Channel.L, Length.px(1))` are assignable to their family alias.
+
+- d166b8f: Selector nesting: the complex-selector grammar, `&`, and nested style rules that render.
+
+  **The grammar widens.** A `Selector` is now a complex selector: compounds joined by `descendant`/`child`/`nextSibling`/`subsequentSibling`. The functional pseudo-classes take selector lists: `is`, `where`, and `has` are new, and `not` widens from one compound to a list. Lists canonical-sort (matching is order-independent; a list's specificity is its most specific argument's, zero for `:where`); combinator sequences never reorder. In the compound order, `&` slots just after type/universal (`div&`, never `&div`, per css-nesting-1) and the functional pseudos share the old negation slot, so no existing rendered selector changes.
+
+  **`Selector.nest` and `Selector<Requires>`.** The nesting selector is a first-class simple selector, carrying the `Parent` requirement in the new `Requires` parameter (union-accumulated, `never` default). Bare `Selector` admits only closed selectors, so `Selector.specificity` and `Stylesheet`'s pair-form appends reject an unresolved `&` at compile time. `Selector.under(child, parent)` substitutes the parent for each `&` (compound parents merge in place, complex parents wrap as `:is(parent)`, argument lists included) and discharges `Parent`; the resolved specificity is spec-exact, since a rule carries exactly one selector.
+
+  **Nested style rules render (breaking: the guard is gone).** A nested `StyleRule` now emits as an indented sub-block with `&` kept verbatim — native CSS nesting, the shape `@media` blocks already take — instead of every renderer throwing. Two invariants replace the guard: `StyleRule.make` requires every style rule reachable in its block through media transparency to reference `&` (the implicit descendant CSS would prepend is not modeled), and `Stylesheet.make`/`append` reject a top-level rule whose selector still needs a parent. `coalesce` is untouched, strict mode included: it still refuses blocks that nest style rules.
+
+  **The containers carry the channel.** `RuleSet`, `StyleRule`, and `MediaRule` gain a `Requires` parameter beside `Vars`: a bare declaration contributes `Parent`, a media rule passes its block's requirements through, and a style rule contributes only its selector's, discharging its block's. `RuleSet.MemberRequires` is the member-level extractor. Existing annotations keep their meaning: `StyleRule<Vars>` stays the closed top-level form, `RuleSet<Vars>`/`MediaRule<Vars>` default to the conservative top, and `RuleSet.empty` is now `RuleSet<never, never>`.
+
+  **Top-level `@media`.** `MediaRule<Vars, never>` (a media rule whose block holds only closed style rules) joins `Stylesheet.Node` and renders as its own section: the authored `@media { selector { ... } }` grouping, no longer deferred to a separate type. A bare declaration or an `&`-carrying rule keeps the media rule nested-only, rejected at the top level at compile time and, for callers the phantom cannot see, at runtime.
+
+- d166b8f: Typed variables: declared types on `Var` handles, checked end to end.
+
+  **New: typed `Var` constructors.** `Var.number`, `Var.length`, `Var.angle`, `Var.percentage`, and `Var.color` create reads declared to a value type, carried in the handle's `Type` slot: `Var.length('gap')` is a `Var<'gap', Length>`, `Var.color('accent')` a `Var<'accent', Color>`. The declaration participates in structural equality and `Var.fallback` preserves it. `Var.of` stays the undeclared constructor.
+
+  **New: `Numeric`.** `fashionable/data` gains `Numeric`, the `<number>` expression type (`Calc<Vars, Unit.None, unknown>`), completing the dimension vocabulary. `Length`, `Angle`, and `Percentage` are now interfaces rather than type aliases (structurally identical, a drop-in), so their names survive inference in hovers.
+
+  **Declared reads lift typed.** `Calc.var(Var.length('gap'))` is a length-family expression that composes through the ordinary dimension algebra (`calc(var(--gap) + 4px)` is now buildable), while undeclared reads lift as `<number>` exactly as before. `Calc.var` rejects color-declared reads and `Color.var` rejects calc-declared ones, each with a string-literal error message. Fallbacks are family-checked recursively: a length read's fallback must be length-family, and a nested read in the chain must be declared to the same family.
+
+  **Typed bindings (breaking where a declaration exists).** `Bindings` and `SolveOptions` type each name's value by its declared type: binding a bare number where a length is declared is a type error. `bind` accepts requirement-carrying values and threads their `Requires` into the result (`BindingRequires`), so `bind(expr, { gap: Length.vw(2) })` demands the `vw` ratio at the eventual solve. `solve` bindings themselves stay closed, since `SolveOptions` cannot demand ratios for units its own bindings introduce. The per-name check rides the data-first overloads (`PartialBindings`); data-last `bind` stays lenient.
+
+  **Registration and writes through handles.** `PropertyRule.make(handle, initial)` derives the registered syntax from a declared handle (`Var.length('gap')` registers `syntax: '<length>'`) and types the initial value under it; an explicit syntax alongside a declared handle is consistency-checked at runtime. `Declaration.make(handle, value)` writes the property (`--gap: ...`) with the value typed by the declaration, and a read as the value covers the `--alias: var(--source)` pattern. Name-position handles must be fallback-free.
+
+- d166b8f: Model `var()` reads as values: the `fashionable/var` module, fallbacks, and the `Vars` identity flip.
+
+  **New: `fashionable/var`.** A `Var` value is one custom-property read (a name plus an optional fallback), and the bare read (`Var.of('gap')`) doubles as the property's canonical handle. `Var.fallback` (dual) derives site-specific reads from the handle; `Var.name`, `Var.vars`, `Var.isVar`, and `Var.equals` round out the surface.
+
+  **The `Vars` phantom carries identities (breaking).** Every `Vars` parameter (`Calc`, `Color`, `Declaration`, `RuleSet`, `StyleRule`, `MediaRule`, `Stylesheet`) is now a union of `Var` identities instead of string names: `Calc.var('x')` is a `Calc<Var<'x'>>`, and a type annotation spelled `Calc<'x' | 'y'>` becomes `Calc<Var<'x'> | Var<'y'>>`. Names stay the value-level currency: binding records are still keyed by bare name (`Bindings` maps over `Var.Name<Vars>`), and every `vars()` report still returns a `ReadonlySet` of names. `Stylesheet.mergeAll` infers differently to suit the object-typed phantom; call sites are unaffected.
+
+  **Reads lift and fall back.** `Calc.var` and `Color.var` accept a `Var` read as well as the bare-name sugar, and `Declaration.make` accepts one as a whole declaration value — `font-family: var(--stack, sans-serif)` no longer needs literal text that drops the read from the dependency report. A fallback-carrying read renders `var(--name, fallback)`, with the fallback constrained per context: numeric at `Calc.var`; color-valued at `Color.var`, where text coerces through `named` and CSS-wide keywords are rejected; any declaration value, nested reads included, at the declaration level. The read and every read in its fallback chain land in `Vars`.
+
+  **Fallback semantics.** A fallback joins the `vars()` report (`var(--x, var(--y))` reads both names) but never the requirements channel, so `units()` and `idents()` exclude fallback contents. `bind` on the read's own name replaces the whole read and discards the fallback: author substitution wins over cascade defaulting. Binding a name that appears only inside a fallback substitutes there, and a fallback does not exempt its read's name from `solve` bindings.
+
+- d166b8f: Name the dependency channels (variables, units, idents) and give `Calc.solve` an options object.
+
+  **Renames (breaking).** The custom-property channel is now spelled "variables" end to end: the `Refs` type parameter is `Vars` on `Calc`, `Color`, `Declaration`, `RuleSet`, `StyleRule`, `MediaRule`, and `Stylesheet`; `Calc.ref`/`Color.ref` are `Calc.var`/`Color.var`; every `refs()` accessor is `vars()`; `RuleSet.MemberRefs` is `MemberVars` and `Stylesheet.NodeRefs` is `NodeVars`. On the ident side, `Calc.channels` is `Calc.idents` (`Color.channels` keeps its domain name), and `Unit.ChannelLeaf` is replaced by the generic `Calc.Ident` brand, which `Channel.ChannelIdent` extends.
+
+  **`Calc.solve` takes an options object (breaking).** `solve(expr, bindings?, context?)` is now `solve(expr, options?)` with `{ bindings?, units?, idents? }`, each section required exactly when the expression's type demands it: `bindings` while variables are unbound, `units` while a relative unit or percentage is present, `idents` while a bare identifier is. Solve bindings must be closed values (`Input<never>`) — an open expression can never close under single-pass substitution and previously threw at runtime.
+
+  **Percentages solve.** The `%` leaf takes a required ratio in `units` — `basis / 100`, per-hundred exactly as `vw` takes `sampleWidth / 100`. Previously a percentage-carrying solve type-checked with an empty context and always threw.
+
+  **New: `Calc.units`.** Reports an expression's units at runtime, completing the report trio (`vars`/`units`/`idents`): one report per solve section.
+
+  **Fixes to the leaf algebra.** `pow`, `signedPow`, and `sign` no longer reject leaf-carrying operands, and they propagate leaves into the result type: `Calc.pow(Channel.L, 2.2)` gamma-adjusts a channel, and `sign` now accepts any dimension, matching CSS `sign()`. `divide` no longer drops a number-kind divisor's leaves (`Calc.solve(Calc.divide(2, Channel.L))` used to type-check as context-free and throw), and same-singleton cancellation never fires for ident leaves, which, unlike unit constants, never fold.
+
 ## 0.3.0
 
 ### Minor Changes
