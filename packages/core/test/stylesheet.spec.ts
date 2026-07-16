@@ -382,7 +382,7 @@ describe('stylesheet', () => {
       test('refuses blocks that nest beyond the shadow check', () => {
         const nested = RuleSet.make(
           Declaration.make('--w', 400),
-          StyleRule.make(Selector.pseudoClass('hover'), w(475)),
+          StyleRule.make(Selector.and(Selector.nest, Selector.pseudoClass('hover')), w(475)),
         )
         const crossedNests = Stylesheet.make(
           StyleRule.make(notLight, w(375)),
@@ -599,6 +599,32 @@ describe('stylesheet', () => {
     test('guards the brand', () => {
       expect(Stylesheet.isStylesheet(Stylesheet.empty)).toBe(true)
       expect(Stylesheet.isStylesheet(buttonRule)).toBe(false)
+    })
+  })
+
+  describe('nesting root gate', () => {
+    test('rejects a top-level rule whose selector references &', () => {
+      const rule = StyleRule.make(
+        Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+        RuleSet.make(Declaration.make('color', 'red')),
+      )
+      expect(() => Stylesheet.make(rule)).toThrow('cannot sit at the top level')
+      expect(() => Stylesheet.append(Stylesheet.empty, rule)).toThrow('cannot sit at the top level')
+    })
+
+    test('accepts a closed top-level rule holding &-nested members', () => {
+      const sheet = Stylesheet.make(
+        StyleRule.make(
+          Selector.class('card'),
+          RuleSet.make(
+            StyleRule.make(
+              Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+              RuleSet.make(Declaration.make('color', 'red')),
+            ),
+          ),
+        ),
+      )
+      expect(Stylesheet.render(sheet)).toBe('.card {\n\t&:hover {\n\t\tcolor: red;\n\t}\n}')
     })
   })
 })

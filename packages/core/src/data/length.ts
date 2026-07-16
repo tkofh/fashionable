@@ -27,11 +27,17 @@ import type * as Unit from './unit.ts'
  *
  * The result is the widened `Unit.Length` and the requirements stay open, so
  * a mixed-unit sum (`Calc.add(Length.px(16), Length.vw(2))`) and every
- * single-unit length are alike assignable to it.
+ * single-unit length are alike assignable to it. Declared as an
+ * interface so the name survives inference — the shape a typed `Var`'s
+ * `Type` slot displays.
  *
  * @since 0.2.0
  */
-export type Length<Vars extends Var.Any = Var.Any> = Calc<Vars, Unit.Length, unknown>
+export interface Length<out Vars extends Var.Any = Var.Any> extends Calc<
+  Vars,
+  Unit.Length,
+  unknown
+> {}
 
 /**
  * A length in `px` (absolute pixels).

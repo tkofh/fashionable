@@ -174,16 +174,32 @@ describe('render', () => {
       expect(Stylesheet.render(Stylesheet.empty)).toBe('')
     })
 
-    test('throws on a nested style rule', () => {
+    test('renders a nested style rule as an indented sub-block, & verbatim', () => {
       const sheet = Stylesheet.make(
         StyleRule.make(
           Selector.root,
           RuleSet.make(
-            StyleRule.make(Selector.class('btn'), RuleSet.make(Declaration.make('color', 'red'))),
+            StyleRule.make(
+              Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+              RuleSet.make(Declaration.make('color', 'red')),
+            ),
           ),
         ),
       )
-      expect(() => Stylesheet.render(sheet)).toThrow('nested style rule')
+      expect(Stylesheet.render(sheet)).toBe(':root {\n\t&:hover {\n\t\tcolor: red;\n\t}\n}')
+    })
+
+    test('a nested style rule whose block is empty contributes nothing', () => {
+      const sheet = Stylesheet.make(
+        StyleRule.make(
+          Selector.root,
+          RuleSet.make(
+            Declaration.make('--depth', 4),
+            StyleRule.make(Selector.nest, RuleSet.make()),
+          ),
+        ),
+      )
+      expect(Stylesheet.render(sheet)).toBe(':root {\n\t--depth: 4;\n}')
     })
   })
 

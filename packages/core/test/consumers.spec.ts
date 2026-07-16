@@ -113,6 +113,35 @@ describe('consumers', () => {
     test('the sheet reports the custom properties it reads', () => {
       expect(Stylesheet.vars(sheet)).toEqual(new Set(['lightness', 'chroma', '_fill-mc']))
     })
+
+    // The per-hue block (docs/selector-nesting.md section 5): geometry
+    // constants set once per hue, scoped to role elements in the hue's
+    // subtree. `:is(&, & *)` covers the hue element itself and anything
+    // beneath it; the role list keeps unscoped role elements on their
+    // @property initial values. Pinned byte-for-byte against the string
+    // ok-apca assembled by hand before the nesting extension.
+    test('the nested hue block renders byte-for-byte', () => {
+      const hueBlock = StyleRule.make(
+        Selector.class('red'),
+        RuleSet.make(
+          StyleRule.make(
+            Selector.and(
+              Selector.is(Selector.nest, Selector.descendant(Selector.nest, Selector.universal)),
+              Selector.is(Selector.class('fill'), Selector.class('text')),
+            ),
+            RuleSet.make(
+              Declaration.make('--_color-hue', 30),
+              Declaration.make('--_color-apexL', 0.654),
+              Declaration.make('--_color-apexC', 0.29307),
+              Declaration.make('--_color-tentK', -0.07636),
+            ),
+          ),
+        ),
+      )
+      expect(StyleRule.render(hueBlock)).toBe(
+        '.red {\n\t:is(&, & *):is(.fill, .text) {\n\t\t--_color-hue: 30;\n\t\t--_color-apexL: 0.654;\n\t\t--_color-apexC: 0.29307;\n\t\t--_color-tentK: -0.07636;\n\t}\n}',
+      )
+    })
   })
 
   // The dtcg-resolver pattern: independent per-token-type emitters each

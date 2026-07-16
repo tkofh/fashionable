@@ -153,6 +153,18 @@ export interface None {
 }
 
 /**
+ * Any `<length-percentage>` unit: the length units plus `%`. The Result of
+ * a mixed expression (`calc(100% - 24px)`) and the family a declared
+ * `<length-percentage>` variable reads as. Mixing requires the anchor: the
+ * algebra admits a length or a percentage operand beside a
+ * length-percentage expression, while a bare `px + %` sum (no anchor
+ * naming the destination type) stays a type error.
+ *
+ * @since 0.4.0
+ */
+export type LengthPercentage = Length | Percentage
+
+/**
  * The whole `Result` domain: every unit, plus `None` for numbers. The top of
  * the parameter — `Calc.Top` and the widest signatures use it where they once
  * used `Kind`.

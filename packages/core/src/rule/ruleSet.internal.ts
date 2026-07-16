@@ -1,7 +1,7 @@
 import * as Equal from '#internal/equal'
 import { unionRefs } from '#internal/refs'
 import type { MediaQuery } from '#query/mediaQuery'
-import type { Selector } from '#selector/selector'
+import type { Requirement, Selector } from '#selector/selector'
 import { isSelector } from '#selector/selector.internal'
 import { dual, Pipeable } from '#util'
 import type { Name as VarName } from '#var/var'
@@ -91,7 +91,7 @@ export const append: {
     member: M,
   ): <Vars extends AnyVar>(self: RuleSet<Vars>) => RuleSet<Vars | MemberVars<M>>
   <B extends AnyVar>(
-    selector: Selector,
+    selector: Selector<Requirement>,
     block: RuleSet<B>,
   ): <Vars extends AnyVar>(self: RuleSet<Vars>) => RuleSet<Vars | B>
   <B extends AnyVar>(
@@ -104,7 +104,7 @@ export const append: {
   ): RuleSet<Vars | MemberVars<M>>
   <Vars extends AnyVar, B extends AnyVar>(
     self: RuleSet<Vars>,
-    selector: Selector,
+    selector: Selector<Requirement>,
     block: RuleSet<B>,
   ): RuleSet<Vars | B>
   <Vars extends AnyVar, B extends AnyVar>(
@@ -130,11 +130,12 @@ export const concat: {
 
 /** @internal */
 export const forSelector: {
-  (selector: Selector): <Vars extends AnyVar>(self: RuleSet<Vars>) => StyleRule<Vars>
-  <Vars extends AnyVar>(self: RuleSet<Vars>, selector: Selector): StyleRule<Vars>
+  (selector: Selector<Requirement>): <Vars extends AnyVar>(self: RuleSet<Vars>) => StyleRule<Vars>
+  <Vars extends AnyVar>(self: RuleSet<Vars>, selector: Selector<Requirement>): StyleRule<Vars>
 } = dual(
   2,
-  (self: RuleSet<AnyVar>, selector: Selector): StyleRule<AnyVar> => makeStyleRule(selector, self),
+  (self: RuleSet<AnyVar>, selector: Selector<Requirement>): StyleRule<AnyVar> =>
+    makeStyleRule(selector, self),
 )
 
 /** @internal */

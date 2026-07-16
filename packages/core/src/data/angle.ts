@@ -25,11 +25,17 @@ import type * as Unit from './unit.ts'
  * unbound variable names, as on `Calc`.
  *
  * The result is the widened `Unit.Angle`, so every specific angle expression
- * is assignable to it; a constructor narrows it (`Angle.rad` carries `Unit.Rad`).
+ * is assignable to it; a constructor narrows it (`Angle.rad` carries `Unit.Rad`). Declared as an
+ * interface so the name survives inference — the shape a typed `Var`'s
+ * `Type` slot displays.
  *
  * @since 0.2.0
  */
-export type Angle<Vars extends Var.Any = Var.Any> = Calc<Vars, Unit.Angle, unknown>
+export interface Angle<out Vars extends Var.Any = Var.Any> extends Calc<
+  Vars,
+  Unit.Angle,
+  unknown
+> {}
 
 /**
  * An angle in `rad` (radians). Radians are the numeric measure of an angle, so

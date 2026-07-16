@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { Calc } from '#calc'
-import { Color, Length } from '#data'
+import { Color, Length, LengthPercentage, Percentage } from '#data'
 import { Declaration } from '#declaration'
+import { PropertyRule, PropertySyntax } from '#property'
 import { RuleSet } from '#rule'
 import { Var } from '#var'
 
@@ -242,6 +243,136 @@ describe('Var', () => {
       expect(() => Declaration.make('--x', read as never)).toThrow(
         'text, a number, an expression, or a Var read',
       )
+    })
+  })
+
+  describe('typed handles', () => {
+    test('typed reads intern per name and type', () => {
+      expect(Var.length('gap')).toBe(Var.length('gap'))
+      expect(Var.length('gap')).not.toBe(Var.of('gap'))
+      expect(Var.equals(Var.length('gap'), Var.of('gap'))).toBe(false)
+      expect(Var.equals(Var.length('gap'), Var.length('gap'))).toBe(true)
+    })
+
+    test('fallback derivation preserves the declared type', () => {
+      const read = Var.length('gap').pipe(Var.fallback(Length.px(8)))
+      expect(Calc.serialize(Calc.var(read))).toBe('var(--gap, 8px)')
+      // the declared type rides the derivation and participates in equality
+      expect(Var.equals(read, Var.of('gap').pipe(Var.fallback(Length.px(8))))).toBe(false)
+      expect(Var.equals(read, Var.length('gap').pipe(Var.fallback(Length.px(8))))).toBe(true)
+    })
+
+    test('a declared read composes through the dimension algebra', () => {
+      const gap = Var.length('gap')
+      const expr = Calc.add(Calc.var(gap), Length.px(4))
+      expect(Calc.serialize(expr)).toBe('calc(var(--gap) + 4px)')
+      expect(Calc.serialize(Calc.bind(expr, { gap: Length.px(8) }))).toBe('12px')
+    })
+
+    test('binding a relative unit accumulates through bind, then solves with its ratio', () => {
+      const bound = Calc.bind(Calc.var(Var.length('gap')), { gap: Length.vw(2) })
+      expect(Calc.serialize(bound)).toBe('2vw')
+      expect(Calc.solve(bound, { units: { vw: 12.8 } })).toBeCloseTo(25.6, 12)
+    })
+
+    test('the lifts reject the wrong world at runtime', () => {
+      expect(() => Calc.var(Var.color('accent') as never)).toThrow(
+        'color-declared read cannot lift into calc',
+      )
+      expect(() => Color.var(Var.length('gap') as never)).toThrow(
+        'calc-declared read cannot lift into a color',
+      )
+      expect(Color.serialize(Color.var(Var.color('accent')))).toBe('var(--accent)')
+    })
+  })
+
+  describe('length-percentage', () => {
+    test('a widened anchor builds the classic mixed expression', () => {
+      const mixed = Calc.subtract(LengthPercentage.of(Percentage.of(100)), Length.px(24))
+      expect(Calc.serialize(mixed)).toBe('calc(100% - 24px)')
+      expect(Calc.solve(mixed, { units: { '%': 320 / 100, px: 1 } })).toBeCloseTo(296, 12)
+    })
+
+    test('a declared read anchors mixing and stays mixed through bind', () => {
+      const inset = Var.lengthPercentage('inset')
+      const expr = Calc.subtract(Calc.var(inset), Length.px(24))
+      expect(Calc.serialize(expr)).toBe('calc(var(--inset) - 24px)')
+      const bound = Calc.bind(expr, { inset: Percentage.of(100) })
+      expect(Calc.serialize(bound)).toBe('calc(100% - 24px)')
+      expect(Calc.solve(bound, { units: { '%': 320 / 100 } })).toBeCloseTo(296, 12)
+    })
+
+    test('the derived registration and write render', () => {
+      const inset = Var.lengthPercentage('inset')
+      expect(PropertyRule.render(PropertyRule.make(inset, Percentage.of(25)))).toBe(
+        "@property --inset {\n\tsyntax: '<length-percentage>';\n\tinherits: false;\n\tinitial-value: 25%;\n}",
+      )
+      expect(Declaration.render(Declaration.make(inset, Length.px(4)))).toBe('--inset: 4px;')
+    })
+
+    test('fallbacks land in either family under a length-percentage read', () => {
+      const read = Var.lengthPercentage('inset').pipe(Var.fallback(Percentage.of(10)))
+      expect(Calc.serialize(Calc.var(read))).toBe('var(--inset, 10%)')
+    })
+  })
+
+  describe('registration through handles', () => {
+    test('a declared handle derives its syntax', () => {
+      expect(PropertyRule.render(PropertyRule.make(Var.length('gap'), Length.px(8)))).toBe(
+        "@property --gap {\n\tsyntax: '<length>';\n\tinherits: false;\n\tinitial-value: 8px;\n}",
+      )
+      expect(PropertyRule.render(PropertyRule.make(Var.color('accent'), 'transparent'))).toBe(
+        "@property --accent {\n\tsyntax: '<color>';\n\tinherits: false;\n\tinitial-value: transparent;\n}",
+      )
+    })
+
+    test('an undeclared handle registers universal', () => {
+      expect(PropertyRule.render(PropertyRule.make(Var.of('u')))).toBe(
+        "@property --u {\n\tsyntax: '*';\n\tinherits: false;\n}",
+      )
+    })
+
+    test('an explicit syntax that contradicts the declared type throws', () => {
+      expect(() =>
+        PropertyRule.make(Var.length('gap') as never, PropertySyntax.number as never, 0 as never),
+      ).toThrow("contradicts the handle's declared type (length)")
+    })
+
+    test('an explicit combination passes unchecked', () => {
+      const syntax = PropertySyntax.oneOf(PropertySyntax.length, PropertySyntax.keyword('auto'))
+      expect(
+        PropertySyntax.render(PropertyRule.make(Var.length('gap'), syntax, 'auto').syntax),
+      ).toBe('<length> | auto')
+    })
+
+    test('a fallback-carrying handle is rejected', () => {
+      const read = Var.length('gap').pipe(Var.fallback(Length.px(8)))
+      expect(() => PropertyRule.make(read as never, Length.px(8) as never)).toThrow('bare handle')
+    })
+  })
+
+  describe('writes through handles', () => {
+    test('a declared handle writes its property', () => {
+      expect(Declaration.render(Declaration.make(Var.length('gap'), Length.px(8)))).toBe(
+        '--gap: 8px;',
+      )
+    })
+
+    test('an undeclared handle writes any value', () => {
+      expect(Declaration.render(Declaration.make(Var.of('stack'), 'sans-serif'))).toBe(
+        '--stack: sans-serif;',
+      )
+    })
+
+    test('the alias pattern reports the read, not the write', () => {
+      const declaration = Declaration.make(Var.length('gap'), Var.of('spacing'))
+      expect(Declaration.render(declaration)).toBe('--gap: var(--spacing);')
+      expect(Declaration.vars(declaration)).toEqual(new Set(['spacing']))
+    })
+
+    test('a fallback-carrying handle is rejected in name position', () => {
+      const read = Var.of('gap').pipe(Var.fallback(8))
+      expect(() => Declaration.make(read as never, '8px')).toThrow('bare handle')
     })
   })
 })

@@ -30,7 +30,11 @@ import type * as Unit from './unit.ts'
  *
  * @since 0.2.0
  */
-export type Percentage<Vars extends Var.Any = Var.Any> = Calc<Vars, Unit.Percentage, unknown>
+export interface Percentage<out Vars extends Var.Any = Var.Any> extends Calc<
+  Vars,
+  Unit.Percentage,
+  unknown
+> {}
 
 /**
  * A percentage — a number rendered with a trailing `%`. `Percentage.of(40)`

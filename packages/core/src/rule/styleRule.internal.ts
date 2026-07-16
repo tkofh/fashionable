@@ -1,7 +1,8 @@
+import { isDeclaration } from '#declaration/declaration.internal'
 import * as Equal from '#internal/equal'
-import type { Selector } from '#selector/selector'
-import { render as renderSelector } from '#selector/selector.internal'
-import { dual, Pipeable } from '#util'
+import type { Requirement, Selector } from '#selector/selector'
+import { needsParent, render as renderSelector } from '#selector/selector.internal'
+import { dual, invariant, Pipeable } from '#util'
 import type { Name as VarName } from '#var/var'
 import type { AnyVar } from '#var/var.internal'
 import { refSetOf, renderStyleRuleBlock, resolveRenderOptions } from './rule.internal.ts'
@@ -14,12 +15,12 @@ export type StyleRuleTypeId = typeof StyleRuleTypeId
 class StyleRuleImpl extends Pipeable implements StyleRule<AnyVar>, Equal.Equal {
   readonly [StyleRuleTypeId]: StyleRuleTypeId = StyleRuleTypeId
 
-  readonly selector: Selector
+  readonly selector: Selector<Requirement>
   readonly block: RuleSet<AnyVar>
   readonly refSet: ReadonlySet<string>
   #hash: number | undefined
 
-  constructor(selector: Selector, block: RuleSet<AnyVar>) {
+  constructor(selector: Selector<Requirement>, block: RuleSet<AnyVar>) {
     super()
     this.selector = selector
     this.block = block
@@ -57,11 +58,33 @@ class StyleRuleImpl extends Pipeable implements StyleRule<AnyVar>, Equal.Equal {
 export const isStyleRule = (u: unknown): u is StyleRule<AnyVar> =>
   typeof u === 'object' && u !== null && StyleRuleTypeId in u
 
+// The binder invariant (docs/selector-nesting.md section 1): every style
+// rule reachable from this rule's block without crossing another style
+// rule — media rules are transparent — binds its `&` against this rule's
+// selector, so each must actually reference it. The walk stops at style
+// rules because their own construction ran this same check.
+const requireNestedSelectors = (block: RuleSet<AnyVar>): void => {
+  for (const member of block.members) {
+    if (isDeclaration(member)) {
+      continue
+    }
+    if ('query' in member) {
+      requireNestedSelectors(member.block)
+    } else {
+      invariant(
+        needsParent(member.selector),
+        `A nested style rule must reference its parent — include Selector.nest ('&') in '${renderSelector(member.selector)}'; the model does not prepend CSS's implicit descendant`,
+      )
+    }
+  }
+}
+
 /** @internal */
 export function make<Vars extends AnyVar>(
-  selector: Selector,
+  selector: Selector<Requirement>,
   block: RuleSet<Vars>,
 ): StyleRule<Vars> {
+  requireNestedSelectors(block)
   return new StyleRuleImpl(selector, block) as unknown as StyleRule<Vars>
 }
 

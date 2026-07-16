@@ -210,4 +210,60 @@ describe('rule', () => {
       expect(MediaRule.isMediaRule(color)).toBe(false)
     })
   })
+
+  describe('nesting binder', () => {
+    test('accepts nested rules whose selectors reference &', () => {
+      const rule = StyleRule.make(
+        Selector.class('red'),
+        RuleSet.make(
+          StyleRule.make(
+            Selector.and(Selector.nest, Selector.class('active')),
+            RuleSet.make(color),
+          ),
+        ),
+      )
+      expect(StyleRule.render(rule)).toBe('.red {\n\t&.active {\n\t\tcolor: red;\n\t}\n}')
+    })
+
+    test('rejects a nested rule whose selector does not reference &', () => {
+      expect(() =>
+        StyleRule.make(
+          Selector.class('red'),
+          RuleSet.make(StyleRule.make(Selector.class('active'), RuleSet.make(color))),
+        ),
+      ).toThrow('must reference its parent')
+    })
+
+    test('the walk descends through media rules', () => {
+      const media = MediaRule.make(
+        MediaQuery.minWidth(768),
+        RuleSet.make(StyleRule.make(Selector.class('active'), RuleSet.make(color))),
+      )
+      expect(() => StyleRule.make(Selector.class('red'), RuleSet.make(media))).toThrow(
+        'must reference its parent',
+      )
+    })
+
+    test('the walk stops at nested style rules — each binder checks its own block', () => {
+      const inner = StyleRule.make(
+        Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+        RuleSet.make(color),
+      )
+      const middle = StyleRule.make(
+        Selector.and(Selector.nest, Selector.class('mid')),
+        RuleSet.make(inner),
+      )
+      const outer = StyleRule.make(Selector.class('out'), RuleSet.make(middle))
+      expect(StyleRule.render(outer)).toBe(
+        '.out {\n\t&.mid {\n\t\t&:hover {\n\t\t\tcolor: red;\n\t\t}\n\t}\n}',
+      )
+    })
+
+    test('forSelector runs the binder check', () => {
+      const block = RuleSet.make(StyleRule.make(Selector.class('active'), RuleSet.make(color)))
+      expect(() => block.pipe(RuleSet.forSelector(Selector.class('red')))).toThrow(
+        'must reference its parent',
+      )
+    })
+  })
 })

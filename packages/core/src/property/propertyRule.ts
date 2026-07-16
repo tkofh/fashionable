@@ -2,6 +2,7 @@ import type { Calc } from '#calc'
 import type { Color, Unit } from '#data'
 import type { RenderOptions as DeclarationRenderOptions } from '#declaration/declaration'
 import type { Pipeable } from '#util'
+import type { Var } from '#var'
 import type { PropertyRuleTypeId } from './propertyRule.internal.ts'
 import * as internal from './propertyRule.internal.ts'
 import type { PropertySyntax, Universal } from './propertySyntax.ts'
@@ -84,19 +85,89 @@ export interface RenderOptions extends DeclarationRenderOptions {
  */
 export const isPropertyRule: (u: unknown) => u is PropertyRule = internal.isPropertyRule
 
+/**
+ * A handle usable in name position: a bare (fallback-free) read. A
+ * fallback belongs to a read site, so a fallback-carrying read is rejected
+ * structurally here.
+ */
+type Handle<T = unknown> = Var.Var<string, T, undefined>
+
+// The initial-value forms a declared type admits — each arm mirrors the
+// `V` of the syntax the declaration derives, so `make(handle, initial)`
+// and `make(name, derivedSyntax, initial)` type identically.
+type DeclaredValue<T> =
+  T extends Color.Color<Var.Any>
+    ? string | Color.Color<never>
+    : T extends Calc.Calc<Var.Any, infer R, unknown>
+      ? [Unit.Family<R>] extends [Unit.None]
+        ? number | Calc.Calc<never>
+        : [Unit.Family<R>] extends [Unit.Length]
+          ? string | Calc.Calc<never, Unit.Length, Unit.AbsoluteLength>
+          : [Unit.Family<R>] extends [Unit.Angle]
+            ? string | Calc.Calc<never, Unit.Angle, Unit.Angle>
+            : [Unit.Family<R>] extends [Unit.Percentage]
+              ? string | Calc.Calc<never, Unit.Percentage, Unit.Percentage>
+              :
+                  | string
+                  | Calc.Calc<never, Unit.Length, Unit.AbsoluteLength>
+                  | Calc.Calc<never, Unit.Percentage, Unit.Percentage>
+      : never
+
+// Guards a name-position handle to undeclared reads: a declared handle
+// derives its syntax, so it never registers universal. Exclusion is not
+// expressible as a constraint (the `Type` slot's top is `unknown`), so the
+// parameter intersects this — `unknown` for valid, an error string
+// otherwise, the `Calc.var` pattern.
+type UndeclaredGuard<H> = H extends `--${string}`
+  ? unknown
+  : H extends Var.Var<string, infer T, undefined>
+    ? [unknown] extends [T]
+      ? unknown
+      : 'a declared handle derives its syntax: pass the initial value directly'
+    : never
+
 export const make: {
   /**
-   * Registers under the universal syntax — the default when `syntax` is
-   * omitted — where the initial value is optional.
+   * Registers a declared handle, deriving the syntax from its declared
+   * type: `Var.length('gap')` registers `syntax: '<length>'`,
+   * `Var.color('accent')` registers `'<color>'`, and so on — the handle
+   * is the single source of truth for the property's name and type. The
+   * initial value is typed exactly as under the derived syntax.
    *
-   * @param name - The custom property name to register, `--` prefix included.
+   * @param handle - The property's canonical handle, from a typed `Var` constructor. Must be fallback-free.
+   * @param initialValue - The `initial-value` descriptor, typed by the handle's declared type.
+   * @returns A `PropertyRule` with `inherits: false`.
+   * @throws `Error` when the handle carries a fallback, or an expression value has unbound variables.
+   * @example
+   * ```ts
+   * const gap = Var.length('gap')
+   * PropertyRule.render(PropertyRule.make(gap, Length.px(8)))
+   * // "@property --gap {\n\tsyntax: '<length>';\n\tinherits: false;\n\tinitial-value: 8px;\n}"
+   * ```
+   * @since 0.4.0
+   */
+  <T extends Calc.Calc<Var.Any, Unit.Any, unknown> | Color.Color<Var.Any>>(
+    handle: Handle<T>,
+    initialValue: DeclaredValue<T>,
+  ): PropertyRule
+  /**
+   * Registers under the universal syntax — the default when `syntax` is
+   * omitted — where the initial value is optional. The name may be an
+   * undeclared handle (`Var.of`); a declared handle takes the deriving
+   * overload instead.
+   *
+   * @param name - The custom property name (`--` prefix included), or the property's undeclared handle.
    * @param syntax - The universal syntax; omit for the same effect.
    * @param initialValue - Optional under the universal syntax: any value form.
    * @returns A `PropertyRule` with `inherits: false`.
-   * @throws `Error` when `name` is not a `--`-prefixed custom property name (bare `--` included), or an expression value has unbound variables.
+   * @throws `Error` when the name is not a `--`-prefixed custom property name (bare `--` included), the handle carries a fallback, or an expression value has unbound variables.
    * @since 0.1.0
    */
-  (name: `--${string}`, syntax?: Universal, initialValue?: Value | number): PropertyRule
+  <H extends `--${string}` | Handle>(
+    name: H & UndeclaredGuard<H>,
+    syntax?: Universal,
+    initialValue?: Value | number,
+  ): PropertyRule
   /**
    * Creates an `@property` rule.
    *
@@ -113,11 +184,17 @@ export const make: {
    * Rules register with `inherits: false`; pipe through `inheritable` to
    * opt in.
    *
-   * @param name - The custom property name to register, `--` prefix included.
+   * The name may be a handle. An explicit syntax with a declared handle is
+   * consistency-checked at runtime against the canonical data types — a
+   * `Var.length` handle cannot register `'<number>'` — while combinations
+   * pass unchecked (whether a combination covers the declared type would
+   * take grammar containment, which this library does not do).
+   *
+   * @param name - The custom property name (`--` prefix included), or the property's handle.
    * @param syntax - The modeled `syntax` descriptor; see `PropertySyntax`.
    * @param initialValue - The `initial-value` descriptor, required for every non-universal syntax and typed by it.
    * @returns A `PropertyRule` with `inherits: false`.
-   * @throws `Error` when `name` is not a `--`-prefixed custom property name (bare `--` included), `initialValue` is missing under a non-universal syntax, or an expression value has unbound variables.
+   * @throws `Error` when the name is not a `--`-prefixed custom property name (bare `--` included), the handle carries a fallback, the explicit syntax contradicts the handle's declared type, `initialValue` is missing under a non-universal syntax, or an expression value has unbound variables.
    * @example
    * ```ts
    * PropertyRule.make('--depth', PropertySyntax.number, 0)
@@ -125,7 +202,7 @@ export const make: {
    * @since 0.1.0
    */
   <V extends Value | number>(
-    name: `--${string}`,
+    name: `--${string}` | Handle,
     syntax: PropertySyntax<V>,
     initialValue: NoInfer<V>,
   ): PropertyRule

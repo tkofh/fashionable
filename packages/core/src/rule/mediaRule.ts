@@ -88,13 +88,15 @@ export type RenderOptions = RuleSetRenderOptions
  * style rule (CSSNestedDeclarations). A rule whose block is empty
  * renders as the empty string.
  *
+ * Nested style rules render as indented sub-blocks with `&` kept
+ * verbatim — native CSS nesting is the output shape.
+ *
  * A fragment renderer: whole sheets render via `Stylesheet.render`,
  * which emits each rule's media in this same nested shape.
  *
  * @param rule - The rule to render.
  * @param options - Optional indentation unit, precision context, and media syntax.
  * @returns Deterministic CSS text.
- * @throws `Error` when the block nests a style rule — selector composition (`&`) is a later extension, not part of v1 rendering.
  * @example
  * ```ts
  * MediaRule.render(

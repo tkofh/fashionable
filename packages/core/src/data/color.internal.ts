@@ -18,7 +18,14 @@ import { DEFAULT_FORMAT, type FormatSpec } from '#internal/format'
 import { EMPTY_REFS, RefsTypeId, unionRefs } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
 import type { Name as VarName } from '#var/var'
-import { type AnyVar, fallbackOf, isVar, nameOf as varNameOf, refsOfVar } from '#var/var.internal'
+import {
+  type AnyVar,
+  declaredTypeOf,
+  fallbackOf,
+  isVar,
+  nameOf as varNameOf,
+  refsOfVar,
+} from '#var/var.internal'
 import type { ChannelIdent } from './channels.ts'
 import type { Color, RelativeChannel } from './color.ts'
 import { dataOf as spaceDataOf, type Wrap } from './colorSpace.internal.ts'
@@ -525,6 +532,11 @@ const lowerFallback = (fb: unknown): ColorNode => {
 }
 
 const lowerRead = (read: AnyVar): ColorRefNode => {
+  const declared = declaredTypeOf(read)
+  invariant(
+    declared === undefined || declared === 'color',
+    'A calc-declared read cannot lift into a color; use Calc.var',
+  )
   const fb = fallbackOf(read)
   return fb === undefined
     ? { _tag: 'ColorRef', name: varNameOf(read) }

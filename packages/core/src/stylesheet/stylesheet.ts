@@ -96,8 +96,13 @@ export const isEmpty: (sheet: Stylesheet<Var.Any>) => boolean = internal.isEmpty
  * Creates a stylesheet holding the given nodes, in the given order, with
  * structural duplicates dropped — the first occurrence wins.
  *
+ * A top-level rule's selector must be closed: nothing above the sheet
+ * binds `&`, so a rule whose selector references the nesting selector
+ * belongs inside another rule's block instead.
+ *
  * @param nodes - Style rules and at-rules, in authored order.
  * @returns A `Stylesheet` whose `Vars` unions the nodes' variable names.
+ * @throws `Error` when a node's selector references `&`.
  * @example
  * ```ts
  * const sheet = Stylesheet.make(
@@ -129,7 +134,7 @@ export const append: {
    * Returns a function that appends the style rule `selector { block }`
    * to its argument's sheet.
    *
-   * @param selector - The rule's selector.
+   * @param selector - The rule's selector. Closed only — the parameter rejects `&`-bearing selectors at compile time.
    * @param block - The rule's block.
    * @returns A function producing the extended sheet.
    * @since 0.1.0
@@ -145,8 +150,9 @@ export const append: {
    * sheet; the original is untouched.
    *
    * @param self - The sheet to extend.
-   * @param node - The node to append.
+   * @param node - The node to append. A style rule's selector must be closed — nothing above the sheet binds `&`.
    * @returns The extended sheet, with the node's variable names joined in.
+   * @throws `Error` when the node's selector references `&`.
    * @since 0.1.0
    */
   <Vars extends Var.Any, N extends Node<Var.Any>>(
@@ -322,8 +328,9 @@ export type RenderOptions = RuleSetRenderOptions
 
 /**
  * Renders the whole sheet as CSS text: at-rule nodes as their own
- * blocks, style rules in nested form with their `@media` blocks kept
- * inside, in member order.
+ * blocks, style rules in nested form with their `@media` blocks and
+ * nested style rules kept inside (`&` verbatim — native CSS nesting is
+ * the output shape), in member order.
  *
  * Empty blocks emit nothing, so a sheet whose every node renders empty —
  * `empty` itself, or style rules with empty blocks — renders the empty
@@ -334,7 +341,6 @@ export type RenderOptions = RuleSetRenderOptions
  * @param sheet - The stylesheet to render.
  * @param options - Optional indentation unit, precision context, and media syntax.
  * @returns Deterministic CSS text.
- * @throws `Error` when a style rule nests inside another rule's block — selector composition (`&`) is a later extension, not part of v1 rendering.
  * @example
  * ```ts
  * const sheet = Stylesheet.empty.pipe(

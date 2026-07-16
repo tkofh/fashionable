@@ -3,7 +3,7 @@ import type {
   RenderOptions as DeclarationRenderOptions,
 } from '#declaration/declaration'
 import type { MediaQuery } from '#query/mediaQuery'
-import type { Selector } from '#selector/selector'
+import type { Requirement, Selector } from '#selector/selector'
 import type { Pipeable } from '#util'
 import type { Var } from '#var'
 import type { MediaRule } from './mediaRule.ts'
@@ -131,13 +131,13 @@ export const append: {
    * Returns a function that appends the style rule `selector { block }`
    * to its argument's block.
    *
-   * @param selector - The nested rule's selector.
+   * @param selector - The nested rule's selector. Must reference `&` by the time an enclosing rule binds the block.
    * @param block - The nested rule's block.
    * @returns A function producing the extended block.
    * @since 0.1.0
    */
   <B extends Var.Any>(
-    selector: Selector,
+    selector: Selector<Requirement>,
     block: RuleSet<B>,
   ): <Vars extends Var.Any>(self: RuleSet<Vars>) => RuleSet<Vars | B>
   /**
@@ -178,19 +178,29 @@ export const append: {
    * `append(self, StyleRule.make(selector, block))`, so blocks compose
    * without naming `StyleRule` at the call site.
    *
+   * The nested rule's selector must reference `&` (`Selector.nest`) by
+   * the time an enclosing rule binds this block — `StyleRule.make`
+   * enforces it there, as the binder.
+   *
    * @param self - The block to extend.
    * @param selector - The nested rule's selector.
    * @param block - The nested rule's block.
    * @returns The extended block, with the nested block's variable names joined in.
+   * @throws `Error` when a style rule nested in `block` has a selector that does not reference `&`.
    * @example
    * ```ts
-   * RuleSet.empty.pipe(RuleSet.append(Selector.class('btn'), RuleSet.make(Declaration.make('color', 'red'))))
+   * RuleSet.empty.pipe(
+   *   RuleSet.append(
+   *     Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+   *     RuleSet.make(Declaration.make('color', 'red')),
+   *   ),
+   * )
    * ```
    * @since 0.1.0
    */
   <Vars extends Var.Any, B extends Var.Any>(
     self: RuleSet<Vars>,
-    selector: Selector,
+    selector: Selector<Requirement>,
     block: RuleSet<B>,
   ): RuleSet<Vars | B>
   /**
@@ -248,17 +258,19 @@ export const forSelector: {
    * @returns A function that takes a block and returns the style rule applying it to `selector`.
    * @since 0.2.0
    */
-  (selector: Selector): <Vars extends Var.Any>(self: RuleSet<Vars>) => StyleRule<Vars>
+  (selector: Selector<Requirement>): <Vars extends Var.Any>(self: RuleSet<Vars>) => StyleRule<Vars>
   /**
    * Lifts a block into a style rule applying to `selector` — sugar for
    * `StyleRule.make(selector, self)` with the arguments flipped, so a
    * block built up through `pipe` caps off as a rule without naming
    * `StyleRule` at the call site. The rule carries the block's variable
-   * names unchanged; a selector contributes none.
+   * names unchanged; a selector contributes none. The binder check runs
+   * here, as in `StyleRule.make`.
    *
    * @param self - The block the rule applies.
    * @param selector - The selector the block applies to.
    * @returns The style rule pairing `selector` with the block.
+   * @throws `Error` when a style rule nested in `self` has a selector that does not reference `&`.
    * @example
    * ```ts
    * RuleSet.make(Declaration.make('--depth', Calc.var('depth'))).pipe(
@@ -267,7 +279,7 @@ export const forSelector: {
    * ```
    * @since 0.2.0
    */
-  <Vars extends Var.Any>(self: RuleSet<Vars>, selector: Selector): StyleRule<Vars>
+  <Vars extends Var.Any>(self: RuleSet<Vars>, selector: Selector<Requirement>): StyleRule<Vars>
 } = internal.forSelector
 
 export const forMediaQuery: {
@@ -330,17 +342,19 @@ export interface RenderOptions extends DeclarationRenderOptions {
 
 /**
  * Renders the block's body — the text between a rule's braces, without
- * the braces: one line per declaration, nested `@media` rules as
- * indented sub-blocks, in member order. Empty blocks (and nested rules
- * whose blocks are empty) render as the empty string.
+ * the braces: one line per declaration, nested `@media` and style rules
+ * as indented sub-blocks (`&` kept verbatim), in member order. Empty
+ * blocks (and nested rules whose blocks are empty) render as the empty
+ * string.
  *
  * A fragment renderer: use it to compose blocks the model does not
- * represent. Whole sheets render via `Stylesheet.render`.
+ * represent. Whole sheets render via `Stylesheet.render`, and the binder
+ * invariant on nested selectors is `StyleRule.make`'s — a free-standing
+ * block renders without it.
  *
  * @param set - The block to render.
  * @param options - Optional indentation unit, precision context, and media syntax.
  * @returns Deterministic CSS text.
- * @throws `Error` when the block nests a style rule — selector composition (`&`) is a later extension, not part of v1 rendering.
  * @example
  * ```ts
  * RuleSet.render(RuleSet.make(Declaration.make('--depth', 4), Declaration.make('color', 'red')))

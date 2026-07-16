@@ -18,8 +18,8 @@ import type { RuleSet } from '#rule/ruleSet'
 import { concat as concatBlocks } from '#rule/ruleSet.internal'
 import type { StyleRule } from '#rule/styleRule'
 import { isStyleRule, make as makeStyleRule } from '#rule/styleRule.internal'
-import type { Selector } from '#selector/selector'
-import { render as renderSelector, specificity } from '#selector/selector.internal'
+import type { Requirement, Selector } from '#selector/selector'
+import { needsParent, render as renderSelector, specificity } from '#selector/selector.internal'
 import { compare as compareSpecificity } from '#selector/specificity.internal'
 import { dual, invariant, Pipeable } from '#util'
 import type { Name as VarName } from '#var/var'
@@ -111,11 +111,24 @@ export const empty: Stylesheet<never> = new StylesheetImpl([]) as unknown as Sty
 /** @internal */
 export const isEmpty = (sheet: Stylesheet<AnyVar>): boolean => sheet.nodes.length === 0
 
+// The root gate (docs/selector-nesting.md section 1): nothing above a
+// top-level rule binds `&`, so a `Parent`-requiring selector cannot enter
+// the node list. The pair forms enforce this at the type level; this
+// runtime mirror covers node-form appends, whose `StyleRule` type does
+// not carry the selector's requirements.
+const requireClosedNode = (node: Node<AnyVar>): Node<AnyVar> => {
+  invariant(
+    !isStyleRule(node) || !needsParent(node.selector),
+    `A style rule whose selector references '&' cannot sit at the top level of a stylesheet — nothing binds the nesting selector; nest it inside another style rule`,
+  )
+  return node
+}
+
 /** @internal */
 export function make<Nodes extends ReadonlyArray<Node<AnyVar>>>(
   ...nodes: Nodes
 ): Stylesheet<NodeVars<Nodes[number]>> {
-  const kept = distinct(nodes)
+  const kept = distinct(nodes.map(requireClosedNode))
   return (kept.length === 0 ? empty : new StylesheetImpl(kept)) as Stylesheet<
     NodeVars<Nodes[number]>
   >
@@ -147,7 +160,7 @@ export const append: {
 } = dual(
   (args: IArguments) => isStylesheet(args[0]),
   (self: Stylesheet<AnyVar>, head: unknown, block?: unknown): Stylesheet<AnyVar> => {
-    const node = resolveNode(head, block)
+    const node = requireClosedNode(resolveNode(head, block))
     if (self.nodes.some((existing) => Equal.equals(existing, node))) {
       return self
     }
@@ -192,7 +205,7 @@ export function mergeAll(sheets: ReadonlyArray<Stylesheet<AnyVar>>): Stylesheet<
 }
 
 interface PendingPull {
-  readonly selector: Selector
+  readonly selector: Selector<Requirement>
   readonly block: RuleSet<AnyVar>
   readonly crossedIndex: number
 }
@@ -304,7 +317,10 @@ export function coalesce<Vars extends AnyVar>(
 ): Stylesheet<Vars> {
   const strict = options?.strict === true
   const nodes: Array<Node<AnyVar>> = []
-  const seen = new Map<number, Array<{ readonly selector: Selector; readonly index: number }>>()
+  const seen = new Map<
+    number,
+    Array<{ readonly selector: Selector<Requirement>; readonly index: number }>
+  >()
   const pending: Array<PendingPull> = []
   let changed = false
   for (const node of sheet.nodes) {

@@ -10,7 +10,14 @@ import {
 import { EMPTY_REFS, RefsTypeId } from '#internal/refs'
 import { dual, invariant, Pipeable } from '#util'
 import type { Name as VarName } from '#var/var'
-import { type AnyVar, fallbackOf, isVar, nameOf as varNameOf, refsOfVar } from '#var/var.internal'
+import {
+  type AnyVar,
+  declaredTypeOf,
+  fallbackOf,
+  isVar,
+  nameOf as varNameOf,
+  refsOfVar,
+} from '#var/var.internal'
 import type { Bindings, Calc, Input, Kind, SerializeOptions, Top } from './calc.ts'
 import { toSpec } from './precision.internal.ts'
 import type { Precision } from './precision.ts'
@@ -996,6 +1003,10 @@ const lowerFallback = (fb: unknown): CalcNode => {
 }
 
 const lowerRead = (read: AnyVar): RefNode => {
+  invariant(
+    declaredTypeOf(read) !== 'color',
+    'A color-declared read cannot lift into calc; use Color.var',
+  )
   const fb = fallbackOf(read)
   return fb === undefined
     ? { _tag: 'Ref', name: varNameOf(read) }
@@ -1005,6 +1016,10 @@ const lowerRead = (read: AnyVar): RefNode => {
 /** @internal */
 export function ref(read: string | AnyVar): Bottom {
   if (typeof read !== 'string') {
+    invariant(
+      declaredTypeOf(read) !== 'color',
+      'A color-declared read cannot lift into calc; use Color.var',
+    )
     if (fallbackOf(read) === undefined) {
       return ref(varNameOf(read))
     }

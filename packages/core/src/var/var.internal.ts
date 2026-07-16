@@ -7,6 +7,20 @@ export const VarTypeId = Symbol.for('fashionable/var')
 export type VarTypeId = typeof VarTypeId
 
 /**
+ * The runtime mirror of the `Type` slot: what `PropertyRule.make` derives
+ * a syntax from after the phantom erases. `undefined` is undeclared.
+ *
+ * @internal
+ */
+export type DeclaredType =
+  | 'number'
+  | 'length'
+  | 'length-percentage'
+  | 'angle'
+  | 'percentage'
+  | 'color'
+
+/**
  * The widest read the runtime handles: any name, any declared type, any
  * fallback. The precise per-context fallback constraints ride the public
  * signatures; the runtime stores the fallback opaquely and reads its vars
@@ -21,13 +35,15 @@ class VarImpl extends Pipeable implements Var<string>, Equal.Equal {
 
   readonly name: string
   readonly fallbackValue: unknown
+  readonly declaredType: DeclaredType | undefined
   readonly refSet: ReadonlySet<string>
   #hash: number | undefined
 
-  constructor(name: string, fallbackValue: unknown) {
+  constructor(name: string, fallbackValue: unknown, declaredType: DeclaredType | undefined) {
     super()
     this.name = name
     this.fallbackValue = fallbackValue
+    this.declaredType = declaredType
     this.refSet =
       fallbackValue === undefined
         ? new Set([name])
@@ -42,6 +58,7 @@ class VarImpl extends Pipeable implements Var<string>, Equal.Equal {
     return (
       isVar(that) &&
       this.name === nameOf(that) &&
+      this.declaredType === declaredTypeOf(that) &&
       // Equal.equals covers every fallback form: primitives compare by
       // identity, expression values through their own Equal impls.
       Equal.equals(this.fallbackValue, fallbackOf(that))
@@ -52,6 +69,7 @@ class VarImpl extends Pipeable implements Var<string>, Equal.Equal {
     if (this.#hash === undefined) {
       let h = Equal.hashString('fashionable/var')
       h = Equal.combine(h, Equal.hashString(this.name))
+      h = Equal.combine(h, Equal.hash(this.declaredType))
       h = Equal.combine(h, Equal.hash(this.fallbackValue))
       this.#hash = h
     }
@@ -88,21 +106,55 @@ export const nameOf = <V extends AnyVar>(v: V): VarName<V> =>
 export const fallbackOf = (v: AnyVar): unknown => (v as VarImpl).fallbackValue
 
 /** @internal */
+export const declaredTypeOf = (v: AnyVar): DeclaredType | undefined => (v as VarImpl).declaredType
+
+/** @internal */
 export const refsOfVar = (v: AnyVar): ReadonlySet<string> => (v as VarImpl).refSet
 
+// Bare reads intern per (declared type, name) — the NUL separator keeps
+// arbitrary names from colliding with the key scheme.
 const varCache = new Map<string, AnyVar>()
+
+const intern = (name: string, declaredType: DeclaredType | undefined): AnyVar => {
+  const key = `${declaredType ?? '*'}\u0000${name}`
+  const cached = varCache.get(key)
+  if (cached) {
+    return cached
+  }
+  invariant(name.length > 0, 'Variable name must be a non-empty string')
+  const read = new VarImpl(name, undefined, declaredType)
+  varCache.set(key, read)
+  return read
+}
 
 /** @internal */
 export function of<Name extends string>(name: Name): Var<Name> {
-  const cached = varCache.get(name)
-  if (cached) {
-    return cached as Var<Name>
-  }
-  invariant(name.length > 0, 'Variable name must be a non-empty string')
-  const read = new VarImpl(name, undefined)
-  varCache.set(name, read)
-  return read as Var<Name>
+  return intern(name, undefined) as Var<Name>
 }
+
+/** @internal */
+export const numberVar = <Name extends string>(name: Name): BottomVar =>
+  intern(name, 'number') as unknown as BottomVar
+
+/** @internal */
+export const lengthVar = <Name extends string>(name: Name): BottomVar =>
+  intern(name, 'length') as unknown as BottomVar
+
+/** @internal */
+export const lengthPercentageVar = <Name extends string>(name: Name): BottomVar =>
+  intern(name, 'length-percentage') as unknown as BottomVar
+
+/** @internal */
+export const angleVar = <Name extends string>(name: Name): BottomVar =>
+  intern(name, 'angle') as unknown as BottomVar
+
+/** @internal */
+export const percentageVar = <Name extends string>(name: Name): BottomVar =>
+  intern(name, 'percentage') as unknown as BottomVar
+
+/** @internal */
+export const colorVar = <Name extends string>(name: Name): BottomVar =>
+  intern(name, 'color') as unknown as BottomVar
 
 /** @internal */
 export const fallback: {
@@ -110,7 +162,7 @@ export const fallback: {
   (v: AnyVar, fb: unknown): BottomVar
 } = dual(2, (v: AnyVar, fb: unknown): BottomVar => {
   invariant(fb !== undefined, 'Fallback value must not be undefined')
-  return new VarImpl(nameOf(v), fb) as unknown as BottomVar
+  return new VarImpl(nameOf(v), fb, declaredTypeOf(v)) as unknown as BottomVar
 })
 
 /** @internal */

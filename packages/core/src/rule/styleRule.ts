@@ -1,4 +1,4 @@
-import type { Selector } from '#selector/selector'
+import type { Requirement, Selector } from '#selector/selector'
 import type { Pipeable } from '#util'
 import type { Var } from '#var'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.ts'
@@ -6,11 +6,13 @@ import type { StyleRuleTypeId } from './styleRule.internal.ts'
 import * as internal from './styleRule.internal.ts'
 
 /**
- * A style rule: a compound selector and the block it applies.
+ * A style rule: a selector and the block it applies.
  *
- * The block is a full `RuleSet`, so a style rule holds declarations and
- * nested `@media` rules in one authored order. The `Vars` parameter is
- * the block's — a selector contributes no variable names.
+ * The block is a full `RuleSet`, so a style rule holds declarations,
+ * nested style rules, and nested `@media` rules in one authored order.
+ * The rule is selector nesting's binder: `&` in a nested rule's selector
+ * reads this rule's selector. The `Vars` parameter is the block's — a
+ * selector contributes no variable names.
  *
  * Construct via `make`.
  *
@@ -19,9 +21,10 @@ import * as internal from './styleRule.internal.ts'
 export interface StyleRule<out Vars extends Var.Any = Var.Any> extends Pipeable {
   readonly [StyleRuleTypeId]: StyleRuleTypeId
   /**
-   * The compound selector the block applies to.
+   * The selector the block applies to. References `&` exactly when the
+   * rule nests inside another rule's block.
    */
-  readonly selector: Selector
+  readonly selector: Selector<Requirement>
   /**
    * The rule's block.
    */
@@ -43,9 +46,16 @@ export const isStyleRule: (u: unknown) => u is StyleRule<Var.Any> = internal.isS
 /**
  * Creates a style rule.
  *
- * @param selector - The compound selector the block applies to.
+ * The binder check runs here: every style rule nested in `block` —
+ * directly, or inside its `@media` blocks — must reference `&` in its
+ * selector, because this rule's selector is what that `&` reads. CSS
+ * would silently prepend a descendant `&` instead; the model rejects
+ * the shape rather than rewriting the authored selector.
+ *
+ * @param selector - The selector the block applies to. References `&` exactly when this rule itself nests.
  * @param block - The rule's block.
  * @returns A `StyleRule` carrying the block's variable names.
+ * @throws `Error` when a style rule nested in `block` has a selector that does not reference `&`.
  * @example
  * ```ts
  * StyleRule.make(
@@ -56,7 +66,7 @@ export const isStyleRule: (u: unknown) => u is StyleRule<Var.Any> = internal.isS
  * @since 0.1.0
  */
 export const make: <Vars extends Var.Any>(
-  selector: Selector,
+  selector: Selector<Requirement>,
   block: RuleSet<Vars>,
 ) => StyleRule<Vars> = internal.make
 
@@ -81,8 +91,10 @@ export type RenderOptions = RuleSetRenderOptions
 
 /**
  * Renders the rule in nested form: `selector { ... }`, the body as
- * `RuleSet.render` emits it, one level deeper. A rule whose block is
- * empty renders as the empty string.
+ * `RuleSet.render` emits it, one level deeper. Nested style rules render
+ * as indented sub-blocks with `&` kept verbatim — native CSS nesting is
+ * the output shape. A rule whose block is empty renders as the empty
+ * string.
  *
  * A fragment renderer: whole sheets render via `Stylesheet.render`,
  * which emits each rule in this same nested shape.
@@ -90,7 +102,6 @@ export type RenderOptions = RuleSetRenderOptions
  * @param rule - The rule to render.
  * @param options - Optional indentation unit, precision context, and media syntax.
  * @returns Deterministic CSS text.
- * @throws `Error` when the block nests a style rule — selector composition (`&`) is a later extension, not part of v1 rendering.
  * @example
  * ```ts
  * StyleRule.render(StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--depth', 4))))

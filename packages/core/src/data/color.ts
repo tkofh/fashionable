@@ -1,4 +1,11 @@
-import type { ApplyBindings, Bindings, Calc, Input, SerializeOptions } from '#calc/calc'
+import type {
+  ApplyBindings,
+  Bindings,
+  Calc,
+  Input,
+  PartialBindings,
+  SerializeOptions,
+} from '#calc/calc'
 import type { Pipeable } from '#util'
 import type { Var } from '#var'
 import type { ColorTypeId } from './color.internal.ts'
@@ -131,29 +138,43 @@ export const named: (name: string) => Color<never> = internal.named
  */
 export const transparent: Color<never> = internal.transparent
 
-/**
- * The fallbacks a color-valued read admits: a whole `Color`, a color as
- * literal text (coerced through `named`, so CSS-wide keywords are
- * rejected), or another read whose own fallback satisfies the same
- * constraint, recursively — the color projection of the generic fallback
- * slot on `Var`.
- *
- * @since 0.4.0
- */
-export type VarFallback =
-  | string
-  | Color<Var.Any>
-  | Var.Var<string, unknown, VarFallback | undefined>
-
-/** A read `var` accepts: fallback-free, or carrying a color-valued fallback chain. */
-type ReadIn = Var.Var<string, unknown, VarFallback | undefined>
-
 // The identities a read contributes, flattened: the read's own, then its
 // fallback chain's — a Color fallback hands over its Vars, a nested read
 // recurses, literal text contributes nothing.
 type ReadVars<V> =
   V extends Var.Var<infer N, infer T, infer F> ? Var.Var<N, T> | ReadFallbackVars<F> : never
 type ReadFallbackVars<F> = F extends Color<infer W> ? W : F extends Var.Any ? ReadVars<F> : never
+
+// The lift's admission rules, as a guard the read parameter intersects —
+// `unknown` for a valid read, a string-literal error type otherwise. The
+// `Type` slot's `unknown` top makes exclusion inexpressible as a
+// constraint (calc's `ReadGuard` carries the derivation pointer), so the
+// rules are checked here: undeclared and color-declared reads lift,
+// calc-declared ones do not, and every fallback in the chain must be
+// color-valued (literal text coerces through `named`, so CSS-wide
+// keywords are rejected at runtime).
+type ReadGuard<V> =
+  V extends Var.Var<string, infer T, infer F>
+    ? [unknown] extends [T]
+      ? FallbackGuard<F>
+      : T extends Color<Var.Any>
+        ? FallbackGuard<F>
+        : 'this read is declared inside calc: a numeric read lifts with Calc.var'
+    : never
+
+type FallbackGuard<F> = [F] extends [undefined]
+  ? unknown
+  : F extends string
+    ? unknown
+    : F extends Color<Var.Any>
+      ? unknown
+      : F extends Var.Var<string, infer T2, infer F2>
+        ? [unknown] extends [T2]
+          ? FallbackGuard<F2>
+          : T2 extends Color<Var.Any>
+            ? FallbackGuard<F2>
+            : 'a calc-declared read cannot fall back inside a color'
+        : 'a color fallback is a Color, color text, or a Var read'
 
 const _var: {
   /**
@@ -195,9 +216,9 @@ const _var: {
    * (channel substitution cannot produce a whole color), though it does
    * substitute inside a fallback's channels.
    *
-   * @param read - The read to lift, from `Var.of` (optionally through `Var.fallback`).
+   * @param read - The read to lift, from `Var.of` or `Var.color` (optionally through `Var.fallback`).
    * @returns A `Color` reading the read's name, with its fallback chain's reads unioned in.
-   * @throws `Error` when the read's fallback chain holds anything but colors, color text, and reads.
+   * @throws `Error` when the read is calc-declared, or its fallback chain holds anything but colors, color text, and reads.
    * @example
    * ```ts
    * const accent = Var.of('accent')
@@ -206,7 +227,7 @@ const _var: {
    * ```
    * @since 0.4.0
    */
-  <V extends ReadIn>(read: V): Color<ReadVars<V>>
+  <V extends Var.Any>(read: V & ReadGuard<V>): Color<ReadVars<V>>
 } = internal.ref
 export { _var as var }
 
@@ -394,7 +415,7 @@ export const bind: {
    * @returns The bound color.
    * @since 0.1.0
    */
-  <Vars extends Var.Any, const B extends Bindings>(
+  <Vars extends Var.Any, const B extends PartialBindings<Vars>>(
     color: Color<Vars>,
     bindings: B,
   ): Color<ApplyBindings<Vars, B>>

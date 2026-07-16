@@ -1,4 +1,4 @@
-import type { ApplyBindings, Bindings, Calc } from '#calc/calc'
+import type { ApplyBindings, Bindings, Calc, PartialBindings } from '#calc/calc'
 import type { Precision } from '#calc/precision'
 import type { Unit } from '#data'
 import type { Color } from '#data/color'
@@ -103,6 +103,41 @@ type ReadFallbackVars<F> =
  */
 export const isDeclaration: (u: unknown) => u is Declaration<Var.Any> = internal.isDeclaration
 
+/**
+ * A handle usable in name position: a bare (fallback-free) read, written
+ * as its property (`make(gap, ...)` renders `--gap: ...`). A fallback
+ * belongs to a read site, so a fallback-carrying read is rejected
+ * structurally here.
+ *
+ * @since 0.4.0
+ */
+type Handle<T = unknown> = Var.Var<string, T, undefined>
+
+// The value forms a declared write admits: the declared type itself (with
+// the writing expression's own reads in its Vars), the bare-number sugar
+// under a number declaration, and literal text always (the library does
+// not parse CSS, so text is every declaration's escape hatch).
+type DeclaredWrite<T, V2 extends Var.Any> =
+  T extends Color<Var.Any>
+    ? Color<V2> | string
+    : T extends Calc<Var.Any, infer R, unknown>
+      ?
+          | Calc<V2, Unit.Family<R>, unknown>
+          | ([Unit.Family<R>] extends [Unit.None] ? number : never)
+          | string
+      : never
+
+// Guards a name-position handle to undeclared reads for the untyped write
+// overload — a declared handle types its value through DeclaredWrite. The
+// `Type` slot's `unknown` top makes the exclusion inexpressible as a
+// constraint, so the parameter intersects this (the `Calc.var` pattern).
+type UndeclaredGuard<H> =
+  H extends Var.Var<string, infer T, undefined>
+    ? [unknown] extends [T]
+      ? unknown
+      : "a declared handle types its write: pass a value of the handle's declared type"
+    : never
+
 export const make: {
   /**
    * Creates a declaration whose value is a whole custom-property read —
@@ -143,6 +178,56 @@ export const make: {
    * @since 0.1.0
    */
   <Vars extends Var.Any = never>(name: string, value: Value<Vars> | number): Declaration<Vars>
+  /**
+   * Writes a property through its handle with a read as the whole value —
+   * the alias pattern, `--gap: var(--spacing)`. The read's names join the
+   * report; the written property contributes none (writing is not
+   * reading).
+   *
+   * @param handle - The property's canonical handle. Must be fallback-free.
+   * @param value - The read to write, from `Var.of` or a typed constructor (optionally through `Var.fallback`).
+   * @returns A `Declaration` carrying the read's names.
+   * @throws `Error` when the handle carries a fallback, or the value's fallback chain holds a form no declaration can.
+   * @since 0.4.0
+   */
+  <V extends Read>(handle: Handle, value: V): Declaration<ReadVars<V>>
+  /**
+   * Writes a declared property through its handle, the value typed by the
+   * declared type: a `Var.length` handle takes length-family expressions
+   * (or literal text), a `Var.color` handle takes colors — so a write
+   * that contradicts the registration is a type error at the declaration.
+   * The name renders with its `--` prefix.
+   *
+   * @param handle - The property's canonical handle, from a typed `Var` constructor. Must be fallback-free.
+   * @param value - The value to write, typed by the handle's declared type; its own reads become the declaration's `Vars`.
+   * @returns A `Declaration` carrying the value's names.
+   * @throws `Error` when the handle carries a fallback.
+   * @example
+   * ```ts
+   * const gap = Var.length('gap')
+   * Declaration.render(Declaration.make(gap, Length.px(8))) // '--gap: 8px;'
+   * ```
+   * @since 0.4.0
+   */
+  <T extends Calc<Var.Any, Unit.Any, unknown> | Color<Var.Any>, V2 extends Var.Any = never>(
+    handle: Handle<T>,
+    value: DeclaredWrite<T, V2>,
+  ): Declaration<V2>
+  /**
+   * Writes a property through its undeclared handle: any declaration
+   * value, exactly as the string-name form. The name renders with its
+   * `--` prefix.
+   *
+   * @param handle - The property's canonical handle, from `Var.of`. Must be fallback-free.
+   * @param value - Literal CSS text, a number, or a `Calc`/`Color` expression.
+   * @returns A `Declaration` carrying the value's names.
+   * @throws `Error` when the handle carries a fallback.
+   * @since 0.4.0
+   */
+  <H extends Handle, V2 extends Var.Any = never>(
+    handle: H & UndeclaredGuard<H>,
+    value: Value<V2> | number,
+  ): Declaration<V2>
 } = internal.make
 
 export const bind: {
@@ -169,7 +254,7 @@ export const bind: {
    * @returns The bound declaration.
    * @since 0.1.0
    */
-  <Vars extends Var.Any, const B extends Bindings>(
+  <Vars extends Var.Any, const B extends PartialBindings<Vars>>(
     declaration: Declaration<Vars>,
     bindings: B,
   ): Declaration<ApplyBindings<Vars, B>>

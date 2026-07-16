@@ -1,0 +1,13 @@
+---
+'fashionable': minor
+---
+
+Selector nesting: the complex-selector grammar, `&`, and the `Requires` channel on `Selector`.
+
+**The grammar widens (`docs/selector-nesting.md`).** A `Selector` is now a complex selector — compounds joined by `descendant`/`child`/`nextSibling`/`subsequentSibling` — and the functional pseudo-classes take selector lists: `is`, `where`, and `has` are new, and `not` widens from one compound to a list. Lists canonical-sort (matching is order-independent; specificity is the most specific argument's, zero for `:where`); combinator sequences never reorder. In the compound order, `&` slots just after type/universal (`div&`, never `&div`, per css-nesting-1) and the functional pseudos share the old negation slot, so no existing rendered selector changes.
+
+**`Selector.nest` and `Selector<Requires>`.** The nesting selector is a first-class simple selector carrying the `Parent` requirement — union-accumulated with a `never` default, gated on absence, the same polarity as `Calc`'s `Requires`. Bare `Selector` admits only closed selectors, so `Selector.specificity` and `Stylesheet`'s pair-form appends reject an unresolved `&` at compile time. `Selector.under(child, parent)` substitutes the parent for each `&` — compound parents merge in place, complex parents wrap as `:is(parent)`, argument lists included — and discharges `Parent`; the resolved specificity is spec-exact because a rule carries exactly one selector.
+
+**Nested style rules render (breaking: the guard is gone).** A nested `StyleRule` now emits as an indented sub-block with `&` kept verbatim — native CSS nesting, the shape `@media` blocks already take — instead of every renderer throwing. Two invariants replace the guard: `StyleRule.make`, as the binder, requires every style rule reachable in its block through media transparency to reference `&` (the implicit descendant CSS would prepend is deliberately not modeled), and `Stylesheet.make`/`append` reject a top-level rule whose selector still needs a parent. `coalesce` is untouched, strict mode included: the gate never measures an `&` and still refuses blocks that nest style rules.
+
+ok-apca's hue block — `.red { :is(&, & *):is(.fill, .text) { ... } }` — now constructs in the model and renders byte-for-byte against the string it previously assembled by hand; the fixture is pinned in `test/consumers.spec.ts`.

@@ -15,8 +15,9 @@ declare const IdentId: unique symbol
  * family comparison implements exactly that — so `Kind` remains as the prose
  * and runtime vocabulary: dimensioned constants carry it, and the docs speak
  * it. A `<percentage>` is its own dimension, not a length: it adds only to
- * another percentage, and `<length-percentage>` mixing stays out of the model
- * (see `docs/design.md`).
+ * another percentage — unless the expression is anchored on a
+ * `<length-percentage>` value (a `Var.lengthPercentage` read, or
+ * `LengthPercentage.of`), which admits both families (see `docs/design.md`).
  *
  * @since 0.2.0
  */
@@ -169,17 +170,44 @@ type DivRequires<A, B> =
 export type Input<Vars extends Var.Any = Var.Any> = Calc<Vars> | number
 
 /**
+ * The declared type of the read named `N` in `Vars` — the identity's
+ * `Type` slot, recovered per name. `unknown` while the name is undeclared;
+ * a union when a name is declared twice (a violation of the one-name,
+ * one-type contract, met leniently).
+ *
+ * @since 0.4.0
+ */
+export type DeclaredType<Vars extends Var.Any, N extends string> = Var.Type<
+  Extract<Vars, Var.Var<N, unknown, unknown>>
+>
+
+// The values a binding may supply for a name: the declared type is
+// directly the domain — the slot holds the value type — plus the
+// bare-number sugar when the family is number. Undeclared names keep the
+// unconstrained Input, and so do color-declared ones (a color read is
+// never substitutable by bind; see the Color.var docs).
+type BindingValue<T> = [unknown] extends [T]
+  ? Input
+  : T extends Calc<Var.Any, infer R, unknown>
+    ?
+        | Calc<Var.Any, Unit.Family<R>, unknown>
+        | ([Unit.Family<R>] extends [Unit.None] ? number : never)
+    : Input
+
+/**
  * A bindings record: bare variable names to the values that replace them.
  * A value may itself be an expression, whose own reads join the result.
  *
  * Keys are names, not `Var` values — names are the value-level currency
  * of the variables channel; the identities live in the `Vars` phantom the
- * record is derived from (mapped over `Var.Name<Vars>`).
+ * record is derived from (mapped over `Var.Name<Vars>`). A declared name
+ * types its value: a `Var.length` read binds only to length-family
+ * expressions, while undeclared names accept any `Input`.
  *
  * @since 0.1.0
  */
 export type Bindings<Vars extends Var.Any = Var.Any> = {
-  readonly [N in Var.Name<Vars>]: Input
+  readonly [N in Var.Name<Vars>]: BindingValue<DeclaredType<Vars, N>>
 }
 
 type ValueVars<V> = V extends Calc<infer R> ? R : never
@@ -196,6 +224,38 @@ type BindingVars<T> = T extends Record<string, infer V> ? ValueVars<V> : never
 export type ApplyBindings<Vars extends Var.Any, B> =
   | (Vars extends unknown ? (Var.Name<Vars> extends keyof B ? never : Vars) : never)
   | BindingVars<Pick<B, Extract<keyof B, Var.Name<Vars>>>>
+
+type ValueRequires<V> = V extends Calc<Var.Any, Unit.Any, infer Q> ? Q : never
+type RecordRequires<T> = T extends Record<string, infer V> ? ValueRequires<V> : never
+
+/**
+ * What `bind` accepts for an expression with reads `Vars`: `Bindings`
+ * with every name optional (binding may be partial), intersected with a
+ * wide index signature so a record sharing no names with the expression
+ * stays legal — unread names are ignored, and without the index signature
+ * the all-optional record would be a weak type that rejects exactly the
+ * spread-a-wider-object usage the contract promises. Present names still
+ * check against their declared types through the `Bindings` half.
+ *
+ * @since 0.4.0
+ */
+export type PartialBindings<Vars extends Var.Any> = Partial<Bindings<Vars>> & {
+  readonly [name: string]: Calc<Var.Any, Unit.Any, unknown> | number | undefined
+}
+
+/**
+ * The requirements the bindings `B` contribute to an expression with reads
+ * `Vars`: the union of the bound values' own `Requires`, over the names
+ * the expression actually reads. This is `bind`'s side of the split with
+ * `solve` — `bind` is partial evaluation, so a bound `Length.vw(2)` may
+ * carry its `vw` requirement into the result, where `solve` is total and
+ * accepts only pre-satisfied values (see `docs/vars.md`).
+ *
+ * @since 0.4.0
+ */
+export type BindingRequires<Vars extends Var.Any, B> = RecordRequires<
+  Pick<B, Extract<keyof B, Var.Name<Vars>>>
+>
 
 /**
  * Options for `serialize`.
@@ -249,9 +309,26 @@ export type IdentValues<R> = {
  *
  * @since 0.4.0
  */
+// A solve binding is total: closed (no reads of its own) and pre-satisfied
+// (only `px`/`rad`/`deg` requirements), because `SolveOptions` cannot
+// demand ratios for units the bindings introduce — the `units` section's
+// type is fixed by the expression's `R` before the bindings beside it are
+// seen. Bind first to accumulate requirements, then solve.
+type SolveBindingValue<T> = [unknown] extends [T]
+  ? Input<never>
+  : T extends Calc<Var.Any, infer R, unknown>
+    ?
+        | Calc<never, Unit.Family<R>, Unit.ContextFree>
+        | ([Unit.Family<R>] extends [Unit.None] ? number : never)
+    : Input<never>
+
 export type SolveOptions<Vars extends Var.Any, R> = ([Vars] extends [never]
   ? { readonly bindings?: Record<string, Input<never>> }
-  : { readonly bindings: { readonly [N in Var.Name<Vars>]: Input<never> } }) &
+  : {
+      readonly bindings: {
+        readonly [N in Var.Name<Vars>]: SolveBindingValue<DeclaredType<Vars, N>>
+      }
+    }) &
   ([Exclude<R, Unit.ContextFree | Ident<string>>] extends [never]
     ? { readonly units?: Unit.UnitContext<R> }
     : { readonly units: Unit.UnitContext<R> }) &
@@ -294,22 +371,13 @@ export const isCalc: (u: unknown) => u is Calc<Var.Any, Unit.Any, unknown> = int
 export const of: (value: number, precision?: Precision) => Calc<never> = internal.of
 
 /**
- * The fallbacks a lifted read admits: a bare number, a number-result
- * expression, or another read whose own fallback satisfies the same
- * constraint, recursively. This is the numeric projection of the generic
- * fallback slot on `Var` — the read is number-result while its variable is
- * undeclared, so anything else in fallback position would substitute a
- * differently-dimensioned value into the surrounding tree.
+ * The Result a lifted read produces: its declared type's Result when the
+ * declaration is calc-shaped — the trait is the `Result` parameter itself,
+ * read structurally — and `Unit.None` while the read is undeclared.
  *
  * @since 0.4.0
  */
-export type VarFallback =
-  | number
-  | Calc<Var.Any, Unit.None, unknown>
-  | Var.Var<string, unknown, VarFallback | undefined>
-
-/** A read `var` accepts: fallback-free, or carrying a numeric fallback chain. */
-type ReadIn = Var.Var<string, unknown, VarFallback | undefined>
+export type ReadResult<T> = T extends Calc<Var.Any, infer R, unknown> ? R : Unit.None
 
 // The identities a read contributes to the phantom, flattened: the read's
 // own name-and-type pair, then its fallback chain's — a Calc fallback hands
@@ -318,6 +386,47 @@ type ReadVars<V> =
   V extends Var.Var<infer N, infer T, infer F> ? Var.Var<N, T> | ReadFallbackVars<F> : never
 type ReadFallbackVars<F> =
   F extends Calc<infer W, Unit.Any, unknown> ? W : F extends Var.Any ? ReadVars<F> : never
+
+// The lift's admission rules, as a guard the read parameter intersects:
+// `unknown` (a no-op) for a valid read, a string-literal error type
+// otherwise, so the compile error names the rule that failed. A constraint
+// cannot carry these rules — the `Type` slot's top is `unknown`, so every
+// declared read is assignable wherever an undeclared one is (that
+// covariance is the typed-handle forward-compat), and admission must be
+// checked, not bounded. `docs/vars.md` section 8 records the derivation.
+type ReadGuard<V> =
+  V extends Var.Var<string, infer T, infer F>
+    ? [unknown] extends [T]
+      ? FallbackGuard<F, Unit.None>
+      : T extends Calc<Var.Any, Unit.Any, unknown>
+        ? FallbackGuard<F, Unit.Family<ReadResult<T>>>
+        : 'this read is declared outside calc: a color-typed read lifts with Color.var'
+    : never
+
+// A fallback must land in the read's family: it substitutes where the read
+// does, so a differently-dimensioned fallback would hand the surrounding
+// tree a value the algebra rejected everywhere else.
+type FallbackGuard<F, Fam> = [F] extends [undefined]
+  ? unknown
+  : F extends number
+    ? [Fam] extends [Unit.None]
+      ? unknown
+      : 'a bare-number fallback fits only a number-result read'
+    : F extends Calc<Var.Any, infer R, unknown>
+      ? [Unit.Family<R>] extends [Fam]
+        ? unknown
+        : "this fallback's family does not match the read's declared type"
+      : F extends Var.Var<string, infer T2, infer F2>
+        ? [unknown] extends [T2]
+          ? [Unit.None] extends [Fam]
+            ? FallbackGuard<F2, Fam>
+            : "an undeclared nested read is number-result; declare it to match the outer read's family"
+          : T2 extends Calc<Var.Any, Unit.Any, unknown>
+            ? [Unit.Family<ReadResult<T2>>] extends [Fam]
+              ? FallbackGuard<F2, Fam>
+              : "a nested read's declared family must match the outer read's"
+            : 'a color-typed read cannot fall back inside calc'
+        : 'a calc fallback is a number, a Calc expression, or a Var read'
 
 const _var: {
   /**
@@ -343,12 +452,20 @@ const _var: {
    */
   <Name extends string>(name: Name): Calc<Var.Var<Name>>
   /**
-   * Lifts a `Var` read into an expression. A fallback-carrying read
-   * renders its fallback (`var(--gap, 8)`), which must be numeric here —
-   * a number, a number-result `Calc` (rendered under the normal rules, so
-   * arithmetic gets a nested `calc()` wrapper), or another such read,
-   * recursively. Anything else is a type error at this lift, backed by a
-   * runtime check.
+   * Lifts a `Var` read into an expression. The read's declared type sets
+   * the expression's Result: a `Var.length` read is a length-family
+   * expression that composes through the ordinary dimension algebra, an
+   * undeclared read is a `<number>` as before, and a color-typed read is
+   * rejected — it lifts with `Color.var`.
+   *
+   * A fallback-carrying read renders its fallback (`var(--gap, 8)`),
+   * which must land in the read's family: a bare number only under a
+   * number-result read, a `Calc` of the declared family (rendered under
+   * the normal rules, so arithmetic gets a nested `calc()` wrapper), or
+   * another read of the same family, recursively. Anything else is a type
+   * error at this lift, backed by a runtime check on the world (family
+   * fidelity within calc is the type level's job alone, as everywhere
+   * else in the algebra).
    *
    * The returned expression's `Vars` unions the read's identity with its
    * fallback chain's, flattened — `var(--x, var(--y))` is a
@@ -357,17 +474,17 @@ const _var: {
    * discards the fallback; a fallback never reduces what `solve`
    * requires (see `docs/vars.md`).
    *
-   * @param read - The read to lift, from `Var.of` (optionally through `Var.fallback`).
-   * @returns A `Calc` reading the read's name, with its fallback chain's reads unioned in.
-   * @throws `Error` when the read's fallback chain holds anything but numbers, `Calc` expressions, and reads.
+   * @param read - The read to lift, from `Var.of` or a typed constructor (optionally through `Var.fallback`).
+   * @returns A `Calc` of the read's declared family, with its fallback chain's reads unioned in.
+   * @throws `Error` when the read is color-declared, or its fallback chain holds anything but numbers, `Calc` expressions, and reads.
    * @example
    * ```ts
-   * const gap = Var.of('gap')
-   * Calc.serialize(Calc.var(gap.pipe(Var.fallback(8)))) // 'var(--gap, 8)'
+   * const gap = Var.length('gap')
+   * Calc.serialize(Calc.add(Calc.var(gap), Length.px(4))) // 'calc(var(--gap) + 4px)'
    * ```
    * @since 0.4.0
    */
-  <V extends ReadIn>(read: V): Calc<ReadVars<V>>
+  <V extends Var.Any>(read: V & ReadGuard<V>): Calc<ReadVars<V>, ReadResult<Var.Type<V>>, never>
 } = internal.ref
 export { _var as var }
 
@@ -725,18 +842,31 @@ export const bind: {
   /**
    * Returns a function that binds the given names in an expression.
    *
+   * The data-last form cannot see its eventual expression, so the
+   * per-name declared-type checking rides the data-first overload only;
+   * requirement threading works in both.
+   *
    * @param bindings - Variable names to values or expressions. Names the expression does not read are ignored, as are `undefined` values.
-   * @returns A function replacing bound variables in its argument, preserving its result and requirements.
+   * @returns A function replacing bound variables in its argument, preserving its result and joining the bound values' requirements to its own.
    * @since 0.1.0
    */
   <const B extends Bindings>(
     bindings: B,
-  ): <A extends Top>(expr: A) => Calc<ApplyBindings<VarsOf<A>, B>, ResultOf<A>, RequiresOf<A>>
+  ): <A extends Top>(
+    expr: A,
+  ) => Calc<ApplyBindings<VarsOf<A>, B>, ResultOf<A>, RequiresOf<A> | BindingRequires<VarsOf<A>, B>>
   /**
    * Replaces variables with values or other expressions. Binding is
    * partial evaluation: substituted subtrees re-fold, so binding every
-   * variable collapses the tree to a constant. The expression's result and
-   * requirements are preserved — binding touches only the variable channel.
+   * variable collapses the tree to a constant. The expression's result is
+   * preserved — binding touches only the variable channel — and the bound
+   * values' own requirements join the expression's, so a `Length.vw(2)`
+   * binding carries its `vw` ratio demand into the result for `solve` to
+   * collect later.
+   *
+   * A declared name types its value: binding a `Var.length` read to a
+   * bare number (or any non-length) is a type error, the check the
+   * declaration exists for. Undeclared names accept any `Input`.
    *
    * Names the expression does not read are ignored (spreading a wider
    * bindings object is fine), as are `undefined` values. Binding a
@@ -745,7 +875,7 @@ export const bind: {
    * `ApplyBindings`.
    *
    * @param expr - The expression to bind.
-   * @param bindings - Variable names to values or expressions.
+   * @param bindings - Variable names to values or expressions, typed per name by its declared type. May be partial: unbound names stay in the result.
    * @returns The bound expression.
    * @example
    * ```ts
@@ -755,10 +885,10 @@ export const bind: {
    * ```
    * @since 0.1.0
    */
-  <A extends Top, const B extends Bindings>(
+  <A extends Top, const B extends PartialBindings<VarsOf<A>>>(
     expr: A,
     bindings: B,
-  ): Calc<ApplyBindings<VarsOf<A>, B>, ResultOf<A>, RequiresOf<A>>
+  ): Calc<ApplyBindings<VarsOf<A>, B>, ResultOf<A>, RequiresOf<A> | BindingRequires<VarsOf<A>, B>>
 } = internal.bind
 
 export const solve: {

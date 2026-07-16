@@ -124,13 +124,23 @@ const validateReadFallback = (fb: unknown): void => {
 }
 
 /** @internal */
-export function make(name: string, value: Value<AnyVar> | number): Declaration<never> {
-  invariant(name.length > 0, 'Declaration name must be a non-empty string')
+export function make(name: string | AnyVar, value: Value<AnyVar> | number): Declaration<never> {
+  let resolved: string
+  if (isVar(name)) {
+    invariant(
+      fallbackOf(name) === undefined,
+      'A write takes the bare handle — a fallback belongs to a read site, not the property',
+    )
+    resolved = `--${varNameOf(name)}`
+  } else {
+    resolved = name
+  }
+  invariant(resolved.length > 0, 'Declaration name must be a non-empty string')
   if (isVar(value)) {
     validateReadFallback(fallbackOf(value))
   }
   return new DeclarationImpl(
-    name,
+    resolved,
     typeof value === 'number' ? toCalc(value) : value,
   ) as Declaration<never>
 }

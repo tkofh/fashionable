@@ -7,6 +7,8 @@ import {
   ColorSpace,
   HueInterpolation,
   Length,
+  LengthPercentage,
+  type Numeric,
   Percentage,
   type Unit,
 } from '#data'
@@ -18,6 +20,79 @@ import { MediaRule, RuleSet, StyleRule } from '#rule'
 import { Selector } from '#selector'
 import { Stylesheet } from '#stylesheet'
 import { Var } from '#var'
+
+// Compile-time assertions only — never invoked.
+const rejectsDeclaredTypeMismatches = (): void => {
+  const gap = Var.length('gap')
+  const accent = Var.color('accent')
+  // @ts-expect-error a color-declared read lifts with Color.var
+  Calc.var(accent)
+  // @ts-expect-error a calc-declared read lifts with Calc.var
+  Color.var(gap)
+  // @ts-expect-error a bare-number fallback fits only a number-result read
+  Calc.var(Var.fallback(gap, 8))
+  // @ts-expect-error a number-family fallback under a length-declared read
+  Calc.var(Var.fallback(gap, Calc.of(4)))
+  // @ts-expect-error an undeclared nested read is number-result, not length
+  Calc.var(Var.fallback(gap, Var.of('other')))
+  // the family-true forms hold
+  Calc.var(Var.fallback(gap, Length.px(8)))
+  Calc.var(Var.fallback(gap, Var.length('other')))
+  Color.var(Var.fallback(accent, Color.named('red')))
+}
+
+// Compile-time assertions only — never invoked.
+const rejectsMistypedBindings = (): void => {
+  const gapExpr = Calc.var(Var.length('gap'))
+  // @ts-expect-error a bare number where a length is declared
+  Calc.bind(gapExpr, { gap: 10 })
+  // @ts-expect-error a percentage where a length is declared
+  Calc.bind(gapExpr, { gap: Percentage.of(50) })
+  // the declared family holds, relative units included (bind threads requirements)
+  Calc.bind(gapExpr, { gap: Length.px(8) })
+  Calc.bind(gapExpr, { gap: Length.vw(2) })
+  // @ts-expect-error solve bindings are pre-satisfied: vw needs a ratio SolveOptions cannot demand
+  Calc.solve(gapExpr, { bindings: { gap: Length.vw(2) } })
+  Calc.solve(gapExpr, { bindings: { gap: Length.px(8) } })
+}
+
+// Compile-time assertions only — never invoked.
+const rejectsMistypedRegistrationsAndWrites = (): void => {
+  const gap = Var.length('gap')
+  const accent = Var.color('accent')
+  // @ts-expect-error a length-declared handle takes a length initial value, not a number
+  PropertyRule.make(gap, 0)
+  // @ts-expect-error a length initial value must be computationally independent (absolute units)
+  PropertyRule.make(gap, Length.vw(8))
+  // @ts-expect-error a declared handle derives its syntax; universal registration is for undeclared handles
+  PropertyRule.make(gap)
+  PropertyRule.make(gap, Length.px(8))
+  PropertyRule.make(accent, 'transparent')
+  PropertyRule.make(Var.of('u'))
+  PropertyRule.make(Var.of('u'), PropertySyntax.number, 0)
+  // @ts-expect-error a length-declared handle writes length-family values
+  Declaration.make(gap, 5)
+  // @ts-expect-error a color is not a length-family value
+  Declaration.make(gap, Color.named('red'))
+  Declaration.make(gap, Length.px(8))
+  Declaration.make(gap, '8px')
+  const inset = Var.lengthPercentage('inset')
+  PropertyRule.make(inset, Length.px(4))
+  PropertyRule.make(inset, Percentage.of(25))
+  // @ts-expect-error a number is neither a length nor a percentage
+  PropertyRule.make(inset, 0)
+  Declaration.make(
+    inset,
+    Calc.subtract(LengthPercentage.of(Percentage.of(100)), Calc.var(Var.lengthPercentage('pad'))),
+  )
+  // @ts-expect-error a bare number is not a <length-percentage> write
+  Declaration.make(inset, 4)
+  // an unanchored px + % sum stays a cross-family type error
+  // @ts-expect-error the first operand fixes the family: a percentage cannot join a length
+  Calc.add(Length.px(4), Percentage.of(50))
+  Declaration.make(accent, Color.named('red'))
+  Declaration.make(Var.of('u'), 'anything at all')
+}
 
 // Compile-time assertions only — never invoked.
 const rejectsWorldMismatchedFallbacks = (): void => {
@@ -53,6 +128,17 @@ const rejectsNonNodes = (): void => {
   const media = MediaRule.make(MediaQuery.minWidth(768), RuleSet.make(declaration))
   // @ts-expect-error a media rule enters the model nested inside a style rule, not at the top level
   Stylesheet.append(Stylesheet.empty, media)
+}
+
+// Compile-time assertions only — never invoked.
+const gatesUnboundNestingSelectors = (): void => {
+  const nested = Selector.and(Selector.nest, Selector.pseudoClass('hover'))
+  // @ts-expect-error an &-bearing selector takes its specificity from the parent — resolve it with under first
+  Selector.specificity(nested)
+  // @ts-expect-error nothing above a stylesheet binds & — the pair form rejects Parent-requiring selectors
+  Stylesheet.append(Stylesheet.empty, nested, RuleSet.make(Declaration.make('color', 'red')))
+  // Resolving against a parent discharges the requirement.
+  Selector.specificity(Selector.under(nested, Selector.class('btn')))
 }
 
 // Compile-time assertions only — never invoked.
@@ -149,6 +235,74 @@ describe('types', () => {
     )
     expectTypeOf(declaration).toEqualTypeOf<
       Declaration.Declaration<Var.Var<'stack'> | Var.Var<'base'>>
+    >()
+  })
+
+  test('typed constructors put the data type in the slot', () => {
+    expectTypeOf(Var.number('t')).toEqualTypeOf<Var.Var<'t', Numeric.Numeric>>()
+    expectTypeOf(Var.length('gap')).toEqualTypeOf<Var.Var<'gap', Length.Length>>()
+    expectTypeOf(Var.angle('sweep')).toEqualTypeOf<Var.Var<'sweep', Angle.Angle>>()
+    expectTypeOf(Var.percentage('basis')).toEqualTypeOf<Var.Var<'basis', Percentage.Percentage>>()
+    expectTypeOf(Var.color('accent')).toEqualTypeOf<Var.Var<'accent', Color.Color>>()
+  })
+
+  test('a declared read lifts with its family as the Result', () => {
+    const gap = Var.length('gap')
+    expectTypeOf(Calc.var(gap)).toEqualTypeOf<
+      Calc.Calc<Var.Var<'gap', Length.Length>, Unit.Length, never>
+    >()
+    expectTypeOf(Calc.add(Calc.var(gap), Length.px(4))).toEqualTypeOf<
+      Calc.Calc<Var.Var<'gap', Length.Length>, Unit.Length, Unit.Px>
+    >()
+    expectTypeOf(Calc.var(Var.number('t'))).toEqualTypeOf<
+      Calc.Calc<Var.Var<'t', Numeric.Numeric>, Unit.None, never>
+    >()
+  })
+
+  test('binding a relative unit threads its requirement through bind', () => {
+    const bound = Calc.bind(Calc.var(Var.length('gap')), { gap: Length.vw(2) })
+    expectTypeOf(bound).toEqualTypeOf<Calc.Calc<never, Unit.Length, Unit.Vw>>()
+  })
+
+  test('a declared write threads the value reads', () => {
+    const declaration = Declaration.make(
+      Var.length('gap'),
+      Calc.add(Calc.var(Var.length('inset')), Length.px(4)),
+    )
+    expectTypeOf(declaration).toEqualTypeOf<
+      Declaration.Declaration<Var.Var<'inset', Length.Length>>
+    >()
+  })
+
+  test('a length-percentage anchor admits both families', () => {
+    const inset = Var.lengthPercentage('inset')
+    expectTypeOf(Calc.var(inset)).toEqualTypeOf<
+      Calc.Calc<
+        Var.Var<'inset', LengthPercentage.LengthPercentage>,
+        Unit.Length | Unit.Percentage,
+        never
+      >
+    >()
+    expectTypeOf(Calc.subtract(Calc.var(inset), Length.px(24))).toEqualTypeOf<
+      Calc.Calc<
+        Var.Var<'inset', LengthPercentage.LengthPercentage>,
+        Unit.Length | Unit.Percentage,
+        Unit.Px
+      >
+    >()
+    expectTypeOf(Calc.add(Calc.var(inset), Percentage.of(10), Length.px(4))).toEqualTypeOf<
+      Calc.Calc<
+        Var.Var<'inset', LengthPercentage.LengthPercentage>,
+        Unit.Length | Unit.Percentage,
+        Unit.Percent | Unit.Px
+      >
+    >()
+  })
+
+  test('widening anchors mixing without a read', () => {
+    const mixed = Calc.subtract(LengthPercentage.of(Percentage.of(100)), Length.px(24))
+    expectTypeOf(mixed).toEqualTypeOf<
+      Calc.Calc<never, Unit.Length | Unit.Percentage, Unit.Percent | Unit.Px>
     >()
   })
 
@@ -464,6 +618,12 @@ describe('types', () => {
     expect(rejectsWorldMismatchedFallbacks).toBeTypeOf('function')
   })
 
+  test('declared-type mismatches are rejected at compile time', () => {
+    expect(rejectsDeclaredTypeMismatches).toBeTypeOf('function')
+    expect(rejectsMistypedBindings).toBeTypeOf('function')
+    expect(rejectsMistypedRegistrationsAndWrites).toBeTypeOf('function')
+  })
+
   test('non-members are rejected at compile time', () => {
     expect(rejectsNonMembers).toBeTypeOf('function')
   })
@@ -490,5 +650,26 @@ describe('types', () => {
 
   test('cross-space channels and unresolved channel solves are rejected at compile time', () => {
     expect(rejectsCrossSpaceRelativeChannels).toBeTypeOf('function')
+  })
+
+  test('unbound nesting selectors are rejected at compile time', () => {
+    expect(gatesUnboundNestingSelectors).toBeTypeOf('function')
+  })
+
+  test('selector requirements accumulate and discharge', () => {
+    expectTypeOf(Selector.nest).toEqualTypeOf<Selector.Selector<Selector.Parent>>()
+    expectTypeOf(Selector.class('a')).toEqualTypeOf<Selector.Selector>()
+    expectTypeOf(Selector.and(Selector.nest, Selector.class('a'))).toEqualTypeOf<
+      Selector.Selector<Selector.Parent>
+    >()
+    expectTypeOf(
+      Selector.is(Selector.nest, Selector.descendant(Selector.nest, Selector.universal)),
+    ).toEqualTypeOf<Selector.Selector<Selector.Parent>>()
+    expectTypeOf(Selector.is(Selector.class('a'), Selector.class('b'))).toEqualTypeOf<
+      Selector.Selector<never>
+    >()
+    expectTypeOf(
+      Selector.under(Selector.and(Selector.nest, Selector.class('a')), Selector.class('b')),
+    ).toEqualTypeOf<Selector.Selector<never>>()
   })
 })

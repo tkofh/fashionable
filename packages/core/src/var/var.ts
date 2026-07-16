@@ -1,3 +1,9 @@
+import type { Angle } from '#data/angle'
+import type { Color } from '#data/color'
+import type { Length } from '#data/length'
+import type { LengthPercentage } from '#data/lengthPercentage'
+import type { Numeric } from '#data/numeric'
+import type { Percentage } from '#data/percentage'
 import type { Pipeable } from '#util'
 import type { VarTypeId } from './var.internal.ts'
 import * as internal from './var.internal.ts'
@@ -16,9 +22,12 @@ declare const VarVariance: unique symbol
  * - `Name` — the property name, without the `--` prefix. This is the
  *   read's identity: it is what the `Vars` parameter of `Calc`, `Color`,
  *   and the containers unions, and what the runtime `vars()` reports list.
- * - `Type` — the declared value type, `unknown` while undeclared. Typed
- *   constructors are a planned extension (see `docs/vars.md`); every read
- *   this module builds today is `unknown`-typed and lifts as a `<number>`.
+ * - `Type` — the declared value type, `unknown` while undeclared. The
+ *   vocabulary is the data types themselves: `length('gap')` is a
+ *   `Var<'gap', Length>`, `color('accent')` a `Var<'accent', Color>`. A
+ *   declared type gives the read a Result at the lift, types its
+ *   bindings, and drives `PropertyRule.make`'s syntax derivation; an
+ *   undeclared read lifts as a `<number>` with unconstrained bindings.
  * - `Fallback` — the fallback value, `undefined` on a bare read. The slot
  *   is generic here: what a fallback may be depends on where the read
  *   lands, and each admitting context (`Declaration.Value`, `Calc.var`,
@@ -114,10 +123,14 @@ export const isVar: (u: unknown) => u is Any = internal.isVar
  * name directly, so `Calc.var('gap')` and `Calc.var(Var.of('gap'))` are
  * the same expression.
  *
+ * The read is undeclared: it lifts as a `<number>` and its bindings are
+ * unconstrained. The typed constructors (`number`, `length`, `angle`,
+ * `percentage`, `color`) declare a value type instead.
+ *
  * Repeated calls with the same name return the same instance.
  *
  * @param name - The property name, without the `--` prefix. Must be non-empty.
- * @returns A bare read of `--name`.
+ * @returns A bare undeclared read of `--name`.
  * @throws `Error` when `name` is empty.
  * @example
  * ```ts
@@ -127,6 +140,115 @@ export const isVar: (u: unknown) => u is Any = internal.isVar
  * @since 0.4.0
  */
 export const of: <Name extends string>(name: Name) => Var<Name> = internal.of
+
+/**
+ * Creates a read declared `<number>`. The declaration types the channel
+ * end to end: the read lifts as a number-result expression (as an
+ * undeclared read does), `bind` and `solve` accept only number-family
+ * values for the name, and `PropertyRule.make` derives the `<number>`
+ * syntax from the handle.
+ *
+ * Repeated calls with the same name return the same instance; a
+ * differently-declared read of the same name is a different value (one
+ * name, one type is the consumer's contract — see `docs/vars.md`).
+ *
+ * @param name - The property name, without the `--` prefix. Must be non-empty.
+ * @returns A bare read of `--name`, declared `<number>`.
+ * @throws `Error` when `name` is empty.
+ * @since 0.4.0
+ */
+export const number: <Name extends string>(name: Name) => Var<Name, Numeric> = internal.numberVar
+
+/**
+ * Creates a read declared `<length>`. The read lifts as a length-family
+ * expression — `Calc.add(Calc.var(gap), Length.px(4))` composes through
+ * the ordinary dimension algebra — its bindings take length-family
+ * values, and `PropertyRule.make` derives the `<length>` syntax.
+ *
+ * Repeated calls with the same name return the same instance.
+ *
+ * @param name - The property name, without the `--` prefix. Must be non-empty.
+ * @returns A bare read of `--name`, declared `<length>`.
+ * @throws `Error` when `name` is empty.
+ * @example
+ * ```ts
+ * const gap = Var.length('gap')
+ * Calc.serialize(Calc.add(Calc.var(gap), Length.px(4))) // 'calc(var(--gap) + 4px)'
+ * ```
+ * @since 0.4.0
+ */
+export const length: <Name extends string>(name: Name) => Var<Name, Length> = internal.lengthVar
+
+/**
+ * Creates a read declared `<length-percentage>`. The read lifts spanning
+ * both families — the anchor that admits length and percentage operands
+ * beside it, so `Calc.subtract(Calc.var(inset), Length.px(24))` and a
+ * percentage subtrahend both compose — its bindings take either family
+ * (or a mix), and `PropertyRule.make` derives the `<length-percentage>`
+ * syntax.
+ *
+ * Repeated calls with the same name return the same instance.
+ *
+ * @param name - The property name, without the `--` prefix. Must be non-empty.
+ * @returns A bare read of `--name`, declared `<length-percentage>`.
+ * @throws `Error` when `name` is empty.
+ * @example
+ * ```ts
+ * const inset = Var.lengthPercentage('inset')
+ * Calc.serialize(Calc.subtract(Calc.var(inset), Length.px(24)))
+ * // 'calc(var(--inset) - 24px)'
+ * ```
+ * @since 0.4.0
+ */
+export const lengthPercentage: <Name extends string>(name: Name) => Var<Name, LengthPercentage> =
+  internal.lengthPercentageVar
+
+/**
+ * Creates a read declared `<angle>`: an angle-family read at the lift,
+ * angle-family bindings, the `<angle>` syntax under `PropertyRule.make`.
+ *
+ * Repeated calls with the same name return the same instance.
+ *
+ * @param name - The property name, without the `--` prefix. Must be non-empty.
+ * @returns A bare read of `--name`, declared `<angle>`.
+ * @throws `Error` when `name` is empty.
+ * @since 0.4.0
+ */
+export const angle: <Name extends string>(name: Name) => Var<Name, Angle> = internal.angleVar
+
+/**
+ * Creates a read declared `<percentage>`: a percentage-family read at the
+ * lift, percentage-family bindings, the `<percentage>` syntax under
+ * `PropertyRule.make`.
+ *
+ * Repeated calls with the same name return the same instance.
+ *
+ * @param name - The property name, without the `--` prefix. Must be non-empty.
+ * @returns A bare read of `--name`, declared `<percentage>`.
+ * @throws `Error` when `name` is empty.
+ * @since 0.4.0
+ */
+export const percentage: <Name extends string>(name: Name) => Var<Name, Percentage> =
+  internal.percentageVar
+
+/**
+ * Creates a read declared `<color>`. A color does not participate in calc,
+ * and the type says so: the read lifts through `Color.var` (never
+ * `Calc.var`), and `PropertyRule.make` derives the `<color>` syntax.
+ *
+ * Repeated calls with the same name return the same instance.
+ *
+ * @param name - The property name, without the `--` prefix. Must be non-empty.
+ * @returns A bare read of `--name`, declared `<color>`.
+ * @throws `Error` when `name` is empty.
+ * @example
+ * ```ts
+ * const accent = Var.color('accent')
+ * Color.serialize(Color.var(accent)) // 'var(--accent)'
+ * ```
+ * @since 0.4.0
+ */
+export const color: <Name extends string>(name: Name) => Var<Name, Color> = internal.colorVar
 
 export const fallback: {
   /**
@@ -197,9 +319,10 @@ export const equals: {
    */
   (that: Any): (self: Any) => boolean
   /**
-   * Structural equality: names compare as text, fallbacks by their own
-   * structural equality (expression fallbacks as expression trees,
-   * primitive fallbacks by value). A bare read never equals a
+   * Structural equality: names compare as text, declared types as data
+   * (`Var.length('x')` never equals `Var.of('x')`), and fallbacks by
+   * their own structural equality (expression fallbacks as expression
+   * trees, primitive fallbacks by value). A bare read never equals a
    * fallback-carrying one.
    *
    * @param self - The first read.

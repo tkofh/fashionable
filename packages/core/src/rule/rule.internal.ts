@@ -20,9 +20,8 @@ import {
 import { DEFAULT_INDENT } from '#internal/render'
 import type { MediaQuery } from '#query/mediaQuery'
 import { render as renderQuery } from '#query/mediaQuery.internal'
-import type { Selector } from '#selector/selector'
+import type { Requirement, Selector } from '#selector/selector'
 import { render as renderSelector } from '#selector/selector.internal'
-import { invariant } from '#util'
 import type { AnyVar } from '#var/var.internal'
 import type { MediaRule } from './mediaRule.ts'
 import type { Member, RuleSet } from './ruleSet.ts'
@@ -55,21 +54,11 @@ export const resolveRenderOptions = (options?: {
   mediaSyntax: options?.mediaSyntax ?? 'prefix',
 })
 
-/** @internal */
-export const requireMediaRule = (
-  member: StyleRule<AnyVar> | MediaRule<AnyVar>,
-): MediaRule<AnyVar> => {
-  invariant(
-    'query' in member,
-    'A nested style rule has no v1 rendering — selector composition is a later extension; lift the rule to the top level of the stylesheet',
-  )
-  return member
-}
-
 /**
  * The nested-form body of a block: one line per declaration, nested
- * media rules as indented `@media` sub-blocks, in member order. Empty
- * blocks contribute nothing.
+ * media and style rules as indented sub-blocks, in member order. A
+ * nested style rule's selector renders verbatim, `&` included — native
+ * CSS nesting is the output shape. Empty blocks contribute nothing.
  *
  * @internal
  */
@@ -85,11 +74,15 @@ export const blockBodyLines = (
       lines.push(`${pad}${renderDeclaration(member, context.precision)}`)
       continue
     }
-    const media = requireMediaRule(member)
-    const inner = blockBodyLines(media.block, depth + 1, context)
-    if (inner.length > 0) {
-      const prelude = renderQuery(media.query, { mediaSyntax: context.mediaSyntax })
+    const inner = blockBodyLines(member.block, depth + 1, context)
+    if (inner.length === 0) {
+      continue
+    }
+    if ('query' in member) {
+      const prelude = renderQuery(member.query, { mediaSyntax: context.mediaSyntax })
       lines.push(`${pad}@media ${prelude} {`, ...inner, `${pad}}`)
+    } else {
+      lines.push(`${pad}${renderSelector(member.selector)} {`, ...inner, `${pad}}`)
     }
   }
   return lines
@@ -97,7 +90,7 @@ export const blockBodyLines = (
 
 /** @internal */
 export const renderStyleRuleBlock = (
-  selector: Selector,
+  selector: Selector<Requirement>,
   block: RuleSet<AnyVar>,
   context: RenderContext,
 ): string => {
