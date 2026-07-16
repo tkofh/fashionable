@@ -1,6 +1,7 @@
 import * as Equal from '#internal/equal'
 import type { MediaQuery } from '#query/mediaQuery'
 import { render as renderQuery } from '#query/mediaQuery.internal'
+import type { Requirement } from '#selector/selector'
 import { dual, Pipeable } from '#util'
 import type { Name as VarName } from '#var/var'
 import type { AnyVar } from '#var/var.internal'
@@ -58,11 +59,11 @@ export const isMediaRule = (u: unknown): u is MediaRule<AnyVar> =>
   typeof u === 'object' && u !== null && MediaRuleTypeId in u
 
 /** @internal */
-export function make<Vars extends AnyVar>(
+export function make<Vars extends AnyVar, Requires extends Requirement>(
   query: MediaQuery,
-  block: RuleSet<Vars>,
-): MediaRule<Vars> {
-  return new MediaRuleImpl(query, block) as unknown as MediaRule<Vars>
+  block: RuleSet<Vars, Requires>,
+): MediaRule<Vars, Requires> {
+  return new MediaRuleImpl(query, block) as unknown as MediaRule<Vars, Requires>
 }
 
 /** @internal */

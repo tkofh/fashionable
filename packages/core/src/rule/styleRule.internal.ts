@@ -12,7 +12,7 @@ import type { RenderOptions, StyleRule } from './styleRule.ts'
 export const StyleRuleTypeId = Symbol.for('fashionable/rule/styleRule')
 export type StyleRuleTypeId = typeof StyleRuleTypeId
 
-class StyleRuleImpl extends Pipeable implements StyleRule<AnyVar>, Equal.Equal {
+class StyleRuleImpl extends Pipeable implements StyleRule<AnyVar, Requirement>, Equal.Equal {
   readonly [StyleRuleTypeId]: StyleRuleTypeId = StyleRuleTypeId
 
   readonly selector: Selector<Requirement>
@@ -55,7 +55,7 @@ class StyleRuleImpl extends Pipeable implements StyleRule<AnyVar>, Equal.Equal {
 }
 
 /** @internal */
-export const isStyleRule = (u: unknown): u is StyleRule<AnyVar> =>
+export const isStyleRule = (u: unknown): u is StyleRule<AnyVar, Requirement> =>
   typeof u === 'object' && u !== null && StyleRuleTypeId in u
 
 // The binder invariant (docs/selector-nesting.md section 1): every style
@@ -80,25 +80,29 @@ const requireNestedSelectors = (block: RuleSet<AnyVar>): void => {
 }
 
 /** @internal */
-export function make<Vars extends AnyVar>(
-  selector: Selector<Requirement>,
+export function make<Vars extends AnyVar, S extends Requirement>(
+  selector: Selector<S>,
   block: RuleSet<Vars>,
-): StyleRule<Vars> {
+): StyleRule<Vars, S> {
   requireNestedSelectors(block)
-  return new StyleRuleImpl(selector, block) as unknown as StyleRule<Vars>
+  return new StyleRuleImpl(selector, block) as unknown as StyleRule<Vars, S>
 }
 
 /** @internal */
-export function refs<Vars extends AnyVar>(rule: StyleRule<Vars>): ReadonlySet<VarName<Vars>> {
+export function refs<Vars extends AnyVar>(
+  rule: StyleRule<Vars, Requirement>,
+): ReadonlySet<VarName<Vars>> {
   return refSetOf(rule) as ReadonlySet<VarName<Vars>>
 }
 
 /** @internal */
-export const render = (rule: StyleRule<AnyVar>, options?: RenderOptions): string =>
+export const render = (rule: StyleRule<AnyVar, Requirement>, options?: RenderOptions): string =>
   renderStyleRuleBlock(rule.selector, rule.block, resolveRenderOptions(options))
 
 /** @internal */
 export const equals = dual<
-  (that: StyleRule<AnyVar>) => (self: StyleRule<AnyVar>) => boolean,
-  (self: StyleRule<AnyVar>, that: StyleRule<AnyVar>) => boolean
->(2, (self: StyleRule<AnyVar>, that: StyleRule<AnyVar>): boolean => Equal.equals(self, that))
+  (that: StyleRule<AnyVar, Requirement>) => (self: StyleRule<AnyVar, Requirement>) => boolean,
+  (self: StyleRule<AnyVar, Requirement>, that: StyleRule<AnyVar, Requirement>) => boolean
+>(2, (self: StyleRule<AnyVar, Requirement>, that: StyleRule<AnyVar, Requirement>): boolean =>
+  Equal.equals(self, that),
+)

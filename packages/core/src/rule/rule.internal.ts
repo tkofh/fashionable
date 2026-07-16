@@ -21,7 +21,10 @@ import { DEFAULT_INDENT } from '#internal/render'
 import type { MediaQuery } from '#query/mediaQuery'
 import { render as renderQuery } from '#query/mediaQuery.internal'
 import type { Requirement, Selector } from '#selector/selector'
-import { render as renderSelector } from '#selector/selector.internal'
+import {
+  needsParent as selectorNeedsParent,
+  render as renderSelector,
+} from '#selector/selector.internal'
 import type { AnyVar } from '#var/var.internal'
 import type { MediaRule } from './mediaRule.ts'
 import type { Member, RuleSet } from './ruleSet.ts'
@@ -29,12 +32,27 @@ import type { StyleRule } from './styleRule.ts'
 
 /** @internal */
 export const refSetOf = (
-  value: RuleSet<AnyVar> | StyleRule<AnyVar> | MediaRule<AnyVar>,
+  value: RuleSet<AnyVar> | StyleRule<AnyVar, Requirement> | MediaRule<AnyVar>,
 ): ReadonlySet<string> => (value as unknown as { readonly refSet: ReadonlySet<string> }).refSet
 
 /** @internal */
 export const memberRefs = (member: Member<AnyVar>): ReadonlySet<string> =>
   isDeclaration(member) ? declarationRefsOf(member) : refSetOf(member)
+
+/** @internal */
+export const needsParentOf = (set: RuleSet<AnyVar>): boolean =>
+  (set as unknown as { readonly needsParent: boolean }).needsParent
+
+// The runtime mirror of `MemberRequires` (docs/selector-nesting.md
+// section 1): a bare declaration always needs a host selector, a media
+// rule is transparent, a style rule contributes its selector's need.
+/** @internal */
+export const memberNeedsParent = (member: Member<AnyVar>): boolean => {
+  if (isDeclaration(member)) {
+    return true
+  }
+  return 'query' in member ? needsParentOf(member.block) : selectorNeedsParent(member.selector)
+}
 
 /** @internal */
 export interface RenderContext {

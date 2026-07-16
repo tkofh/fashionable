@@ -8,8 +8,14 @@ import type { Name as VarName } from '#var/var'
 import type { AnyVar } from '#var/var.internal'
 import { make as makeMediaRule } from './mediaRule.internal.ts'
 import type { MediaRule } from './mediaRule.ts'
-import { blockBodyLines, memberRefs, refSetOf, resolveRenderOptions } from './rule.internal.ts'
-import type { Member, MemberVars, RenderOptions, RuleSet } from './ruleSet.ts'
+import {
+  blockBodyLines,
+  memberNeedsParent,
+  memberRefs,
+  refSetOf,
+  resolveRenderOptions,
+} from './rule.internal.ts'
+import type { Member, MemberRequires, MemberVars, RenderOptions, RuleSet } from './ruleSet.ts'
 import { make as makeStyleRule } from './styleRule.internal.ts'
 import type { StyleRule } from './styleRule.ts'
 
@@ -21,12 +27,14 @@ class RuleSetImpl extends Pipeable implements RuleSet<AnyVar>, Equal.Equal {
 
   readonly members: ReadonlyArray<Member<AnyVar>>
   readonly refSet: ReadonlySet<string>
+  readonly needsParent: boolean
   #hash: number | undefined
 
   constructor(members: ReadonlyArray<Member<AnyVar>>) {
     super()
     this.members = members
     this.refSet = unionRefs(...members.map(memberRefs))
+    this.needsParent = members.some(memberNeedsParent)
   }
 
   [Equal.EqualTypeId](that: unknown): boolean {
@@ -62,7 +70,7 @@ export const isRuleSet = (u: unknown): u is RuleSet<AnyVar> =>
   typeof u === 'object' && u !== null && RuleSetTypeId in u
 
 /** @internal */
-export const empty: RuleSet<never> = new RuleSetImpl([]) as unknown as RuleSet<never>
+export const empty: RuleSet<never, never> = new RuleSetImpl([]) as unknown as RuleSet<never, never>
 
 /** @internal */
 export const isEmpty = (set: RuleSet<AnyVar>): boolean => set.members.length === 0
@@ -70,9 +78,10 @@ export const isEmpty = (set: RuleSet<AnyVar>): boolean => set.members.length ===
 /** @internal */
 export function make<Members extends ReadonlyArray<Member<AnyVar>>>(
   ...members: Members
-): RuleSet<MemberVars<Members[number]>> {
+): RuleSet<MemberVars<Members[number]>, MemberRequires<Members[number]>> {
   return (members.length === 0 ? empty : new RuleSetImpl(members)) as RuleSet<
-    MemberVars<Members[number]>
+    MemberVars<Members[number]>,
+    MemberRequires<Members[number]>
   >
 }
 
@@ -89,29 +98,35 @@ const resolveMember = (head: unknown, block: unknown): Member<AnyVar> => {
 export const append: {
   <M extends Member<AnyVar>>(
     member: M,
-  ): <Vars extends AnyVar>(self: RuleSet<Vars>) => RuleSet<Vars | MemberVars<M>>
-  <B extends AnyVar>(
-    selector: Selector<Requirement>,
+  ): <Vars extends AnyVar, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+  ) => RuleSet<Vars | MemberVars<M>, Requires | MemberRequires<M>>
+  <B extends AnyVar, S extends Requirement>(
+    selector: Selector<S>,
     block: RuleSet<B>,
-  ): <Vars extends AnyVar>(self: RuleSet<Vars>) => RuleSet<Vars | B>
-  <B extends AnyVar>(
+  ): <Vars extends AnyVar, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+  ) => RuleSet<Vars | B, Requires | S>
+  <B extends AnyVar, BR extends Requirement>(
     query: MediaQuery,
-    block: RuleSet<B>,
-  ): <Vars extends AnyVar>(self: RuleSet<Vars>) => RuleSet<Vars | B>
-  <Vars extends AnyVar, M extends Member<AnyVar>>(
-    self: RuleSet<Vars>,
+    block: RuleSet<B, BR>,
+  ): <Vars extends AnyVar, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+  ) => RuleSet<Vars | B, Requires | BR>
+  <Vars extends AnyVar, Requires extends Requirement, M extends Member<AnyVar>>(
+    self: RuleSet<Vars, Requires>,
     member: M,
-  ): RuleSet<Vars | MemberVars<M>>
-  <Vars extends AnyVar, B extends AnyVar>(
-    self: RuleSet<Vars>,
-    selector: Selector<Requirement>,
+  ): RuleSet<Vars | MemberVars<M>, Requires | MemberRequires<M>>
+  <Vars extends AnyVar, Requires extends Requirement, B extends AnyVar, S extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+    selector: Selector<S>,
     block: RuleSet<B>,
-  ): RuleSet<Vars | B>
-  <Vars extends AnyVar, B extends AnyVar>(
-    self: RuleSet<Vars>,
+  ): RuleSet<Vars | B, Requires | S>
+  <Vars extends AnyVar, Requires extends Requirement, B extends AnyVar, BR extends Requirement>(
+    self: RuleSet<Vars, Requires>,
     query: MediaQuery,
-    block: RuleSet<B>,
-  ): RuleSet<Vars | B>
+    block: RuleSet<B, BR>,
+  ): RuleSet<Vars | B, Requires | BR>
 } = dual(
   (args: IArguments) => isRuleSet(args[0]),
   (self: RuleSet<AnyVar>, head: unknown, block?: unknown): RuleSet<AnyVar> =>
@@ -120,8 +135,13 @@ export const append: {
 
 /** @internal */
 export const concat: {
-  <B extends AnyVar>(that: RuleSet<B>): <A extends AnyVar>(self: RuleSet<A>) => RuleSet<A | B>
-  <A extends AnyVar, B extends AnyVar>(self: RuleSet<A>, that: RuleSet<B>): RuleSet<A | B>
+  <B extends AnyVar, BR extends Requirement>(
+    that: RuleSet<B, BR>,
+  ): <A extends AnyVar, AR extends Requirement>(self: RuleSet<A, AR>) => RuleSet<A | B, AR | BR>
+  <A extends AnyVar, AR extends Requirement, B extends AnyVar, BR extends Requirement>(
+    self: RuleSet<A, AR>,
+    that: RuleSet<B, BR>,
+  ): RuleSet<A | B, AR | BR>
 } = dual(
   2,
   (self: RuleSet<AnyVar>, that: RuleSet<AnyVar>): RuleSet<AnyVar> =>
@@ -130,18 +150,30 @@ export const concat: {
 
 /** @internal */
 export const forSelector: {
-  (selector: Selector<Requirement>): <Vars extends AnyVar>(self: RuleSet<Vars>) => StyleRule<Vars>
-  <Vars extends AnyVar>(self: RuleSet<Vars>, selector: Selector<Requirement>): StyleRule<Vars>
+  <S extends Requirement>(
+    selector: Selector<S>,
+  ): <Vars extends AnyVar>(self: RuleSet<Vars>) => StyleRule<Vars, S>
+  <Vars extends AnyVar, S extends Requirement>(
+    self: RuleSet<Vars>,
+    selector: Selector<S>,
+  ): StyleRule<Vars, S>
 } = dual(
   2,
-  (self: RuleSet<AnyVar>, selector: Selector<Requirement>): StyleRule<AnyVar> =>
+  (self: RuleSet<AnyVar>, selector: Selector<Requirement>): StyleRule<AnyVar, Requirement> =>
     makeStyleRule(selector, self),
 )
 
 /** @internal */
 export const forMediaQuery: {
-  (query: MediaQuery): <Vars extends AnyVar>(self: RuleSet<Vars>) => MediaRule<Vars>
-  <Vars extends AnyVar>(self: RuleSet<Vars>, query: MediaQuery): MediaRule<Vars>
+  (
+    query: MediaQuery,
+  ): <Vars extends AnyVar, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+  ) => MediaRule<Vars, Requires>
+  <Vars extends AnyVar, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+    query: MediaQuery,
+  ): MediaRule<Vars, Requires>
 } = dual(
   2,
   (self: RuleSet<AnyVar>, query: MediaQuery): MediaRule<AnyVar> => makeMediaRule(query, self),

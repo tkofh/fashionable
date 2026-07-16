@@ -608,8 +608,10 @@ describe('stylesheet', () => {
         Selector.and(Selector.nest, Selector.pseudoClass('hover')),
         RuleSet.make(Declaration.make('color', 'red')),
       )
-      expect(() => Stylesheet.make(rule)).toThrow('cannot sit at the top level')
-      expect(() => Stylesheet.append(Stylesheet.empty, rule)).toThrow('cannot sit at the top level')
+      expect(() => Stylesheet.make(rule as never)).toThrow('cannot sit at the top level')
+      expect(() => Stylesheet.append(Stylesheet.empty, rule as never)).toThrow(
+        'cannot sit at the top level',
+      )
     })
 
     test('accepts a closed top-level rule holding &-nested members', () => {
@@ -625,6 +627,65 @@ describe('stylesheet', () => {
         ),
       )
       expect(Stylesheet.render(sheet)).toBe('.card {\n\t&:hover {\n\t\tcolor: red;\n\t}\n}')
+    })
+  })
+
+  describe('top-level media', () => {
+    test('a rules-only media rule renders as a top-level section', () => {
+      const grouped = MediaRule.make(
+        MediaQuery.minWidth(768),
+        RuleSet.make(
+          StyleRule.make(Selector.class('a'), RuleSet.make(Declaration.make('color', 'red'))),
+          StyleRule.make(Selector.class('b'), RuleSet.make(Declaration.make('color', 'blue'))),
+        ),
+      )
+      const sheet = Stylesheet.make(
+        StyleRule.make(Selector.root, RuleSet.make(Declaration.make('--depth', 4))),
+        grouped,
+      )
+      expect(Stylesheet.render(sheet)).toBe(
+        [
+          ':root {\n\t--depth: 4;\n}',
+          '@media (min-width: 768px) {\n\t.a {\n\t\tcolor: red;\n\t}\n\t.b {\n\t\tcolor: blue;\n\t}\n}',
+        ].join('\n\n'),
+      )
+    })
+
+    test('a top-level media node contributes its vars', () => {
+      const grouped = MediaRule.make(
+        MediaQuery.minWidth(768),
+        RuleSet.make(
+          StyleRule.make(
+            Selector.class('a'),
+            RuleSet.make(Declaration.make('--indent', Calc.var('depth'))),
+          ),
+        ),
+      )
+      expect(Stylesheet.vars(Stylesheet.make(grouped))).toEqual(new Set(['depth']))
+    })
+
+    test('rejects a declaration-bearing media rule at the root', () => {
+      const nestedOnly = MediaRule.make(
+        MediaQuery.minWidth(768),
+        RuleSet.make(Declaration.make('--w', 400)),
+      )
+      expect(() => Stylesheet.make(nestedOnly as never)).toThrow('only closed style rules')
+      expect(() => Stylesheet.append(Stylesheet.empty, nestedOnly as never)).toThrow(
+        'only closed style rules',
+      )
+    })
+
+    test('rejects a media rule holding an &-selector rule at the root', () => {
+      const unbound = MediaRule.make(
+        MediaQuery.minWidth(768),
+        RuleSet.make(
+          StyleRule.make(
+            Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+            RuleSet.make(Declaration.make('color', 'red')),
+          ),
+        ),
+      )
+      expect(() => Stylesheet.make(unbound as never)).toThrow('only closed style rules')
     })
   })
 })

@@ -1,4 +1,5 @@
 import type { MediaQuery } from '#query/mediaQuery'
+import type { Requirement } from '#selector/selector'
 import type { Pipeable } from '#util'
 import type { Var } from '#var'
 import type { MediaRuleTypeId } from './mediaRule.internal.ts'
@@ -6,19 +7,29 @@ import * as internal from './mediaRule.internal.ts'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from './ruleSet.ts'
 
 /**
- * A nested `@media` rule: a media query and the block it gates.
+ * A `@media` rule: a media query and the block it gates.
  *
- * This is the nested form — a member of an enclosing style rule's block,
- * per the CSSNestedDeclarations grammar — not a top-level `@media`
- * statement. Media enters the model inside a style rule
- * (`:root { @media ... { ... } }`) and renders there, nested. The `Vars`
- * parameter is the block's.
+ * The usual position is nested — a member of an enclosing style rule's
+ * block, holding declarations that apply to that rule's selector, per
+ * the CSSNestedDeclarations grammar. A media rule whose block holds only
+ * closed style rules may instead sit at a stylesheet's top level, the
+ * authored `@media { selector { ... } }` grouping. The `Vars` parameter
+ * is the block's.
+ *
+ * `Requires` is the block's too — a media rule has no selector of its
+ * own, so it is transparent to the requirements channel. Bare
+ * declarations put `Parent` in the block's requirements, which is what
+ * confines a declaration-bearing media rule to nested position:
+ * `Stylesheet`'s node union takes `MediaRule<Vars, never>`.
  *
  * Construct via `make`.
  *
  * @since 0.1.0
  */
-export interface MediaRule<out Vars extends Var.Any = Var.Any> extends Pipeable {
+export interface MediaRule<
+  out Vars extends Var.Any = Var.Any,
+  out Requires extends Requirement = Requirement,
+> extends Pipeable {
   readonly [MediaRuleTypeId]: MediaRuleTypeId
   /**
    * The media query gating the block.
@@ -27,7 +38,7 @@ export interface MediaRule<out Vars extends Var.Any = Var.Any> extends Pipeable 
   /**
    * The rule's block.
    */
-  readonly block: RuleSet<Vars>
+  readonly block: RuleSet<Vars, Requires>
 }
 
 /**
@@ -43,11 +54,11 @@ export interface MediaRule<out Vars extends Var.Any = Var.Any> extends Pipeable 
 export const isMediaRule: (u: unknown) => u is MediaRule<Var.Any> = internal.isMediaRule
 
 /**
- * Creates a nested `@media` rule.
+ * Creates a `@media` rule.
  *
  * @param query - The media query gating the block.
- * @param block - The rule's block.
- * @returns A `MediaRule` carrying the block's variable names.
+ * @param block - The rule's block. Declarations make the rule nested-only; a block of closed style rules makes it top-level-capable.
+ * @returns A `MediaRule` carrying the block's variable names and requirements.
  * @example
  * ```ts
  * MediaRule.make(
@@ -57,10 +68,10 @@ export const isMediaRule: (u: unknown) => u is MediaRule<Var.Any> = internal.isM
  * ```
  * @since 0.1.0
  */
-export const make: <Vars extends Var.Any>(
+export const make: <Vars extends Var.Any, Requires extends Requirement>(
   query: MediaQuery,
-  block: RuleSet<Vars>,
-) => MediaRule<Vars> = internal.make
+  block: RuleSet<Vars, Requires>,
+) => MediaRule<Vars, Requires> = internal.make
 
 /**
  * The rule's unbound variable names — the block's, since a query

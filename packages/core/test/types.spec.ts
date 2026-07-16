@@ -126,8 +126,39 @@ const rejectsNonNodes = (): void => {
   // @ts-expect-error a declaration cannot sit at the top level of a stylesheet
   Stylesheet.make(declaration)
   const media = MediaRule.make(MediaQuery.minWidth(768), RuleSet.make(declaration))
-  // @ts-expect-error a media rule enters the model nested inside a style rule, not at the top level
+  // @ts-expect-error a declaration-bearing media rule needs a host selector — only rules-only media sits at the top level
   Stylesheet.append(Stylesheet.empty, media)
+}
+
+// Compile-time assertions only — never invoked.
+const gatesTopLevelMedia = (): void => {
+  const closedRule = StyleRule.make(
+    Selector.class('a'),
+    RuleSet.make(Declaration.make('color', 'red')),
+  )
+  const mixed = MediaRule.make(
+    MediaQuery.minWidth(768),
+    RuleSet.make(closedRule, Declaration.make('color', 'red')),
+  )
+  // @ts-expect-error a bare declaration puts Parent in the media block's requirements
+  Stylesheet.make(mixed)
+  const unbound = MediaRule.make(
+    MediaQuery.minWidth(768),
+    RuleSet.make(
+      StyleRule.make(
+        Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+        RuleSet.make(Declaration.make('color', 'red')),
+      ),
+    ),
+  )
+  // @ts-expect-error an &-selector rule inside keeps the media rule nested-only
+  Stylesheet.make(unbound)
+  const nested = StyleRule.make(
+    Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+    RuleSet.make(Declaration.make('color', 'red')),
+  )
+  // @ts-expect-error an &-selector rule cannot sit at the top level — nothing binds the reference
+  Stylesheet.make(nested)
 }
 
 // Compile-time assertions only — never invoked.
@@ -523,9 +554,9 @@ describe('types', () => {
     expectTypeOf(set).toEqualTypeOf<RuleSet.RuleSet<Var.Var<'a'> | Var.Var<'b'> | Var.Var<'c'>>>()
   })
 
-  test('empty rule sets are closed', () => {
-    expectTypeOf(RuleSet.empty).toEqualTypeOf<RuleSet.RuleSet<never>>()
-    expectTypeOf(RuleSet.make()).toEqualTypeOf<RuleSet.RuleSet<never>>()
+  test('empty rule sets are closed on both channels', () => {
+    expectTypeOf(RuleSet.empty).toEqualTypeOf<RuleSet.RuleSet<never, never>>()
+    expectTypeOf(RuleSet.make()).toEqualTypeOf<RuleSet.RuleSet<never, never>>()
   })
 
   test('append and concat union refs', () => {
@@ -654,6 +685,43 @@ describe('types', () => {
 
   test('unbound nesting selectors are rejected at compile time', () => {
     expect(gatesUnboundNestingSelectors).toBeTypeOf('function')
+  })
+
+  test('parent-needing nodes are rejected at the top level at compile time', () => {
+    expect(gatesTopLevelMedia).toBeTypeOf('function')
+  })
+
+  test('the requirements channel flows through the containers', () => {
+    // The containers are recursive types, which trips toEqualTypeOf's
+    // deep comparison — extract the phantom and compare the brand alone.
+    type RequiresOf<T> =
+      T extends RuleSet.RuleSet<Var.Any, infer R>
+        ? R
+        : T extends StyleRule.StyleRule<Var.Any, infer R>
+          ? R
+          : T extends MediaRule.MediaRule<Var.Any, infer R>
+            ? R
+            : never
+
+    const declarations = RuleSet.make(Declaration.make('color', 'red'))
+    expectTypeOf<RequiresOf<typeof declarations>>().toEqualTypeOf<Selector.Parent>()
+
+    const closedRule = StyleRule.make(Selector.class('a'), declarations)
+    expectTypeOf<RequiresOf<typeof closedRule>>().toEqualTypeOf<never>()
+
+    const nestedRule = StyleRule.make(
+      Selector.and(Selector.nest, Selector.pseudoClass('hover')),
+      declarations,
+    )
+    expectTypeOf<RequiresOf<typeof nestedRule>>().toEqualTypeOf<Selector.Parent>()
+
+    const carrying = RuleSet.make(nestedRule)
+    expectTypeOf<RequiresOf<typeof carrying>>().toEqualTypeOf<Selector.Parent>()
+
+    const grouped = MediaRule.make(MediaQuery.minWidth(768), RuleSet.make(closedRule))
+    expectTypeOf<RequiresOf<typeof grouped>>().toEqualTypeOf<never>()
+    // A rules-only media rule is a node; the sheet accepts it at compile time.
+    expect(Stylesheet.isStylesheet(Stylesheet.make(grouped))).toBe(true)
   })
 
   test('selector requirements accumulate and discharge', () => {

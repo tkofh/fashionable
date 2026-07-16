@@ -14,17 +14,26 @@ import * as internal from './styleRule.internal.ts'
  * reads this rule's selector. The `Vars` parameter is the block's — a
  * selector contributes no variable names.
  *
+ * `Requires` is the *selector's* requirements, not the block's: the
+ * binder discharges everything its block needs, so the rule needs a
+ * parent exactly when its own selector references `&`. It defaults to
+ * `never` — the closed, top-level form — because that is the form
+ * consumer annotations usually name.
+ *
  * Construct via `make`.
  *
  * @since 0.1.0
  */
-export interface StyleRule<out Vars extends Var.Any = Var.Any> extends Pipeable {
+export interface StyleRule<
+  out Vars extends Var.Any = Var.Any,
+  out Requires extends Requirement = never,
+> extends Pipeable {
   readonly [StyleRuleTypeId]: StyleRuleTypeId
   /**
    * The selector the block applies to. References `&` exactly when the
    * rule nests inside another rule's block.
    */
-  readonly selector: Selector<Requirement>
+  readonly selector: Selector<Requires>
   /**
    * The rule's block.
    */
@@ -41,7 +50,8 @@ export interface StyleRule<out Vars extends Var.Any = Var.Any> extends Pipeable 
  * @returns `true` if the value is a `StyleRule`, `false` otherwise.
  * @since 0.1.0
  */
-export const isStyleRule: (u: unknown) => u is StyleRule<Var.Any> = internal.isStyleRule
+export const isStyleRule: (u: unknown) => u is StyleRule<Var.Any, Requirement> =
+  internal.isStyleRule
 
 /**
  * Creates a style rule.
@@ -54,7 +64,7 @@ export const isStyleRule: (u: unknown) => u is StyleRule<Var.Any> = internal.isS
  *
  * @param selector - The selector the block applies to. References `&` exactly when this rule itself nests.
  * @param block - The rule's block.
- * @returns A `StyleRule` carrying the block's variable names.
+ * @returns A `StyleRule` carrying the block's variable names and the selector's requirements.
  * @throws `Error` when a style rule nested in `block` has a selector that does not reference `&`.
  * @example
  * ```ts
@@ -65,10 +75,10 @@ export const isStyleRule: (u: unknown) => u is StyleRule<Var.Any> = internal.isS
  * ```
  * @since 0.1.0
  */
-export const make: <Vars extends Var.Any>(
-  selector: Selector<Requirement>,
+export const make: <Vars extends Var.Any, S extends Requirement>(
+  selector: Selector<S>,
   block: RuleSet<Vars>,
-) => StyleRule<Vars> = internal.make
+) => StyleRule<Vars, S> = internal.make
 
 /**
  * The rule's unbound variable names — the block's, since a selector
@@ -78,8 +88,9 @@ export const make: <Vars extends Var.Any>(
  * @returns The set of unbound variable names.
  * @since 0.1.0
  */
-export const vars: <Vars extends Var.Any>(rule: StyleRule<Vars>) => ReadonlySet<Var.Name<Vars>> =
-  internal.refs
+export const vars: <Vars extends Var.Any>(
+  rule: StyleRule<Vars, Requirement>,
+) => ReadonlySet<Var.Name<Vars>> = internal.refs
 
 /**
  * Options for `render` — the block renderers' shared shape,
@@ -109,7 +120,8 @@ export type RenderOptions = RuleSetRenderOptions
  * ```
  * @since 0.1.0
  */
-export const render: (rule: StyleRule<Var.Any>, options?: RenderOptions) => string = internal.render
+export const render: (rule: StyleRule<Var.Any, Requirement>, options?: RenderOptions) => string =
+  internal.render
 
 export const equals: {
   /**
@@ -119,7 +131,7 @@ export const equals: {
    * @returns A function testing its argument for structural equality with `that`.
    * @since 0.1.0
    */
-  (that: StyleRule<Var.Any>): (self: StyleRule<Var.Any>) => boolean
+  (that: StyleRule<Var.Any, Requirement>): (self: StyleRule<Var.Any, Requirement>) => boolean
   /**
    * Structural equality: selectors compare as in `Selector.equals`
    * (canonically ordered parts), blocks as in `RuleSet.equals` (members
@@ -130,5 +142,5 @@ export const equals: {
    * @returns `true` if the rules are structurally equal.
    * @since 0.1.0
    */
-  (self: StyleRule<Var.Any>, that: StyleRule<Var.Any>): boolean
+  (self: StyleRule<Var.Any, Requirement>, that: StyleRule<Var.Any, Requirement>): boolean
 } = internal.equals

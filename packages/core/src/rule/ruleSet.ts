@@ -3,7 +3,7 @@ import type {
   RenderOptions as DeclarationRenderOptions,
 } from '#declaration/declaration'
 import type { MediaQuery } from '#query/mediaQuery'
-import type { Requirement, Selector } from '#selector/selector'
+import type { Parent, Requirement, Selector } from '#selector/selector'
 import type { Pipeable } from '#util'
 import type { Var } from '#var'
 import type { MediaRule } from './mediaRule.ts'
@@ -23,21 +23,33 @@ import type { StyleRule } from './styleRule.ts'
  * The `Vars` parameter unions the members' unbound variable names, as on
  * `Calc`; `vars` is the runtime set.
  *
+ * The `Requires` parameter unions the members' context requirements
+ * (`Selector.Requirement`, section 4.4 of `docs/design.md`): `Parent`
+ * from every bare declaration and from every nested rule whose selector
+ * references `&`. A style rule discharges its block's requirements
+ * against its own selector; a block of closed style rules and nothing
+ * else is `RuleSet<Vars, never>`, the only form a top-level `@media`
+ * block may take.
+ *
  * Construct via `make` (or `empty` and `append`).
  *
  * @since 0.1.0
  */
-export interface RuleSet<out Vars extends Var.Any = Var.Any> extends Pipeable {
+export interface RuleSet<
+  out Vars extends Var.Any = Var.Any,
+  out Requires extends Requirement = Requirement,
+> extends Pipeable {
   readonly [RuleSetTypeId]: RuleSetTypeId
   /**
    * The block's members, in authored order.
    */
-  readonly members: ReadonlyArray<Member<Vars>>
+  readonly members: ReadonlyArray<Member<Vars, Requires>>
 }
 
 /**
  * The forms a rule block may contain: declarations, nested style rules,
- * and nested `@media` rules.
+ * and nested `@media` rules. `Requires` bounds the rule arms'
+ * requirements; `MemberRequires` computes a member's contribution.
  *
  * Deliberately absent are the declaration-block at-rules (`@font-face`,
  * `@property`) — the CSS grammar keeps them at the top level, so this
@@ -45,10 +57,10 @@ export interface RuleSet<out Vars extends Var.Any = Var.Any> extends Pipeable {
  *
  * @since 0.1.0
  */
-export type Member<Vars extends Var.Any = Var.Any> =
+export type Member<Vars extends Var.Any = Var.Any, Requires extends Requirement = Requirement> =
   | Declaration<Vars>
-  | StyleRule<Vars>
-  | MediaRule<Vars>
+  | StyleRule<Vars, Requires>
+  | MediaRule<Vars, Requires>
 
 /**
  * The unbound variable names of a `Member`, or the union of them for a
@@ -60,9 +72,31 @@ export type Member<Vars extends Var.Any = Var.Any> =
 export type MemberVars<M extends Member<Var.Any>> =
   M extends Declaration<infer R>
     ? R
-    : M extends StyleRule<infer R>
+    : M extends StyleRule<infer R, Requirement>
       ? R
-      : M extends MediaRule<infer R>
+      : M extends MediaRule<infer R, Requirement>
+        ? R
+        : never
+
+/**
+ * The requirement contribution of a `Member`, or the union of them for a
+ * union of members — the type-level counterpart of the containers'
+ * `Requires` parameter, used by the constructors to thread member
+ * requirements into the result.
+ *
+ * A bare declaration contributes `Parent`: without a host selector it
+ * has no subject. A style rule contributes its selector's requirements —
+ * its block's are its own to discharge. A media rule is transparent and
+ * contributes its block's.
+ *
+ * @since 0.4.0
+ */
+export type MemberRequires<M extends Member<Var.Any>> =
+  M extends Declaration<Var.Any>
+    ? Parent
+    : M extends StyleRule<Var.Any, infer R>
+      ? R
+      : M extends MediaRule<Var.Any, infer R>
         ? R
         : never
 
@@ -83,7 +117,7 @@ export const isRuleSet: (u: unknown) => u is RuleSet<Var.Any> = internal.isRuleS
  *
  * @since 0.1.0
  */
-export const empty: RuleSet<never> = internal.empty
+export const empty: RuleSet<never, never> = internal.empty
 
 /**
  * Checks if the block has no members.
@@ -102,7 +136,7 @@ export const isEmpty: (set: RuleSet<Var.Any>) => boolean = internal.isEmpty
  * Creates a rule set holding the given members, in the given order.
  *
  * @param members - Declarations and nested rules, in authored order.
- * @returns A `RuleSet` whose `Vars` unions the members' variable names.
+ * @returns A `RuleSet` whose `Vars` unions the members' variable names and whose `Requires` unions their requirement contributions.
  * @example
  * ```ts
  * const block = RuleSet.make(
@@ -114,7 +148,7 @@ export const isEmpty: (set: RuleSet<Var.Any>) => boolean = internal.isEmpty
  */
 export const make: <Members extends ReadonlyArray<Member<Var.Any>>>(
   ...members: Members
-) => RuleSet<MemberVars<Members[number]>> = internal.make
+) => RuleSet<MemberVars<Members[number]>, MemberRequires<Members[number]>> = internal.make
 
 export const append: {
   /**
@@ -126,7 +160,9 @@ export const append: {
    */
   <M extends Member<Var.Any>>(
     member: M,
-  ): <Vars extends Var.Any>(self: RuleSet<Vars>) => RuleSet<Vars | MemberVars<M>>
+  ): <Vars extends Var.Any, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+  ) => RuleSet<Vars | MemberVars<M>, Requires | MemberRequires<M>>
   /**
    * Returns a function that appends the style rule `selector { block }`
    * to its argument's block.
@@ -136,10 +172,12 @@ export const append: {
    * @returns A function producing the extended block.
    * @since 0.1.0
    */
-  <B extends Var.Any>(
-    selector: Selector<Requirement>,
+  <B extends Var.Any, S extends Requirement>(
+    selector: Selector<S>,
     block: RuleSet<B>,
-  ): <Vars extends Var.Any>(self: RuleSet<Vars>) => RuleSet<Vars | B>
+  ): <Vars extends Var.Any, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+  ) => RuleSet<Vars | B, Requires | S>
   /**
    * Returns a function that appends the media rule `@media query { block }`
    * to its argument's block.
@@ -149,10 +187,12 @@ export const append: {
    * @returns A function producing the extended block.
    * @since 0.1.0
    */
-  <B extends Var.Any>(
+  <B extends Var.Any, BR extends Requirement>(
     query: MediaQuery,
-    block: RuleSet<B>,
-  ): <Vars extends Var.Any>(self: RuleSet<Vars>) => RuleSet<Vars | B>
+    block: RuleSet<B, BR>,
+  ): <Vars extends Var.Any, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+  ) => RuleSet<Vars | B, Requires | BR>
   /**
    * Appends a member at the end of the block. The result is a new set;
    * the original is untouched.
@@ -169,10 +209,10 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends Var.Any, M extends Member<Var.Any>>(
-    self: RuleSet<Vars>,
+  <Vars extends Var.Any, Requires extends Requirement, M extends Member<Var.Any>>(
+    self: RuleSet<Vars, Requires>,
     member: M,
-  ): RuleSet<Vars | MemberVars<M>>
+  ): RuleSet<Vars | MemberVars<M>, Requires | MemberRequires<M>>
   /**
    * Appends a nested style rule from its parts — sugar for
    * `append(self, StyleRule.make(selector, block))`, so blocks compose
@@ -198,11 +238,11 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends Var.Any, B extends Var.Any>(
-    self: RuleSet<Vars>,
-    selector: Selector<Requirement>,
+  <Vars extends Var.Any, Requires extends Requirement, B extends Var.Any, S extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+    selector: Selector<S>,
     block: RuleSet<B>,
-  ): RuleSet<Vars | B>
+  ): RuleSet<Vars | B, Requires | S>
   /**
    * Appends a nested media rule from its parts — sugar for
    * `append(self, MediaRule.make(query, block))`, so blocks compose
@@ -220,11 +260,11 @@ export const append: {
    * ```
    * @since 0.1.0
    */
-  <Vars extends Var.Any, B extends Var.Any>(
-    self: RuleSet<Vars>,
+  <Vars extends Var.Any, Requires extends Requirement, B extends Var.Any, BR extends Requirement>(
+    self: RuleSet<Vars, Requires>,
     query: MediaQuery,
-    block: RuleSet<B>,
-  ): RuleSet<Vars | B>
+    block: RuleSet<B, BR>,
+  ): RuleSet<Vars | B, Requires | BR>
 } = internal.append
 
 export const concat: {
@@ -235,7 +275,9 @@ export const concat: {
    * @returns A function producing the concatenated block.
    * @since 0.1.0
    */
-  <B extends Var.Any>(that: RuleSet<B>): <A extends Var.Any>(self: RuleSet<A>) => RuleSet<A | B>
+  <B extends Var.Any, BR extends Requirement>(
+    that: RuleSet<B, BR>,
+  ): <A extends Var.Any, AR extends Requirement>(self: RuleSet<A, AR>) => RuleSet<A | B, AR | BR>
   /**
    * Concatenates two blocks: `self`'s members followed by `that`'s, order
    * preserved on both sides. No deduplication happens here — repeated
@@ -243,10 +285,13 @@ export const concat: {
    *
    * @param self - The block whose members come first.
    * @param that - The block whose members come second.
-   * @returns The concatenated block, with both sides' variable names unioned.
+   * @returns The concatenated block, with both sides' variable names and requirements unioned.
    * @since 0.1.0
    */
-  <A extends Var.Any, B extends Var.Any>(self: RuleSet<A>, that: RuleSet<B>): RuleSet<A | B>
+  <A extends Var.Any, AR extends Requirement, B extends Var.Any, BR extends Requirement>(
+    self: RuleSet<A, AR>,
+    that: RuleSet<B, BR>,
+  ): RuleSet<A | B, AR | BR>
 } = internal.concat
 
 export const forSelector: {
@@ -258,14 +303,16 @@ export const forSelector: {
    * @returns A function that takes a block and returns the style rule applying it to `selector`.
    * @since 0.2.0
    */
-  (selector: Selector<Requirement>): <Vars extends Var.Any>(self: RuleSet<Vars>) => StyleRule<Vars>
+  <S extends Requirement>(
+    selector: Selector<S>,
+  ): <Vars extends Var.Any>(self: RuleSet<Vars>) => StyleRule<Vars, S>
   /**
    * Lifts a block into a style rule applying to `selector` — sugar for
    * `StyleRule.make(selector, self)` with the arguments flipped, so a
    * block built up through `pipe` caps off as a rule without naming
    * `StyleRule` at the call site. The rule carries the block's variable
-   * names unchanged; a selector contributes none. The binder check runs
-   * here, as in `StyleRule.make`.
+   * names unchanged; its requirements are the selector's, the block's
+   * discharged. The binder check runs here, as in `StyleRule.make`.
    *
    * @param self - The block the rule applies.
    * @param selector - The selector the block applies to.
@@ -279,7 +326,10 @@ export const forSelector: {
    * ```
    * @since 0.2.0
    */
-  <Vars extends Var.Any>(self: RuleSet<Vars>, selector: Selector<Requirement>): StyleRule<Vars>
+  <Vars extends Var.Any, S extends Requirement>(
+    self: RuleSet<Vars>,
+    selector: Selector<S>,
+  ): StyleRule<Vars, S>
 } = internal.forSelector
 
 export const forMediaQuery: {
@@ -291,13 +341,17 @@ export const forMediaQuery: {
    * @returns A function that takes a block and returns the media rule gating it by `query`.
    * @since 0.2.0
    */
-  (query: MediaQuery): <Vars extends Var.Any>(self: RuleSet<Vars>) => MediaRule<Vars>
+  (
+    query: MediaQuery,
+  ): <Vars extends Var.Any, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+  ) => MediaRule<Vars, Requires>
   /**
-   * Lifts a block into a nested `@media` rule gated by `query` — sugar
-   * for `MediaRule.make(query, self)` with the arguments flipped, so a
-   * block built up through `pipe` caps off as a rule without naming
+   * Lifts a block into a `@media` rule gated by `query` — sugar for
+   * `MediaRule.make(query, self)` with the arguments flipped, so a block
+   * built up through `pipe` caps off as a rule without naming
    * `MediaRule` at the call site. The rule carries the block's variable
-   * names unchanged; a query contributes none.
+   * names and requirements unchanged; a query contributes neither.
    *
    * @param self - The block the rule gates.
    * @param query - The media query gating the block.
@@ -310,7 +364,10 @@ export const forMediaQuery: {
    * ```
    * @since 0.2.0
    */
-  <Vars extends Var.Any>(self: RuleSet<Vars>, query: MediaQuery): MediaRule<Vars>
+  <Vars extends Var.Any, Requires extends Requirement>(
+    self: RuleSet<Vars, Requires>,
+    query: MediaQuery,
+  ): MediaRule<Vars, Requires>
 } = internal.forMediaQuery
 
 /**

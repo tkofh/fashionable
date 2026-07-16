@@ -1,5 +1,6 @@
 import type { FontFaceRule } from '#fontFace/fontFaceRule'
 import type { PropertyRule } from '#property/propertyRule'
+import type { MediaRule } from '#rule/mediaRule'
 import type { RenderOptions as RuleSetRenderOptions, RuleSet } from '#rule/ruleSet'
 import type { StyleRule } from '#rule/styleRule'
 import type { Selector } from '#selector/selector'
@@ -37,28 +38,36 @@ export interface Stylesheet<out Vars extends Var.Any = Var.Any> extends Pipeable
 }
 
 /**
- * The forms a stylesheet may contain at its top level: style rules and
- * the declaration-block at-rules (`@font-face`, `@property`).
+ * The forms a stylesheet may contain at its top level: style rules,
+ * `@media` rules, and the declaration-block at-rules (`@font-face`,
+ * `@property`).
  *
- * Deliberately absent are `Declaration` — CSS has no top-level
- * declarations — and `MediaRule`: media enters the model nested inside a
- * style rule's block, and renders there. The full unrepresentability
- * scheme lives in `docs/design.md`.
+ * The rule arms require `never` — nothing above the sheet binds `&`, so
+ * a style rule's selector must be closed, and a `@media` rule's block
+ * must hold only closed style rules (a bare declaration in a top-level
+ * media block has no subject). Deliberately absent is `Declaration`:
+ * CSS has no top-level declarations. The full unrepresentability scheme
+ * lives in `docs/design.md`.
  *
  * @since 0.1.0
  */
-export type Node<Vars extends Var.Any = Var.Any> = StyleRule<Vars> | FontFaceRule | PropertyRule
+export type Node<Vars extends Var.Any = Var.Any> =
+  | StyleRule<Vars, never>
+  | MediaRule<Vars, never>
+  | FontFaceRule
+  | PropertyRule
 
 /**
  * The unbound variable names of a `Node`, or the union of them for a
  * union of nodes — the type-level counterpart of `vars`, used by the
- * constructors to thread node names into the result. Only style rules
- * carry variables; the at-rule forms contribute `never`, since
- * `@property` initial values are closed by construction.
+ * constructors to thread node names into the result. Only style and
+ * media rules carry variables; the at-rule forms contribute `never`,
+ * since `@property` initial values are closed by construction.
  *
  * @since 0.1.0
  */
-export type NodeVars<N extends Node<Var.Any>> = N extends StyleRule<infer R> ? R : never
+export type NodeVars<N extends Node<Var.Any>> =
+  N extends StyleRule<infer R, never> ? R : N extends MediaRule<infer R, never> ? R : never
 
 /**
  * Checks if a value is a `Stylesheet`.
@@ -96,13 +105,13 @@ export const isEmpty: (sheet: Stylesheet<Var.Any>) => boolean = internal.isEmpty
  * Creates a stylesheet holding the given nodes, in the given order, with
  * structural duplicates dropped — the first occurrence wins.
  *
- * A top-level rule's selector must be closed: nothing above the sheet
- * binds `&`, so a rule whose selector references the nesting selector
- * belongs inside another rule's block instead.
+ * A top-level rule must be closed: nothing above the sheet binds `&`,
+ * so a style rule's selector must not reference the nesting selector,
+ * and a `@media` node's block must hold only closed style rules.
  *
- * @param nodes - Style rules and at-rules, in authored order.
+ * @param nodes - Style rules, `@media` rules, and at-rules, in authored order.
  * @returns A `Stylesheet` whose `Vars` unions the nodes' variable names.
- * @throws `Error` when a node's selector references `&`.
+ * @throws `Error` when a node's selector references `&`, or when a `@media` node's block holds a bare declaration or an `&`-selector rule.
  * @example
  * ```ts
  * const sheet = Stylesheet.make(
@@ -150,9 +159,9 @@ export const append: {
    * sheet; the original is untouched.
    *
    * @param self - The sheet to extend.
-   * @param node - The node to append. A style rule's selector must be closed — nothing above the sheet binds `&`.
+   * @param node - The node to append. Must be closed — nothing above the sheet binds `&`.
    * @returns The extended sheet, with the node's variable names joined in.
-   * @throws `Error` when the node's selector references `&`.
+   * @throws `Error` when the node's selector references `&`, or when a `@media` node's block holds a bare declaration or an `&`-selector rule.
    * @since 0.1.0
    */
   <Vars extends Var.Any, N extends Node<Var.Any>>(

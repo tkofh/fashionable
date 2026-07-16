@@ -9,8 +9,10 @@ import type { MediaQuery } from '#query/mediaQuery'
 import { coSatisfiable, implies } from '#query/mediaQuery.internal'
 import { isMediaRule } from '#rule/mediaRule.internal'
 import {
+  needsParentOf,
   refSetOf,
   type RenderContext,
+  renderMediaRuleBlock,
   renderStyleRuleBlock,
   resolveRenderOptions,
 } from '#rule/rule.internal'
@@ -30,7 +32,7 @@ export const StylesheetTypeId = Symbol.for('fashionable/stylesheet')
 export type StylesheetTypeId = typeof StylesheetTypeId
 
 const nodeRefs = (node: Node<AnyVar>): ReadonlySet<string> =>
-  isStyleRule(node) ? refSetOf(node) : EMPTY_REFS
+  isStyleRule(node) || isMediaRule(node) ? refSetOf(node) : EMPTY_REFS
 
 class StylesheetImpl extends Pipeable implements Stylesheet<AnyVar>, Equal.Equal {
   readonly [StylesheetTypeId]: StylesheetTypeId = StylesheetTypeId
@@ -112,15 +114,23 @@ export const empty: Stylesheet<never> = new StylesheetImpl([]) as unknown as Sty
 export const isEmpty = (sheet: Stylesheet<AnyVar>): boolean => sheet.nodes.length === 0
 
 // The root gate (docs/selector-nesting.md section 1): nothing above a
-// top-level rule binds `&`, so a `Parent`-requiring selector cannot enter
-// the node list. The pair forms enforce this at the type level; this
-// runtime mirror covers node-form appends, whose `StyleRule` type does
-// not carry the selector's requirements.
+// top-level node binds `&`, so nothing that still needs a parent may
+// enter the node list — an `&`-bearing rule selector, or a media block
+// carrying bare declarations or `&`-selector rules. The node union
+// enforces this at the type level (`Requires = never` arms); this
+// runtime mirror covers callers the types cannot see.
 const requireClosedNode = (node: Node<AnyVar>): Node<AnyVar> => {
-  invariant(
-    !isStyleRule(node) || !needsParent(node.selector),
-    `A style rule whose selector references '&' cannot sit at the top level of a stylesheet — nothing binds the nesting selector; nest it inside another style rule`,
-  )
+  if (isStyleRule(node)) {
+    invariant(
+      !needsParent(node.selector),
+      `A style rule whose selector references '&' cannot sit at the top level of a stylesheet — nothing binds the nesting selector; nest it inside another style rule`,
+    )
+  } else if (isMediaRule(node)) {
+    invariant(
+      !needsParentOf(node.block),
+      `A media rule at the top level of a stylesheet must hold only closed style rules — bare declarations and '&'-selectors have no subject there; nest the rule inside a style rule`,
+    )
+  }
   return node
 }
 
@@ -374,7 +384,9 @@ export const render = (sheet: Stylesheet<AnyVar>, options?: RenderOptions): stri
     } else if (isPropertyRule(node)) {
       sections.push(renderPropertyRule(node, propertyRenderOptions(context)))
     } else {
-      const section = renderStyleRuleBlock(node.selector, node.block, context)
+      const section = isMediaRule(node)
+        ? renderMediaRuleBlock(node.query, node.block, context)
+        : renderStyleRuleBlock(node.selector, node.block, context)
       if (section !== '') {
         sections.push(section)
       }
